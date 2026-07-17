@@ -1,0 +1,138 @@
+schema_id: ff.work_packet_requirements@1
+file_id: FF-GOV-WP-REQUIREMENTS-001
+updated_at: "2026-07-18"
+authority: canonical_template_requirements
+source_material:
+  - source_repository: Handshake/wt-gov-kernel
+    source_path: .GOV/templates/TASK_PACKET_TEMPLATE.md
+    sha256: 3981CA5CAB3EB26A6313276124535F2A2A76C9FFDAAF9EBD6BF47B1227299889
+    use: requirements_extracted_not_copied
+  - source_repository: Handshake/wt-gov-kernel
+    source_path: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
+    sha256: 7FD6A8203BA246DC797BC352EF8502CFD18C6EC0CD8D4CB1210B1764011F6566
+    use: machine_contract_structure_adapted
+  - source_repository: Handshake/wt-gov-kernel
+    source_path: .GOV/roles_shared/records/TASK_BOARD.md
+    sha256: 28B6DD02609CC89673FBCFCF9C531462987020F5A70B8EB7044C10ED8BBB847A
+    use: lifecycle_and_index_requirements_extracted_not_copied
+requirements:
+  - id: FF-WPR-001
+    category: authority
+    statement: packet.json is the sole work-packet authority; no Markdown packet or status projection is created.
+  - id: FF-WPR-002
+    category: identity
+    statement: wp_id uses WP-FF-<number>-<name>-v<number>, contains no timestamp, and preserves base_wp_id across revisions.
+  - id: FF-WPR-003
+    category: identity
+    statement: Only one non-superseded revision may be active for a base_wp_id.
+  - id: FF-WPR-004
+    category: lineage
+    statement: A revision lists every prior packet, preserved requirement, changed requirement, and supersession relationship.
+  - id: FF-WPR-005
+    category: lifecycle
+    statement: The canonical taskboard entry and packet lifecycle status must reconcile after every lifecycle transition.
+  - id: FF-WPR-006
+    category: lifecycle
+    statement: STUB does not authorize implementation; READY_FOR_DEV requires a signed packet and completed current research-backed refinement.
+  - id: FF-WPR-007
+    category: lifecycle
+    statement: Validator acceptance sets MERGE_PENDING; VALIDATED requires proof that the approved closure commit is contained in local main.
+  - id: FF-WPR-008
+    category: lifecycle
+    statement: Current-main compatibility is checked before final validation and records compatible, widening-required, or blocked with evidence.
+  - id: FF-WPR-009
+    category: source_control
+    statement: The packet records merge base, canonical branch, work branch, optional worktree, and recovery/backup posture before implementation.
+  - id: FF-WPR-010
+    category: scope
+    statement: Scope declares purpose, in-scope behavior, non-goals, allowed paths, forbidden paths, dependencies, preserved prior scope, and intentional file budget.
+  - id: FF-WPR-011
+    category: scope
+    statement: Root authority, governance, CI, build, and shared files are ordinary explicit scope surfaces and cannot be edited through implied scope.
+  - id: FF-WPR-012
+    category: refinement
+    statement: Refinement records the Operator request, spec anchors, assumptions, non-goals, acceptance criteria, and planned microtasks before activation.
+  - id: FF-WPR-013
+    category: research
+    statement: Current research records sources, dates, field patterns, inspected source code, reuse decisions, rejected options, selected approach, risks, mitigations, and validation plan.
+  - id: FF-WPR-014
+    category: research
+    statement: yt-dlp-related work records the pinned version, generated inventory IDs, corpus version, oracle cases, divergences, and artifact equivalence rules.
+  - id: FF-WPR-015
+    category: red_team
+    statement: Every refinement includes attack surfaces, plausible failure scenarios, and minimum enforceable controls.
+  - id: FF-WPR-016
+    category: contracts
+    statement: The packet enumerates data/source-graph, producer-consumer, process, filesystem, network, compatibility, and observability boundaries touched.
+  - id: FF-WPR-017
+    category: invariance
+    statement: Every affected state transition or external boundary records stable invariant IDs, preconditions, invariant conditions, success postconditions, failure/cancellation postconditions, and proof methods.
+  - id: FF-WPR-018
+    category: referential_transparency
+    statement: The packet identifies pure-core functions, explicit effect boundaries, hidden-state audit results, and redesign evidence where broad mocks would otherwise be required.
+  - id: FF-WPR-019
+    category: backpressure
+    statement: Every affected producer-consumer path records item bounds, byte bounds, resource admission, loss policy, cancellation behavior, and saturation proof.
+  - id: FF-WPR-020
+    category: termination
+    statement: Every potentially unbounded operation records deadlines, budgets, cancellation, governed indefinite mode, liveness assumptions, and residual uncertainty.
+  - id: FF-WPR-021
+    category: watcher
+    statement: Every product packet records watcher impact, diagnostic events, health checks, lifecycle effect, crash-survival effect, retention effect, and tests or gives a concrete not-applicable reason.
+  - id: FF-WPR-022
+    category: performance
+    statement: Performance work records a versioned manifest, equivalent work, both process topologies, correctness preconditions, metrics, samples, confidence method, and regression thresholds.
+  - id: FF-WPR-023
+    category: acceptance
+    statement: Acceptance rows have stable IDs, measurable requirements, required flags, owners, evidence kinds, statuses, and concrete evidence.
+  - id: FF-WPR-024
+    category: acceptance
+    statement: Required acceptance rows close only as PROVED, independently CONFIRMED, or justified NOT_APPLICABLE; missing proof is BLOCKED.
+  - id: FF-WPR-025
+    category: clause_closure
+    statement: Each in-scope design/spec clause maps to expected code surfaces, tests, examples or fixtures, debt IDs, and coder/validator proof status.
+  - id: FF-WPR-026
+    category: shared_surfaces
+    statement: Shared data, registries, protocols, storage, runtime, and migrations identify all producers and consumers plus tripwire tests across them.
+  - id: FF-WPR-027
+    category: data_contract
+    statement: Persisted or emitted data uses explicit stable IDs, relationships, provenance, serializers, readers, migrations, and retrieval-friendly structured fields.
+  - id: FF-WPR-028
+    category: microtasks
+    statement: Every microtask states scope, relevant files, dependencies, constraints, expected behavior, acceptance, verification, status updates, and watcher impact.
+  - id: FF-WPR-029
+    category: communication
+    statement: Multi-session work declares one canonical communication directory and deterministic assignment, status, steering, validation, and handoff receipts.
+  - id: FF-WPR-030
+    category: delegation
+    statement: Subagent delegation is disabled unless the Operator explicitly authorizes it in the packet; delegated output remains subject to primary-agent review and proof.
+  - id: FF-WPR-031
+    category: operator_surface
+    statement: Operator-visible or model-operable behavior identifies its command, API, diagnostic, or GUI entrypoint; GUI work adds visual and accessibility proof when applicable.
+  - id: FF-WPR-032
+    category: manual
+    statement: Product behavior changes update the built-in no-context model manual in the same work packet or record a specific not-applicable reason.
+  - id: FF-WPR-033
+    category: trust_boundary
+    statement: Cross-process, network, storage, or privilege work records sources of truth, provenance, verification, error taxonomy, guardrails, and validator assertions.
+  - id: FF-WPR-034
+    category: validation
+    statement: Validation records exact commands, exit codes, artifact hashes, proof lines, environment, and the source range or symbols being judged.
+  - id: FF-WPR-035
+    category: validation
+    statement: Medium- and high-risk validation includes diff attack surfaces, independent checks, counterfactuals, boundary probes, negative paths, independent findings, and residual uncertainty.
+  - id: FF-WPR-036
+    category: handoff
+    statement: Handoff records what changed, requirements self-audited, checks actually run, known gaps, maintainability risks, anti-gaming counterfactual, validator focus, and next step.
+  - id: FF-WPR-037
+    category: proof_truth
+    statement: No PASS is legal while required clauses or acceptance rows remain unproven, validation context is mismatched, or proof completeness is partial.
+  - id: FF-WPR-038
+    category: archive
+    statement: Superseded packets, refinements, microtasks, evidence indexes, and dispositions are retained under the base work-packet archive directory.
+  - id: FF-WPR-039
+    category: portability
+    statement: Committed paths are repository-relative; machine-local paths and credentials are isolated in ignored configuration.
+  - id: FF-WPR-040
+    category: dependency_boundary
+    statement: New production runtimes or native dependencies outside Rust plus FFmpeg require explicit Operator approval backed by current research and measured need.

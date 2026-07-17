@@ -1,0 +1,270 @@
+{
+  "schema_id": "ff.work_packet_contract@1",
+  "schema_version": "1.0.0",
+  "contract_authority": "PRIMARY_MACHINE_READABLE",
+  "artifact_policy": {
+    "authority_surface": "packet.json",
+    "markdown_projection_allowed": false,
+    "requirements_catalog": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml"
+  },
+  "identity": {
+    "wp_id": "{{WP_ID}}",
+    "base_wp_id": "{{BASE_WP_ID}}",
+    "version": "{{WP_VERSION}}",
+    "title": "{{TITLE}}",
+    "created_at_utc": "{{CREATED_AT_UTC}}",
+    "updated_at_utc": null,
+    "requestor": "{{REQUESTOR}}",
+    "operator_signature": null
+  },
+  "authority": {
+    "bootstrap_router": "AGENTS.md",
+    "project_codex": ".GOV/codex.yaml",
+    "build_rules": ".GOV/rules/build-rules.yaml",
+    "topology": ".GOV/topology.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "design_source": ".GOV/spec/ferric_forager_technical_design_v0.2.0.md",
+    "readiness_matrix": ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json",
+    "spec_anchors": [],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "merge_base_sha": "{{MERGE_BASE_SHA}}",
+    "work_branch": "codex/{{WP_SLUG}}",
+    "worktree_dir": null,
+    "remote_backup_branch": null,
+    "current_main_compatibility": {
+      "status": "NOT_RUN",
+      "baseline_sha": null,
+      "verified_at_utc": null,
+      "widening_decision": "NONE",
+      "evidence": null
+    }
+  },
+  "lifecycle": {
+    "status": "STUB",
+    "allowed_statuses": [
+      "STUB",
+      "READY_FOR_DEV",
+      "IN_PROGRESS",
+      "BLOCKED",
+      "MERGE_PENDING",
+      "VALIDATED",
+      "FAIL",
+      "OUTDATED_ONLY",
+      "ABANDONED",
+      "SUPERSEDED"
+    ],
+    "risk_tier": "{{RISK_TIER}}",
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null,
+    "main_containment_verified_at_utc": null,
+    "supersedes": [],
+    "superseded_by": null,
+    "blockers": [],
+    "next_action": "Complete and sign the research-backed refinement."
+  },
+  "workflow": {
+    "lane": "{{WORKFLOW_LANE}}",
+    "execution_owner": null,
+    "technical_advisor": null,
+    "technical_authority": null,
+    "merge_authority": null,
+    "agentic_mode": false,
+    "subagent_use_requires_operator_approval": true,
+    "communication_dir": ".GOV/work_packets/{{WP_ID}}/communication/",
+    "max_coder_revision_cycles": 3,
+    "max_validator_review_cycles": 3
+  },
+  "paths": {
+    "packet_contract": ".GOV/work_packets/{{WP_ID}}/packet.json",
+    "refinement_contract": ".GOV/work_packets/{{WP_ID}}/refinement.json",
+    "microtask_glob": ".GOV/work_packets/{{WP_ID}}/microtasks/MT-*.json",
+    "evidence_dir": ".GOV/work_packets/{{WP_ID}}/evidence/",
+    "archive_dir": ".GOV/archive/work_packets/{{BASE_WP_ID}}/"
+  },
+  "scope": {
+    "summary": "{{SCOPE_SUMMARY}}",
+    "why_now": "{{WHY_NOW}}",
+    "in_scope": [],
+    "out_of_scope": [],
+    "allowed_paths": [],
+    "forbidden_paths": [],
+    "touched_file_budget": null,
+    "broad_tool_allowlist": [],
+    "dependencies": [],
+    "blocked_work_packets": [],
+    "preserved_prior_scope": []
+  },
+  "ferric_constraints": {
+    "production_language": "Rust",
+    "production_python_allowed": false,
+    "production_yt_dlp_invocation_allowed": false,
+    "required_external_processes": ["ffmpeg", "ffprobe"],
+    "additional_runtime_or_native_dependency_requires_operator_approval": true,
+    "speed_priority": "AFTER_EQUIVALENT_WORK_CORRECTNESS_COMPATIBILITY_BOUNDS_RECOVERY_SECURITY",
+    "expanded_design_scope_must_be_preserved": true,
+    "watcher_impact_required": true
+  },
+  "refinement": {
+    "status": "PENDING",
+    "contract_file": ".GOV/work_packets/{{WP_ID}}/refinement.json",
+    "required_before_ready_for_dev": true,
+    "operator_request": "{{OPERATOR_REQUEST}}",
+    "assumptions": [],
+    "non_goals": [],
+    "research": {
+      "current_research_required": true,
+      "sources": [],
+      "field_patterns": [],
+      "source_code_inspected": [],
+      "reuse_opportunities": [],
+      "rejected_options": [],
+      "selected_approach": null,
+      "risks": [],
+      "mitigations": [],
+      "validation_plan": []
+    },
+    "red_team": {
+      "required": true,
+      "attack_surfaces": [],
+      "plausible_failure_scenarios": [],
+      "minimum_controls": []
+    }
+  },
+  "contracts": {
+    "source_graph_or_data_contract": [],
+    "producer_consumer_surfaces": [],
+    "process_boundaries": [],
+    "filesystem_boundaries": [],
+    "network_boundaries": [],
+    "compatibility_surfaces": [],
+    "observability_surfaces": []
+  },
+  "formal_reasoning": {
+    "invariants": [
+      {
+        "id": "{{INVARIANT_ID}}",
+        "program_point": "{{PROGRAM_POINT}}",
+        "preconditions": [],
+        "condition": "{{INVARIANT_CONDITION}}",
+        "postconditions": [],
+        "failure_and_cancellation_postconditions": [],
+        "proof_method": [],
+        "status": "UNPROVEN"
+      }
+    ],
+    "referential_transparency": {
+      "pure_core_surfaces": [],
+      "effect_boundaries": [],
+      "hidden_state_audit": [],
+      "mock_avoidance_evidence": []
+    },
+    "backpressure": {
+      "producer_consumer_paths": [],
+      "item_bounds": [],
+      "byte_bounds": [],
+      "admission_resources": ["cpu", "memory", "network", "disk", "subprocess", "host"],
+      "loss_policies": [],
+      "saturation_tests": []
+    },
+    "termination": {
+      "potentially_unbounded_operations": [],
+      "deadlines_and_budgets": [],
+      "cancellation_paths": [],
+      "indefinite_mode_policies": [],
+      "liveness_assumptions": [],
+      "residual_uncertainty": []
+    }
+  },
+  "watcher_obligation": {
+    "impact": "{{WATCHER_IMPACT}}",
+    "diagnostic_events_added_or_changed": [],
+    "health_checks_added_or_changed": [],
+    "crash_survival_effect": null,
+    "startup_shutdown_effect": null,
+    "retention_or_storage_effect": null,
+    "tests": [],
+    "not_applicable_reason": null
+  },
+  "compatibility": {
+    "yt_dlp_version": null,
+    "corpus_version": null,
+    "inventory_ids": [],
+    "oracle_cases": [],
+    "approved_divergences": [],
+    "unsupported_cases": [],
+    "network_transcript_requirements": [],
+    "filesystem_artifact_requirements": []
+  },
+  "performance": {
+    "applicable": true,
+    "benchmark_manifest": null,
+    "equivalent_work_definition": [],
+    "baseline_process_topology": null,
+    "candidate_process_topology": null,
+    "correctness_preconditions": [],
+    "metrics": [],
+    "sample_plan": null,
+    "confidence_method": null,
+    "regression_thresholds": []
+  },
+  "acceptance_matrix": [
+    {
+      "id": "{{ACCEPTANCE_ID}}",
+      "requirement": "{{REQUIREMENT}}",
+      "required": true,
+      "owner": "{{OWNER}}",
+      "evidence_kind": "{{EVIDENCE_KIND}}",
+      "status": "PENDING",
+      "evidence": [],
+      "reason": null
+    }
+  ],
+  "microtasks": {
+    "declared_ids": [],
+    "active_id": null,
+    "next_id": null,
+    "contracts_must_include": [
+      "scope",
+      "relevant_files",
+      "dependencies",
+      "constraints",
+      "expected_behavior",
+      "acceptance_criteria",
+      "verification_steps",
+      "status_update_requirements",
+      "watcher_impact"
+    ]
+  },
+  "validation": {
+    "required_risk_tier": "{{RISK_TIER}}",
+    "commands": [],
+    "artifacts": [],
+    "adversarial_review": {
+      "diff_attack_surfaces": [],
+      "independent_checks_run": [],
+      "counterfactual_checks": [],
+      "boundary_probes": [],
+      "negative_path_checks": [],
+      "independent_findings": [],
+      "residual_uncertainty": []
+    },
+    "clause_map": [],
+    "not_proven": [],
+    "current_main_interaction_checks": [],
+    "watcher_proof": [],
+    "manual_and_model_operability_proof": []
+  },
+  "handoff": {
+    "what_changed": [],
+    "requirements_self_audited": [],
+    "checks_actually_run": [],
+    "known_gaps": [],
+    "maintainability_risks": [],
+    "anti_gaming_counterfactual": null,
+    "validator_focus": [],
+    "next_step": null
+  }
+}

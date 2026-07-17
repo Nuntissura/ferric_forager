@@ -1,0 +1,51 @@
+schema_id: ff.taskboard@1
+file_id: FF-GOV-TASKBOARD-001
+updated_at: "2026-07-18"
+authority: canonical
+project_id: FF-PROJ-001
+packet_root: .GOV/work_packets/
+archive_root: .GOV/archive/work_packets/
+status_model:
+  - STUB
+  - READY_FOR_DEV
+  - IN_PROGRESS
+  - BLOCKED
+  - MERGE_PENDING
+  - VALIDATED
+  - FAIL
+  - OUTDATED_ONLY
+  - ABANDONED
+  - SUPERSEDED
+rules:
+  - id: FF-TASKBOARD-RULE-001
+    statement: Every indexed work packet has one stable wp_id and one stable base_wp_id.
+  - id: FF-TASKBOARD-RULE-002
+    statement: At most one non-superseded packet revision may be active for a base_wp_id.
+  - id: FF-TASKBOARD-RULE-003
+    statement: STUB is planning state and does not authorize product implementation.
+  - id: FF-TASKBOARD-RULE-004
+    statement: READY_FOR_DEV requires a signed packet and completed research-backed refinement.
+  - id: FF-TASKBOARD-RULE-005
+    statement: MERGE_PENDING means validation passed but the approved closure is not yet proven contained in main.
+  - id: FF-TASKBOARD-RULE-006
+    statement: VALIDATED requires the approved closure commit to be verified as contained in main.
+  - id: FF-TASKBOARD-RULE-007
+    statement: Canonical YAML state is updated directly; no Markdown task-state projection is maintained.
+  - id: FF-TASKBOARD-RULE-008
+    statement: Superseded packet history is archived and never deleted.
+current_focus:
+  statement: Establish project governance and activate the first Phase 0 work packet before product implementation.
+  active_wp_id: null
+counts:
+  total: 0
+  stub: 0
+  ready_for_dev: 0
+  in_progress: 0
+  blocked: 0
+  merge_pending: 0
+  validated: 0
+  fail: 0
+  outdated_only: 0
+  abandoned: 0
+  superseded: 0
+work_packets: []

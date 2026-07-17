@@ -1,0 +1,89 @@
+schema_id: ff.model_entrypoint@1
+file_id: FF-DOC-START-001
+updated_at: "2026-07-18"
+project:
+  id: FF-PROJ-001
+  name: Ferric Forager
+  mission: Native Rust media acquisition, recording, extraction, metadata, archive, and protocol engine.
+  compatibility_foundation: yt-dlp is a pinned behavioral oracle and research source, not a production runtime dependency.
+  required_external_processes: [ffmpeg, ffprobe]
+  optimization_policy: Speed first after equivalent-work correctness, compatibility, bounded-resource, recoverability, and security gates pass.
+  expanded_design_scope_preserved: true
+mandatory_reading_order:
+  - path: AGENTS.md
+    purpose: Minimal project bootstrap router.
+  - path: .GOV/codex.yaml
+    purpose: Canonical project Codex rules.
+  - path: .GOV/topology.yaml
+    purpose: Paths, ownership, boundaries, and topology links.
+  - path: .GOV/rules/build-rules.yaml
+    purpose: Watcher, invariance, referential-transparency, backpressure, and computability rules.
+  - path: .GOV/taskboard/taskboard.yaml
+    purpose: Canonical work-packet state.
+  - path: .GOV/work_packets/<WP_ID>/packet.json
+    purpose: Active scope, lifecycle, acceptance, and evidence authority.
+  - path: .GOV/work_packets/<WP_ID>/refinement.json
+    purpose: Current research, red team, selected approach, and spec anchors.
+  - path: .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+    purpose: Existing product-design source.
+  - path: .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json
+    purpose: Machine-readable readiness verdict, blockers, and gates.
+  - path: .GOV/reviews/peer-review-v0.2.0/primary-synthesis.md
+    purpose: Research-backed adversarial review narrative.
+state:
+  governance_initialized: true
+  product_implementation_started: false
+  design_verdict:
+    phase_0_charter: PASS
+    complete_product_implementation_readiness: FAIL
+  allowed_next_work:
+    - inventory
+    - compatibility_corpus
+    - contract_definition
+    - risk_prototypes
+    - equivalent_work_benchmark_design
+  broad_parallel_implementation_blocked: true
+  active_wp_id: null
+  indexed_work_packet_count: 0
+  git:
+    initialized: true
+    branch: main
+    remote_configured: true
+    origin_url: https://github.com/Nuntissura/ferric_forager
+topology_summary:
+  product_root: product/
+  watcher_root: product/watcher/
+  governance_root: .GOV/
+  authority_files: [AGENTS.md, CLAUDE.md]
+  project_codex: .GOV/codex.yaml
+  rules: .GOV/rules/build-rules.yaml
+  topology: .GOV/topology.yaml
+  id_registry: .GOV/id-registry.yaml
+  design: .GOV/spec/
+  research_reviews: .GOV/reviews/
+  templates: .GOV/templates/
+  taskboard: .GOV/taskboard/taskboard.yaml
+  work_packets: .GOV/work_packets/
+  archive: .GOV/archive/
+startup_workflow:
+  - step: Read every mandatory authority surface in order.
+  - step: Locate the requested wp_id in .GOV/taskboard/taskboard.yaml.
+  - step: If no active packet exists, do not implement product code.
+  - step: Create packet.json from .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json.
+  - step: Satisfy .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml and complete refinement.json.
+  - step: Obtain the activation and signature required by packet.json before product edits.
+  - step: Work only in allowed paths and prove every required acceptance row.
+  - step: Update packet.json and canonical taskboard YAML; do not create Markdown status projections.
+critical_boundaries:
+  - id: FF-START-BOUNDARY-001
+    statement: Do not add Python, production yt-dlp execution, another JS runtime, Wasmtime, BoringSSL-backed transports, SQLite native bindings, or another runtime/native dependency without explicit Operator approval.
+  - id: FF-START-BOUNDARY-002
+    statement: Do not claim yt-dlp replacement parity without the pinned generated compatibility corpus.
+  - id: FF-START-BOUNDARY-003
+    statement: Do not claim a performance win from unequal process topology, outputs, metadata work, post-processing, cache state, or network state.
+  - id: FF-START-BOUNDARY-004
+    statement: Do not merge Ferric Forager and its watcher into one failure domain.
+  - id: FF-START-BOUNDARY-005
+    statement: Do not allow unbounded queues, hidden shared state, resume state ahead of durable bytes, or success before output/archive reconciliation.
+  - id: FF-START-BOUNDARY-006
+    statement: Do not narrow the complete product's extractor, protocol, metadata, archive, or diagnostic scope to make a phase pass.

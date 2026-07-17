@@ -1,0 +1,164 @@
+schema_id: ff.repository_topology@1
+file_id: FF-GOV-TOPOLOGY-001
+updated_at: "2026-07-18"
+project:
+  id: FF-PROJ-001
+  name: Ferric Forager
+  repository_url: https://github.com/Nuntissura/ferric_forager
+  repository_remote_status: CONFIGURED_AS_ORIGIN
+  local_root: .
+authority_precedence:
+  - AGENTS.md
+  - .GOV/codex.yaml
+  - .GOV/rules/build-rules.yaml
+  - .GOV/taskboard/taskboard.yaml
+  - .GOV/work_packets/<WP_ID>/packet.json
+  - .GOV/work_packets/<WP_ID>/refinement.json
+  - .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+  - .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json
+context_entrypoint: START_HERE.yaml
+nodes:
+  - id: FF-NODE-ROOT-001
+    kind: repository_root
+    path: .
+    owner: project
+  - id: FF-NODE-CODEX-001
+    kind: bootstrap_router
+    path: AGENTS.md
+    owner: governance
+  - id: FF-NODE-CLAUDE-001
+    kind: bootstrap_router_mirror
+    path: CLAUDE.md
+    owner: governance
+  - id: FF-NODE-CODEX-RULES-001
+    kind: canonical_project_codex
+    path: .GOV/codex.yaml
+    owner: governance
+  - id: FF-NODE-START-001
+    kind: model_entrypoint
+    path: START_HERE.yaml
+    owner: governance
+  - id: FF-NODE-TOPOLOGY-001
+    kind: canonical_topology
+    path: .GOV/topology.yaml
+    owner: governance
+  - id: FF-NODE-PRODUCT-001
+    kind: product_root
+    path: product/
+    owner: product
+    contains: [shipped_code, product_tests, product_assets, build_configuration]
+  - id: FF-NODE-WATCHER-001
+    kind: product_component
+    path: product/watcher/
+    owner: product
+    responsibility: independent_diagnostics
+    lifecycle: starts_with_ferric_closes_on_governed_shutdown_survives_ferric_crash
+  - id: FF-NODE-GOV-001
+    kind: governance_root
+    path: .GOV/
+    owner: governance
+  - id: FF-NODE-RULES-001
+    kind: authority
+    path: .GOV/rules/build-rules.yaml
+    owner: governance
+  - id: FF-NODE-SPEC-001
+    kind: design_source
+    path: .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+    owner: governance
+  - id: FF-NODE-REVIEWS-001
+    kind: review_collection
+    path: .GOV/reviews/
+    owner: governance
+  - id: FF-NODE-TEMPLATES-001
+    kind: governance_templates
+    path: .GOV/templates/
+    owner: governance
+  - id: FF-NODE-WP-REQUIREMENTS-001
+    kind: work_packet_requirements
+    path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
+    owner: governance
+  - id: FF-NODE-TASKBOARD-001
+    kind: canonical_taskboard
+    path: .GOV/taskboard/taskboard.yaml
+    owner: governance
+  - id: FF-NODE-WORK-PACKETS-001
+    kind: work_packet_collection
+    path: .GOV/work_packets/
+    owner: governance
+  - id: FF-NODE-ARCHIVE-001
+    kind: governance_archive
+    path: .GOV/archive/
+    owner: governance
+  - id: FF-NODE-ID-REGISTRY-001
+    kind: id_registry
+    path: .GOV/id-registry.yaml
+    owner: governance
+edges:
+  - id: FF-EDGE-CODEX-READS-TOPOLOGY-001
+    from: FF-NODE-CODEX-RULES-001
+    to: FF-NODE-TOPOLOGY-001
+    relation: requires_read
+  - id: FF-EDGE-CODEX-READS-RULES-001
+    from: FF-NODE-CODEX-RULES-001
+    to: FF-NODE-RULES-001
+    relation: requires_read
+  - id: FF-EDGE-CLAUDE-MIRRORS-CODEX-001
+    from: FF-NODE-CLAUDE-001
+    to: FF-NODE-CODEX-001
+    relation: mirrors_rule_for_rule
+  - id: FF-EDGE-START-ROUTES-TOPOLOGY-001
+    from: FF-NODE-START-001
+    to: FF-NODE-TOPOLOGY-001
+    relation: routes_new_models
+  - id: FF-EDGE-BOOT-ROUTES-CODEX-001
+    from: FF-NODE-CODEX-001
+    to: FF-NODE-CODEX-RULES-001
+    relation: requires_read
+  - id: FF-EDGE-BOOT-ROUTES-START-001
+    from: FF-NODE-CODEX-001
+    to: FF-NODE-START-001
+    relation: requires_read
+  - id: FF-EDGE-TASKBOARD-INDEXES-PACKETS-001
+    from: FF-NODE-TASKBOARD-001
+    to: FF-NODE-WORK-PACKETS-001
+    relation: indexes_canonical_state
+  - id: FF-EDGE-REQUIREMENTS-GOVERN-PACKETS-001
+    from: FF-NODE-WP-REQUIREMENTS-001
+    to: FF-NODE-WORK-PACKETS-001
+    relation: constrains_contracts
+  - id: FF-EDGE-PACKETS-GOVERN-PRODUCT-001
+    from: FF-NODE-WORK-PACKETS-001
+    to: FF-NODE-PRODUCT-001
+    relation: scopes_and_validates
+  - id: FF-EDGE-WATCHER-OBSERVES-PRODUCT-001
+    from: FF-NODE-WATCHER-001
+    to: FF-NODE-PRODUCT-001
+    relation: observes_diagnostically
+  - id: FF-EDGE-SPEC-INFORMS-PACKETS-001
+    from: FF-NODE-SPEC-001
+    to: FF-NODE-WORK-PACKETS-001
+    relation: provides_spec_anchors
+  - id: FF-EDGE-REVIEWS-GATE-PACKETS-001
+    from: FF-NODE-REVIEWS-001
+    to: FF-NODE-WORK-PACKETS-001
+    relation: supplies_readiness_gates
+boundaries:
+  - id: FF-BOUNDARY-PRODUCT-GOV-001
+    statement: Product runtime code under product/ MUST NOT depend on .GOV/ at runtime.
+  - id: FF-BOUNDARY-RUNTIME-DEPENDENCY-001
+    statement: Production implementation is Rust with supervised FFmpeg and ffprobe; any other runtime or native dependency requires explicit Operator approval.
+  - id: FF-BOUNDARY-WATCHER-001
+    statement: The watcher is diagnostic-only and process-independent from Ferric Forager.
+  - id: FF-BOUNDARY-PYTHON-001
+    statement: Python and yt-dlp execution are research/oracle tools only and are forbidden production dependencies.
+entrypoints:
+  no_context_model: START_HERE.yaml
+  codex_bootstrap: AGENTS.md
+  claude_bootstrap: CLAUDE.md
+  project_codex: .GOV/codex.yaml
+  build_rules: .GOV/rules/build-rules.yaml
+  task_state: .GOV/taskboard/taskboard.yaml
+  work_packet_template: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
+  work_packet_requirements: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
+  product_root: product/
+  watcher_root: product/watcher/

@@ -1,0 +1,133 @@
+schema_id: ff.id_registry@1
+file_id: FF-GOV-ID-REGISTRY-001
+updated_at: "2026-07-18"
+namespaces:
+  FF-PROJ:
+    entity_kind: project
+    next_numeric_id: 2
+  FF-CODEX:
+    entity_kind: project_rule
+    next_numeric_id: 40
+  FF-BOOT:
+    entity_kind: bootstrap_rule
+    next_numeric_id: 3
+  FF-BUILD:
+    entity_kind: build_rule
+    next_numeric_id: 36
+  FF-NODE:
+    entity_kind: topology_node
+    next_numeric_id: 2
+    note: Compound stable suffixes are registered below.
+  FF-EDGE:
+    entity_kind: topology_edge
+    next_numeric_id: 2
+    note: Compound stable suffixes are registered below.
+  FF-BOUNDARY:
+    entity_kind: topology_boundary
+    next_numeric_id: 2
+    note: Compound stable suffixes are registered below.
+  FF-TASKBOARD-RULE:
+    entity_kind: taskboard_rule
+    next_numeric_id: 9
+  FF-WPR:
+    entity_kind: work_packet_requirement
+    next_numeric_id: 41
+  FF-START-BOUNDARY:
+    entity_kind: model_entrypoint_boundary
+    next_numeric_id: 7
+  WP-FF:
+    entity_kind: work_packet
+    next_numeric_id: 1
+  FF-AC:
+    entity_kind: work_packet_acceptance_row
+    next_numeric_id: 1
+  FF-INV:
+    entity_kind: invariant
+    next_numeric_id: 1
+  FF-DEC:
+    entity_kind: decision
+    next_numeric_id: 1
+registered_files:
+  - id: FF-DOC-START-001
+    path: START_HERE.yaml
+  - id: FF-GOV-RULES-001
+    path: .GOV/rules/build-rules.yaml
+  - id: FF-GOV-CODEX-001
+    path: .GOV/codex.yaml
+  - id: FF-GOV-TOPOLOGY-001
+    path: .GOV/topology.yaml
+  - id: FF-GOV-ID-REGISTRY-001
+    path: .GOV/id-registry.yaml
+  - id: FF-GOV-TASKBOARD-001
+    path: .GOV/taskboard/taskboard.yaml
+  - id: FF-GOV-WP-CONTRACT-TEMPLATE-001
+    path: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
+  - id: FF-GOV-WP-REQUIREMENTS-001
+    path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
+registered_rule_ranges:
+  - namespace: FF-BOOT
+    first: FF-BOOT-001
+    last: FF-BOOT-002
+    count: 2
+    path: AGENTS.md
+    mirror_path: CLAUDE.md
+  - namespace: FF-CODEX
+    first: FF-CODEX-001
+    last: FF-CODEX-039
+    count: 39
+    path: .GOV/codex.yaml
+  - namespace: FF-BUILD
+    first: FF-BUILD-001
+    last: FF-BUILD-035
+    count: 35
+    path: .GOV/rules/build-rules.yaml
+  - namespace: FF-TASKBOARD-RULE
+    first: FF-TASKBOARD-RULE-001
+    last: FF-TASKBOARD-RULE-008
+    count: 8
+    path: .GOV/taskboard/taskboard.yaml
+  - namespace: FF-WPR
+    first: FF-WPR-001
+    last: FF-WPR-040
+    count: 40
+    path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
+  - namespace: FF-START-BOUNDARY
+    first: FF-START-BOUNDARY-001
+    last: FF-START-BOUNDARY-006
+    count: 6
+    path: START_HERE.yaml
+registered_topology_ids:
+  - FF-NODE-ROOT-001
+  - FF-NODE-CODEX-001
+  - FF-NODE-CLAUDE-001
+  - FF-NODE-CODEX-RULES-001
+  - FF-NODE-START-001
+  - FF-NODE-TOPOLOGY-001
+  - FF-NODE-PRODUCT-001
+  - FF-NODE-WATCHER-001
+  - FF-NODE-GOV-001
+  - FF-NODE-RULES-001
+  - FF-NODE-SPEC-001
+  - FF-NODE-REVIEWS-001
+  - FF-NODE-TEMPLATES-001
+  - FF-NODE-WP-REQUIREMENTS-001
+  - FF-NODE-TASKBOARD-001
+  - FF-NODE-WORK-PACKETS-001
+  - FF-NODE-ARCHIVE-001
+  - FF-NODE-ID-REGISTRY-001
+  - FF-EDGE-CODEX-READS-TOPOLOGY-001
+  - FF-EDGE-CODEX-READS-RULES-001
+  - FF-EDGE-CLAUDE-MIRRORS-CODEX-001
+  - FF-EDGE-START-ROUTES-TOPOLOGY-001
+  - FF-EDGE-BOOT-ROUTES-CODEX-001
+  - FF-EDGE-BOOT-ROUTES-START-001
+  - FF-EDGE-TASKBOARD-INDEXES-PACKETS-001
+  - FF-EDGE-REQUIREMENTS-GOVERN-PACKETS-001
+  - FF-EDGE-PACKETS-GOVERN-PRODUCT-001
+  - FF-EDGE-WATCHER-OBSERVES-PRODUCT-001
+  - FF-EDGE-SPEC-INFORMS-PACKETS-001
+  - FF-EDGE-REVIEWS-GATE-PACKETS-001
+  - FF-BOUNDARY-PRODUCT-GOV-001
+  - FF-BOUNDARY-RUNTIME-DEPENDENCY-001
+  - FF-BOUNDARY-WATCHER-001
+  - FF-BOUNDARY-PYTHON-001

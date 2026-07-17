@@ -1,0 +1,151 @@
+schema_id: ff.build_rules@1
+file_id: FF-GOV-RULES-001
+updated_at: "2026-07-18"
+authority: canonical
+rules:
+  - id: FF-BUILD-001
+    category: independent_watcher
+    statement: An independent watcher for Ferric Forager MUST be created and maintained for the entire duration of the project.
+    enforcement: REQUIRED
+  - id: FF-BUILD-002
+    category: independent_watcher
+    statement: The watcher MUST live under product/watcher/ on the product-code side of the repository.
+    enforcement: REQUIRED
+  - id: FF-BUILD-003
+    category: independent_watcher
+    statement: The watcher MUST remain diagnostic-only and MUST NOT become a hidden controller, data-path dependency, or correctness dependency for Ferric Forager.
+    enforcement: REQUIRED
+  - id: FF-BUILD-004
+    category: independent_watcher
+    statement: Ferric Forager's governed startup command MUST start the watcher and record whether watcher startup succeeded.
+    enforcement: REQUIRED
+  - id: FF-BUILD-005
+    category: independent_watcher
+    statement: A correct governed Ferric Forager shutdown command MUST request watcher shutdown and MUST wait for a bounded watcher flush-and-exit result.
+    enforcement: REQUIRED
+  - id: FF-BUILD-006
+    category: independent_watcher
+    statement: The watcher MUST run in an independent process and failure domain so it survives an uncommanded Ferric Forager crash.
+    enforcement: REQUIRED
+  - id: FF-BUILD-007
+    category: independent_watcher
+    statement: After a Ferric Forager crash, the watcher MUST retain and expose crash diagnostics until a governed collection, restart, or shutdown action resolves them.
+    enforcement: REQUIRED
+  - id: FF-BUILD-008
+    category: independent_watcher
+    statement: The watcher MUST use bounded storage, bounded queues, explicit retention, stable event IDs, monotonic timestamps, and crash-safe writes.
+    enforcement: REQUIRED
+  - id: FF-BUILD-009
+    category: independent_watcher
+    statement: Watcher tests MUST cover normal startup, normal shutdown, Ferric crash survival, watcher crash isolation, restart, duplicate commands, partial writes, full storage, and stale-process cleanup.
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-010
+    category: invariance
+    statement: An invariant is a condition that MUST remain true at its declared program point regardless of the execution path used to reach that point.
+    enforcement: DEFINITION
+  - id: FF-BUILD-011
+    category: invariance
+    statement: Every state transition, persistence boundary, queue boundary, process boundary, and unsafe or externally observable operation MUST declare its relevant preconditions, invariants, and postconditions.
+    enforcement: REQUIRED
+  - id: FF-BUILD-012
+    category: invariance
+    statement: Preconditions MUST be checked or made true before the operation that relies on them.
+    enforcement: REQUIRED
+  - id: FF-BUILD-013
+    category: invariance
+    statement: Postconditions MUST be tested at the smallest practical boundary and MUST include failure and cancellation outcomes.
+    enforcement: REQUIRED
+  - id: FF-BUILD-014
+    category: invariance
+    statement: An invariant that cannot be mechanically proved MUST have executable assertions, model tests, property tests, fault injection, or an explicitly recorded proof limitation.
+    enforcement: REQUIRED
+  - id: FF-BUILD-015
+    category: invariance
+    statement: No resume checkpoint may exceed the durable contiguous byte prefix, and no job may report success before output validation and archive reconciliation complete.
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-016
+    category: referential_transparency
+    statement: A referentially transparent function can be replaced by its return value without changing overall program behavior.
+    enforcement: DEFINITION
+  - id: FF-BUILD-017
+    category: referential_transparency
+    statement: Prefer pure deterministic functions for parsing, selection, planning, naming, normalization, identity derivation, state transition calculation, and compatibility comparison.
+    enforcement: REQUIRED
+  - id: FF-BUILD-018
+    category: referential_transparency
+    statement: Isolate time, randomness, network, filesystem, process, environment, and mutable-state effects behind explicit inputs and narrow boundary interfaces.
+    enforcement: REQUIRED
+  - id: FF-BUILD-019
+    category: referential_transparency
+    statement: Hidden global dependencies, ambient mutable state, and action-at-a-distance coupling are forbidden in product logic.
+    enforcement: REQUIRED
+  - id: FF-BUILD-020
+    category: referential_transparency
+    statement: If code is difficult to test without broad mocks, redesign the effect boundary or data flow before adding a mocking framework.
+    enforcement: REQUIRED
+  - id: FF-BUILD-021
+    category: referential_transparency
+    statement: Caching and parallel execution are legal only when keys include every behavior-affecting input and tests prove deterministic equivalence.
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-022
+    category: backpressure
+    statement: Backpressure MUST propagate consumer capacity upstream so a faster producer slows to the sustainable rate of the bounded downstream system.
+    enforcement: REQUIRED
+  - id: FF-BUILD-023
+    category: backpressure
+    statement: Every queue, channel, buffer, retry set, fragment window, event sink, subprocess pipe, and pending-work collection MUST have explicit item and byte bounds where size varies.
+    enforcement: REQUIRED
+  - id: FF-BUILD-024
+    category: backpressure
+    statement: Unbounded buffering is forbidden in production paths.
+    enforcement: REQUIRED
+  - id: FF-BUILD-025
+    category: backpressure
+    statement: Silent dropping is forbidden for required data; lossy diagnostic data requires an explicit priority, drop policy, counter, and operator-visible signal.
+    enforcement: REQUIRED
+  - id: FF-BUILD-026
+    category: backpressure
+    statement: Admission MUST account atomically for coupled CPU, memory, network, disk, subprocess, and per-host resources rather than relying on unrelated semaphores.
+    enforcement: REQUIRED
+  - id: FF-BUILD-027
+    category: backpressure
+    statement: Saturation tests MUST prove bounded memory, bounded queues, cancellation progress, fairness policy, and graceful throughput degradation.
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-028
+    category: halting_problem
+    statement: The Halting Problem proves that no general algorithm can decide whether every arbitrary program eventually terminates or runs forever.
+    enforcement: DEFINITION
+  - id: FF-BUILD-029
+    category: halting_problem
+    statement: No design, AI tool, validator, static analysis, sandbox, or test suite may be described as guaranteeing detection of all infinite loops, all bugs, or perfectly correct arbitrary code.
+    enforcement: REQUIRED
+  - id: FF-BUILD-030
+    category: halting_problem
+    statement: Treat termination as a bounded operational contract using deadlines, budgets, cancellation, leases, heartbeats, progress detection, process supervision, and operator-visible uncertainty.
+    enforcement: REQUIRED
+  - id: FF-BUILD-031
+    category: halting_problem
+    statement: Every external process, script engine, plugin, parser, network operation, retry loop, live stream, and background task MUST define a timeout or an explicitly governed indefinite-mode policy.
+    enforcement: REQUIRED
+  - id: FF-BUILD-032
+    category: halting_problem
+    statement: Timeouts MUST be classified as policy decisions or incomplete evidence, not proof that the underlying computation could never finish.
+    enforcement: REQUIRED
+  - id: FF-BUILD-033
+    category: halting_problem
+    statement: Liveness claims MUST identify their finite state model, assumptions, fairness conditions, and residual uncertainty.
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-034
+    category: integration
+    statement: Work-packet acceptance criteria MUST identify which invariants, pure-core boundaries, backpressure paths, and termination controls are added, changed, or proven.
+    enforcement: REQUIRED
+  - id: FF-BUILD-035
+    category: integration
+    statement: Medium- and high-risk validation MUST attack invariant violations, hidden effects, consumer stalls, cancellation races, hung work, and false completion claims.
+    enforcement: REQUIRED
+

@@ -1,0 +1,128 @@
+schema_id: ff.project_codex@1
+file_id: FF-GOV-CODEX-001
+updated_at: "2026-07-18"
+authority: canonical_project_codex
+required_reads:
+  - START_HERE.yaml
+  - .GOV/topology.yaml
+  - .GOV/rules/build-rules.yaml
+  - .GOV/taskboard/taskboard.yaml
+rules:
+  - id: FF-CODEX-001
+    category: authority
+    statement: Read START_HERE.yaml before selecting or changing project work.
+  - id: FF-CODEX-002
+    category: authority
+    statement: Read .GOV/topology.yaml before making path, ownership, dependency, workflow, or architecture claims.
+  - id: FF-CODEX-003
+    category: authority
+    statement: Read .GOV/rules/build-rules.yaml before designing, implementing, reviewing, or validating product behavior.
+  - id: FF-CODEX-004
+    category: authority
+    statement: Treat .GOV/spec/ferric_forager_technical_design_v0.2.0.md as the current product-design source and use .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json for unresolved readiness gates.
+  - id: FF-CODEX-005
+    category: authority
+    statement: Treat .GOV/taskboard/taskboard.yaml as the sole canonical project-level work-packet index and state surface.
+  - id: FF-CODEX-006
+    category: authority
+    statement: Treat each .GOV/work_packets/<WP_ID>/packet.json as authoritative for that work packet's scope, lifecycle, acceptance, and evidence.
+  - id: FF-CODEX-007
+    category: product_direction
+    statement: Build Ferric Forager product code fully in Rust.
+  - id: FF-CODEX-008
+    category: product_direction
+    statement: Do not add a production Python runtime, Python fallback, or production yt-dlp invocation.
+  - id: FF-CODEX-009
+    category: product_direction
+    statement: Use FFmpeg and ffprobe as required supervised external-process dependencies.
+  - id: FF-CODEX-010
+    category: product_direction
+    statement: Do not add another production runtime or native dependency outside Rust and FFmpeg without explicit Operator approval supported by current research and measured evidence.
+  - id: FF-CODEX-011
+    category: product_direction
+    statement: Use yt-dlp as the pinned behavioral oracle and compatibility research foundation while implementing native Ferric behavior.
+  - id: FF-CODEX-012
+    category: product_direction
+    statement: Optimize for speed only among designs that first prove equivalent work, correctness, compatibility, bounded resources, recoverability, and security.
+  - id: FF-CODEX-013
+    category: product_direction
+    statement: Preserve the expanded functionality in the current technical design and do not narrow scope silently to obtain an easier replacement claim.
+  - id: FF-CODEX-014
+    category: repository_boundary
+    statement: Keep shipped product code, product tests, product assets, build configuration, and the independent watcher under product/.
+  - id: FF-CODEX-015
+    category: repository_boundary
+    statement: Keep governance contracts, rules, topology, task state, work packets, templates, reviews, and specifications under .GOV/.
+  - id: FF-CODEX-016
+    category: repository_boundary
+    statement: Do not introduce product runtime dependencies on .GOV/; governance may inspect product artifacts, but product execution must not require governance files.
+  - id: FF-CODEX-017
+    category: repository_boundary
+    statement: Use repository-relative paths in committed artifacts and isolate unavoidable machine-local paths in ignored local configuration.
+  - id: FF-CODEX-018
+    category: repository_boundary
+    statement: Do not create new file or directory names containing spaces.
+  - id: FF-CODEX-019
+    category: work_packet
+    statement: Do not begin product implementation without an active work packet indexed in .GOV/taskboard/taskboard.yaml and backed by .GOV/work_packets/<WP_ID>/packet.json.
+  - id: FF-CODEX-020
+    category: work_packet
+    statement: Create work packets from .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json, satisfy .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml, and do not create Markdown packet or task-state projections.
+  - id: FF-CODEX-021
+    category: work_packet
+    statement: Use stable WP-FF-<number>-<name>-v<number> identifiers, keep base_wp_id stable across revisions, and never encode dates in work-packet IDs.
+  - id: FF-CODEX-022
+    category: work_packet
+    statement: Complete and link a research-backed refinement before a work packet becomes READY_FOR_DEV.
+  - id: FF-CODEX-023
+    category: work_packet
+    statement: Make every acceptance criterion executable or tie it to a named artifact and review method; qualitative completion prose is not closure proof.
+  - id: FF-CODEX-024
+    category: work_packet
+    statement: Preserve the two-step closure distinction in which validator acceptance is MERGE_PENDING and only a verified commit contained in main is VALIDATED.
+  - id: FF-CODEX-025
+    category: work_packet
+    statement: Archive superseded work packets under .GOV/archive/work_packets/<BASE_WP_ID>/ and do not delete lifecycle history.
+  - id: FF-CODEX-026
+    category: research_and_validation
+    statement: Perform current broad research before substantial product implementation and record sources, patterns, reuse choices, rejected choices, risks, mitigations, and validation plans in the work-packet refinement.
+  - id: FF-CODEX-027
+    category: research_and_validation
+    statement: For yt-dlp compatibility claims, use a pinned upstream version, generated inventory, representative corpus, and executable oracle comparison.
+  - id: FF-CODEX-028
+    category: research_and_validation
+    statement: For performance claims, compare equivalent work and process topology using a versioned benchmark manifest, distributions, and confidence bounds.
+  - id: FF-CODEX-029
+    category: research_and_validation
+    statement: Validate medium- and high-risk work adversarially with independent checks, counterfactuals, boundary probes, negative paths, findings, and residual uncertainty.
+  - id: FF-CODEX-030
+    category: research_and_validation
+    statement: Do not claim implementation readiness, parity, safety, speed, durability, or completion without the proof surface named by the active contract.
+  - id: FF-CODEX-031
+    category: research_and_validation
+    statement: Keep unresolved uncertainty explicit and do not replace missing evidence with model memory or confidence.
+  - id: FF-CODEX-032
+    category: watcher_and_diagnostics
+    statement: Maintain the independent diagnostic watcher under product/watcher/ for the entire project lifecycle.
+  - id: FF-CODEX-033
+    category: watcher_and_diagnostics
+    statement: Keep the watcher process-independent from Ferric Forager so it survives Ferric crashes, starts with Ferric, and closes only during a correct commanded shutdown.
+  - id: FF-CODEX-034
+    category: watcher_and_diagnostics
+    statement: Keep watcher responsibilities diagnostic-only; it may observe, record, health-check, and package evidence but must not become a hidden product controller or correctness dependency.
+  - id: FF-CODEX-035
+    category: watcher_and_diagnostics
+    statement: Give no-context models structured logs, state, health checks, traces, crash evidence, reproduction data, and stable identifiers through product diagnostics.
+  - id: FF-CODEX-036
+    category: authority_maintenance
+    statement: Keep AGENTS.md and CLAUDE.md as byte-identical bootstrap routers to START_HERE.yaml and .GOV/codex.yaml.
+  - id: FF-CODEX-037
+    category: authority_maintenance
+    statement: Update .GOV/topology.yaml and .GOV/id-registry.yaml in the same change whenever durable nodes, edges, authority surfaces, or governance entity classes change.
+  - id: FF-CODEX-038
+    category: authority_maintenance
+    statement: When a rule changes, preserve its ID and supersede or retire it explicitly instead of renumbering later rules.
+  - id: FF-CODEX-039
+    category: authority_maintenance
+    statement: Ask the Operator before changing the authorized dependency boundary, final product scope, or canonical authority precedence.
+

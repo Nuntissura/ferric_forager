@@ -3,7 +3,7 @@ title: "Ferric Forager — Technical Design"
 document_id: "FERRIC-FORAGER-DESIGN"
 file_id: "FF-DOC-DESIGN-001"
 file_kind: "technical-design"
-updated_at: "2026-07-18"
+updated_at: "2026-07-19"
 version: "0.3.0"
 status: "Phase 0 architecture and executable-contract charter"
 date: "2026-07-18"
@@ -22,7 +22,7 @@ supersedes_design: "0.2.0"
 license_intent: "To be selected after dependency and redistribution review"
 ---
 
-<topic id="ferric-forager-technical-design" status="phase-0-charter" version="0.3.0" wp="WP-FF-002-architecture-review-merge-v1" summary="Preservation-first Ferric Forager architecture, contracts, gates, and complete-product scope" updated_at="2026-07-18" ingestable="true">
+<topic id="ferric-forager-technical-design" status="phase-0-charter" version="0.3.0" wp="WP-FF-002-architecture-review-merge-v1" summary="Preservation-first Ferric Forager architecture, contracts, gates, and complete-product scope" updated_at="2026-07-19" ingestable="true">
 
 # Ferric Forager — Technical Design
 
@@ -672,43 +672,54 @@ Preconditions, invariants, postconditions, cancellation outcomes, and failure-pr
 
 # 9. Workspace and Module Layout
 
-All shipped code lives under `product/`. The repository begins with coarse packages that correspond to present contracts and failure boundaries; the logical modules inside those packages remain private until evidence justifies another physical crate.
+The repository has three non-overlapping roots. `.GOV/` owns governance and execution authority, `product/` owns shipped runtime code, applications, assets, the independent watcher, package-local tests, and the model manual, and `build/` owns the Cargo workspace plus shared build and test infrastructure. The repository-root `rust-toolchain.toml` is the sole rustup selector. The product begins with coarse packages that correspond to present contracts and failure boundaries; logical modules inside those packages remain private until evidence justifies another physical crate.
 
 ```text
-product/
-├── Cargo.toml
-├── Cargo.lock
-├── architecture-policy.toml
-├── tooling-policy.toml
-├── crates/
-│   ├── fforager/
-│   ├── fforager-contracts/
-│   ├── fforager-diagnostics-contract/
-│   ├── fforager-core/
-│   ├── fforager-net/
-│   ├── fforager-protocol/
-│   ├── fforager-extractors/
-│   ├── fforager-storage/
-│   ├── fforager-ffmpeg/
-│   ├── fforager-javascript/
-│   ├── fforager-plugin-host/
-│   └── fforager-testkit/
-├── apps/
-│   ├── fforager-cli/
-│   ├── fforager-launcher/
-│   └── fforager-worker/
-├── integrations/
-│   └── fforager-handshake-adapter/
-├── watcher/
-├── tools/
-│   └── fforager-xtask/
-├── fixtures/
-├── integration-tests/
-├── fuzz/
-└── benches/
+.
+├── rust-toolchain.toml
+├── .GOV/
+│   └── ... governance, packets, rules, registries, and evidence
+├── product/
+│   ├── MODEL_MANUAL.md
+│   ├── crates/
+│   │   ├── fforager/
+│   │   ├── fforager-contracts/
+│   │   ├── fforager-diagnostics-contract/
+│   │   ├── fforager-core/
+│   │   ├── fforager-net/
+│   │   ├── fforager-protocol/
+│   │   ├── fforager-extractors/
+│   │   ├── fforager-storage/
+│   │   ├── fforager-ffmpeg/
+│   │   ├── fforager-javascript/
+│   │   └── fforager-plugin-host/
+│   ├── apps/
+│   │   ├── fforager-cli/
+│   │   ├── fforager-launcher/
+│   │   └── fforager-worker/
+│   ├── integrations/
+│   │   └── fforager-handshake-adapter/
+│   ├── assets/
+│   └── watcher/
+└── build/
+    ├── Cargo.toml
+    ├── Cargo.lock
+    ├── architecture-policy.toml
+    ├── tooling-policy.toml
+    ├── rule-to-proof.toml
+    ├── crates/
+    │   └── fforager-testkit/
+    ├── tools/
+    │   └── fforager-xtask/
+    ├── fixtures/
+    ├── integration-tests/
+    ├── fuzz/
+    ├── benches/
+    ├── reports/
+    └── target/
 ```
 
-The names above are the accepted initial physical topology. Extractor families, configuration, events, selectors, templates, collections, live behavior, sinks, archive, deduplication, and scheduling begin as modules within their owning coarse package.
+The names above are the accepted initial physical topology. Package-local unit, integration, documentation, and compile-time tests remain inside the owning package under `product/`; reusable test support, shared fixtures, cross-package integration harnesses, fuzz targets, benchmarks, reports, and Cargo outputs live under `build/`. Extractor families, configuration, events, selectors, templates, collections, live behavior, sinks, archive, deduplication, and scheduling begin as modules within their owning coarse package.
 
 ## 9.1 Crate-boundary rules
 
@@ -723,15 +734,15 @@ The names above are the accepted initial physical topology. Extractor families, 
 - `fforager-ffmpeg`, `fforager-javascript`, and `fforager-plugin-host` own their respective process/security boundaries.
 - CLI, launcher, worker, library facade, and Handshake adapter are composition roots over the same engine; no product behavior is implemented twice. The launcher owns worker/watcher sibling lifecycle, while embedded hosts either provide an equivalent separate watcher launch path or explicitly report diagnostic degradation.
 - `fforager-handshake-adapter` depends on the `fforager` facade and Handshake-facing contracts; no Ferric package depends on it.
-- `fforager-testkit` may be a dev-dependency of shipped packages but cannot appear in their normal/build graph or shipped artifacts.
+- `build/crates/fforager-testkit` may be a dev-dependency of shipped packages but cannot appear in their normal/build graph or shipped artifacts.
 - `product/watcher/` is a separate binary/package and, among Ferric workspace packages, depends only on the diagnostic contract plus watcher-local adapters; third-party crates follow normal dependency policy.
-- `fforager-xtask` is build/test tooling, never shipped product behavior.
-- Ferric Forager runtime code never reads `.GOV/`.
+- `build/tools/fforager-xtask` is build/test tooling, never shipped product behavior.
+- Ferric Forager runtime code never reads `.GOV/` or `build/` and never requires either root at runtime.
 - cycles are forbidden.
 
 ## 9.2 Evidence-triggered split rules
 
-A new physical crate is accepted only when at least one current trigger is recorded in `product/architecture-policy.toml`, cites a pre-existing accepted authority/invariant/compatibility ID, and proves a private module cannot enforce it:
+A new physical crate is accepted only when at least one current trigger is recorded in `build/architecture-policy.toml`, cites a pre-existing accepted authority/invariant/compatibility ID, and proves a private module cannot enforce it:
 
 - security or process boundary;
 - independent public/versioned contract;
@@ -745,15 +756,15 @@ Crate count, symmetry, anticipated team structure, and a possible future impleme
 
 ## 9.3 Mechanically enforced dependency direction
 
-`product/architecture-policy.toml` is the machine-readable declaration of workspace members, layer, allowed direct edges, forbidden edges, production dependency constraints, unsafe-code references, and split rationale. It cannot authorize its own exception: every exception cites a stable decision ID present in the separate canonical allowlist in `.GOV/rules/build-rules.yaml`, and the build fails if the reference is absent. `product/tooling-policy.toml` pins each external validator by tool ID, exact version/source/checksum or toolchain/Cargo.lock identity, supported hosts, and invocation. Shipped runtime code never reads `.GOV/`; governed build tooling receives the active packet and exception allowlist explicitly.
+`build/architecture-policy.toml` is the machine-readable declaration of workspace members, layer, allowed direct edges, forbidden edges, production dependency constraints, unsafe-code references, and split rationale. It cannot authorize its own exception: every exception cites a stable decision ID present in the separate canonical allowlist in `.GOV/rules/build-rules.yaml`, and the build fails if the reference is absent. `build/tooling-policy.toml` pins each external validator by tool ID, exact version/source/checksum or toolchain/Cargo.lock identity, supported hosts, and invocation. The sole rustup selector is the repository-root `rust-toolchain.toml`; selectors under `.GOV/`, `product/`, or `build/` are forbidden. Shipped runtime code never reads `.GOV/` or `build/`; governed build tooling receives governance inputs explicitly.
 
 The canonical architecture command is run from the repository root:
 
 ```bash
-cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- architecture-check
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check
 ```
 
-It separates proof classes. `architecture-check` uses Cargo metadata for normal/build/dev, target, optional, and transitive graph facts; source and build-script scans cover `.GOV` runtime reads, process invocation, proc macros, FFI, downloaded/prebuilt binaries, and undeclared native compilation; and the rule-ID-to-validator/fixture map fails closed when a REQUIRED architecture rule has no assigned proof. `verify-pr` or a triggered deep gate runs clean artifact smoke tests outside the repository with `.GOV` absent. Release artifact inspection covers dynamic linkage/provenance; runtime fault tests cover behavioral boundaries such as watcher independence. `Cargo links` is evidence but never the only native-dependency detector.
+It separates proof classes. In Phase 0, `architecture-check` uses Cargo metadata for normal/build/dev, target, optional, and transitive graph facts; conservatively scans product Rust source for forbidden `.GOV/` or `build/` runtime reads; inventories the exact transitive custom-build and proc-macro packages; rejects undeclared Cargo `links`; and fails closed when a REQUIRED architecture rule has no exact assigned proof/validator/fixture contract. Process-invocation, build-script source, FFI, downloaded/prebuilt binary, undeclared native-compilation, clean-artifact, and runtime-fault proof activate with the first shipped or corresponding risk-bearing package and MUST remain explicit `NOT_IMPLEMENTED` or `NOT_APPLICABLE` before their trigger, never PASS. `verify-pr` or a triggered deep gate runs clean artifact smoke tests outside the repository with `.GOV/` and `build/` absent. Release artifact inspection covers dynamic linkage/provenance; runtime fault tests cover behavioral boundaries such as watcher independence. `Cargo links` is evidence but never the only native-dependency detector.
 
 Graph/source/build/packaging prohibitions have proof-class-appropriate negative fixtures; behavioral prohibitions have fault tests. Module privacy is preferred over a new crate when a private module enforces the required boundary.
 
@@ -2419,18 +2430,18 @@ Windows, Linux, and macOS tests cover:
 
 ## 26.8 Mandatory build and architecture gates
 
-The canonical built-in bootstrap invocation from the repository root is `cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- <gate>`. A `.cargo/config.toml` alias may be convenient but is never proof authority. Every dependency-resolving Cargo invocation uses the explicit manifest and `--locked`; non-resolving subcommands use the explicit manifest where supported. `verify-env` checks `product/tooling-policy.toml` for exact tool version/source/checksum or toolchain/Cargo.lock identity, host support, and invocation, emits those identities in the report, and never auto-installs tools.
+The canonical built-in bootstrap invocation from the repository root is `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- <gate>`. A `.cargo/config.toml` alias may be convenient but is never proof authority. Every dependency-resolving Cargo invocation uses the explicit manifest and `--locked`; non-resolving subcommands use the explicit manifest where supported. The repository-root `rust-toolchain.toml` is the sole rustup selector, so the same pinned toolchain is selected regardless of whether Cargo operates on a `product/` member or the `build/` virtual workspace. `verify-env` checks `build/tooling-policy.toml` for exact tool version/source/checksum or toolchain/Cargo.lock identity, host support, and invocation, emits those identities in the report, and never auto-installs tools.
 
-`cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard` runs, at minimum:
+`cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard` runs, at minimum:
 
-1. `cargo fmt --manifest-path product/Cargo.toml --all -- --check`;
+1. `cargo fmt --manifest-path build/Cargo.toml --all -- --check`;
 2. workspace check for all targets and declared feature profiles;
 3. Clippy for workspace/all targets with warnings denied on the pinned toolchain;
 4. workspace tests plus doctests;
 5. rustdoc with warnings denied for public contract surfaces;
 6. the architecture command over explicitly manifested locked Cargo metadata plus source/build-script policy and the rule-to-proof map;
 7. dependency advisory, ban, license, and source policy;
-8. clean artifact smoke tests outside the repository with `.GOV` absent;
+8. clean artifact smoke tests outside the repository with `.GOV/` and `build/` absent;
 9. when the watcher package exists, watcher schema, replay, current/current pairing, and governed lifecycle tests.
 
 Scheduled or risk-triggered gates add feature-combination checks, unused-dependency analysis, Miri for approved unsafe/low-level crates, Loom/model tests for concurrency state machines, mutation tests for critical transition logic, fuzzing, duplicate-dependency reporting, binary dependency provenance, cross-platform packaging, and fault injection. Tool limitations remain explicit: these checks provide evidence, not proof that arbitrary code is bug-free.
@@ -2559,7 +2570,7 @@ No phase is considered complete without tests, benchmarks, documentation, and a 
 
 ## Phase 0 Bootstrap — Executable gate skeleton
 
-Before any compiled risk spike, atomically create the minimal `product/Cargo.toml`, `Cargo.lock`, pinned toolchain, `fforager-xtask`, `architecture-policy.toml`, `tooling-policy.toml`, rule-to-proof map, negative fixtures, and CI invocation. The bootstrap architecture and applicable PR gates must pass before any shipped product crate is added; watcher validation activates when the Phase 1 watcher package appears. Prototype-only packages are policy-marked non-shipped. A Phase 0 model manual stub explains repository-root commands, current inputs/outputs, safety constraints, unimplemented gates, and recovery; it becomes the runnable product manual as real commands appear.
+Before any compiled risk spike, atomically create the repository-root `rust-toolchain.toml` as the sole toolchain selector and the minimal `build/Cargo.toml`, `build/Cargo.lock`, `build/tools/fforager-xtask`, `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, shared negative fixtures, reports path, and CI invocation. The bootstrap architecture and applicable PR gates must pass before any shipped product crate is added; watcher validation activates when the Phase 1 watcher package appears. Prototype-only packages are policy-marked non-shipped under `build/`. `product/MODEL_MANUAL.md` explains repository-root commands, current inputs/outputs, safety constraints, unimplemented gates, and recovery; it becomes the runnable product manual as real commands appear.
 
 ## Phase 0A — Compatibility inventory and executable oracle
 
@@ -3393,7 +3404,7 @@ The peer-review corpus did not review the independent watcher. Sections 25.6-25.
 
 ## F.1 Machine-readable product policy
 
-`product/architecture-policy.toml` is created with the Phase 0 bootstrap Cargo workspace and contains:
+`build/architecture-policy.toml` is created with the Phase 0 bootstrap Cargo workspace and contains:
 
 - schema/version and accepted design decision IDs;
 - every workspace member, layer, shipped/test-only status, and split trigger;
@@ -3404,18 +3415,18 @@ The peer-review corpus did not review the independent watcher. Sections 25.6-25.
 - optional feature owner, supported combinations, and removal condition;
 - architecture/lint exceptions with stable IDs, reasons, scope, expiry/review trigger, and verification.
 
-The policy is product build configuration, not governance runtime input. It lives under `product/`, is consumed only by build/test tooling, and ships no dependency on `.GOV/`. It cannot approve its own exceptions: every exception references a stable decision in the separately maintained canonical allowlist in `.GOV/rules/build-rules.yaml`.
+The policy is build/test configuration, not product runtime input or governance authority. It lives under `build/`, is consumed only by build/test tooling, and cannot become a runtime dependency of shipped code. Shipped runtime behavior must remain operable with both `.GOV/` and `build/` absent. The policy cannot approve its own exceptions: every exception references a stable decision in the separately maintained canonical allowlist in `.GOV/rules/build-rules.yaml`.
 
-`product/tooling-policy.toml` is the canonical external-validator inventory. Each row records tool ID, exact version, source and checksum or toolchain/Cargo.lock identity, supported hosts, invocation, and owning gate. `verify-env` fails before validation if a required tool is missing or mismatched and records the resolved inventory without installing or updating anything.
+`build/tooling-policy.toml` is the canonical external-validator inventory. Each row records tool ID, exact version, source and checksum or toolchain/Cargo.lock identity, supported hosts, invocation, and owning gate. The repository-root `rust-toolchain.toml` is the only toolchain selector; `verify-env` fails before validation if a required tool is missing or mismatched and records the resolved inventory without installing or updating anything.
 
 ## F.2 Canonical validation surfaces
 
 | Gate | Required result |
 |---|---|
-| `cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- architecture-check` | Graph, source/build-script policy, rule-to-proof map, and assigned negative fixtures pass without overclaiming runtime or artifact proof. |
-| `cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard` | Tool preflight, active change evidence, format, compile, selected feature profiles, Clippy, tests/doctests, docs, architecture, dependency policy, clean-artifact smoke, and phase-applicable watcher gates pass. |
-| `cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard` | Deterministically triggered model, fuzz, mutation, unsafe, feature-combination, fault, replay, benchmark, cross-version watcher, and packaging gates pass. |
-| `cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-release` | Hashed mandatory per-target CI reports for one source/lock/toolchain/artifact manifest aggregate without missing-platform skips. |
+| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check` | Graph, source/build-script policy, three-root ownership, sole toolchain selector, rule-to-proof map, and assigned negative fixtures pass without overclaiming runtime or artifact proof. |
+| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard` | Tool preflight, active change evidence, format, compile, selected feature profiles, Clippy, tests/doctests, docs, architecture, dependency policy, clean-artifact smoke, and phase-applicable watcher gates pass. |
+| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard` | Deterministically triggered model, fuzz, mutation, unsafe, feature-combination, fault, replay, benchmark, cross-version watcher, and packaging gates pass. |
+| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-release` | Hashed mandatory per-target CI reports for one source/lock/toolchain/artifact manifest aggregate without missing-platform skips. |
 
 Each wrapper emits one versioned machine-readable report that records exact commands, exit states, inputs, trigger IDs, skipped gates with authority, and artifacts. A triggered release row cannot be skipped into PASS. Multi-platform release verification aggregates signed/hashed per-target reports tied to the same source, lockfile, toolchain, and artifact manifest; a local deep run may say `NOT_RUN`, but only the complete aggregate can pass release. A wrapper may orchestrate established tools, but it cannot reinterpret a failing tool as success.
 

@@ -3,7 +3,7 @@
   "file_id": "WP-FF-003-executable-gate-bootstrap-v1-REFINEMENT-001",
   "wp_id": "WP-FF-003-executable-gate-bootstrap-v1",
   "updated_at_utc": "2026-07-18T21:12:33Z",
-  "operator_request": "Activate WP-FF-003 and Phase 0, create all later Phase 0 packets as detailed documentation-linked stubs first, commit and push that governance state, and only then begin implementing the executable-gate bootstrap; sub-agent assistance is authorized with primary-agent proof review.",
+  "operator_request": "Activate WP-FF-003 and Phase 0, create and remotely checkpoint all later Phase 0 packets as detailed documentation-linked stubs first, then create a clean deterministic third sibling folder for Cargo builds and tests and begin implementing; sub-agent assistance is authorized with primary-agent proof review.",
   "spec_anchors": [
     {"path": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#9-workspace-and-module-layout", "scope": "accepted physical topology, xtask location, dependency direction, policy ownership, and architecture-check proof classes"},
     {"path": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#268-mandatory-build-and-architecture-gates", "scope": "canonical commands, applicable PR gate, reports, and tool limitations"},
@@ -23,7 +23,7 @@
     ],
     "change": [
       "Turn the currently unimplemented architecture and applicable PR gates into executable commands",
-      "Create the minimal locked Cargo and xtask substrate",
+      "Create the minimal locked build/ Cargo and xtask substrate plus the sole root rust-toolchain selector",
       "Create machine-readable policy, proof mapping, reports, and negative fixtures",
       "Create a no-context Phase 0 operating manual"
     ],
@@ -35,7 +35,9 @@
     ]
   },
   "assumptions": [
-    "The first compiled workspace member is non-shipped fforager-xtask under product/tools/fforager-xtask.",
+    "The first compiled workspace member is non-shipped fforager-xtask under build/tools/fforager-xtask.",
+    "The repository has three owned roots: .GOV/ governance, product/ shipped runtime code/assets and product-local tests, and build/ Cargo workspace/shared test infrastructure.",
+    "The sole root rust-toolchain.toml is a repository bootstrap selector rather than a fourth code/config root.",
     "The bootstrap can use Rust std plus pinned built-in Cargo toolchain components unless research proves a small non-runtime development dependency is necessary and policy-compliant.",
     "Future gates extend a stable report envelope but cannot reinterpret a failed or unimplemented check as PASS.",
     "The governance checkpoint containing packet activation and detailed stubs must be remotely verified before product files are created."
@@ -80,9 +82,9 @@
       "Running cargo-audit and cargo-deny as duplicate bootstrap advisory gates.",
       "Running clean-artifact smoke inside the repository where ambient governance files could mask a runtime dependency."
     ],
-    "selected_approach": "After resolving the root toolchain authority conflict, create a resolver-3 virtual workspace with only non-shipped fforager-xtask; pin Rust 1.97.1 minimal plus rustfmt and Clippy; use Cargo metadata and compiler JSON through direct argument vectors; default-deny undeclared members, edges, rules, fixtures, tools, exceptions, and report triggers; use exact diagnostic-coded fixtures; emit collision-safe atomic versioned JSON reports; make zero shipped artifacts explicit NOT_APPLICABLE; and reserve cargo-deny 0.20.2 as an exact-pinned dependency-policy tool whose installation is CI/operator provisioning rather than xtask behavior.",
+    "selected_approach": "Create a resolver-3 virtual workspace at build/Cargo.toml with only non-shipped build/tools/fforager-xtask; keep shipped code and product-local tests under product/; keep shared fixtures, cross-package test harnesses, fuzzing, benchmarks, reports, and target output under build/; pin Rust 1.97.1 minimal plus rustfmt and Clippy through the sole root rust-toolchain.toml; use Cargo metadata and compiler JSON through direct argument vectors; default-deny undeclared members, wrong-root files, edges, rules, fixtures, tools, exceptions, and report triggers; use exact diagnostic-coded fixtures; emit collision-safe atomic versioned JSON reports; make zero shipped artifacts explicit NOT_APPLICABLE; and pin dependency-policy tooling without auto-installing it.",
     "risks": [
-      "The accepted repository-root command and the rule placing build configuration under product conflict with rustup's actual toolchain-file discovery behavior.",
+      "Wrong-root build/test files or duplicate toolchain selectors can recreate ownership drift and make models run inconsistent gates.",
       "Optional, target, build, dev, or renamed edges can be omitted by a resolved-graph-only checker.",
       "Machine-local absolute paths can make reports non-portable or nondeterministic.",
       "Build scripts, proc macros, downloaded/prebuilt artifacts, and native links can evade metadata-only validation.",
@@ -92,7 +94,7 @@
       "A clean-artifact check can falsely pass if the test retains repository ancestry or silently treats zero shipped artifacts as success."
     ],
     "mitigations": [
-      "Obtain an Operator decision between a root rust-toolchain.toml exception and changing the canonical invocation/authority; do not silently weaken the pin.",
+      "Apply the Operator-selected three-root split, keep one root rust-toolchain.toml selector, validate exact path ownership, and reject duplicate selectors.",
       "Inspect declared and resolved Cargo dependency facts and add exact fixtures for every dependency kind and target condition.",
       "Normalize all reported paths repository-relative and test Windows and Linux path behavior.",
       "Default-deny build/proc-macro/native behavior, combine policy/source/build-JSON/artifact checks, and report residual proof limits.",
@@ -111,10 +113,18 @@
       "Repeat architecture and PR gates on Windows and Linux before treating cross-platform path/process behavior as proven.",
       "Independently mutate members, every edge class, build scripts, proc macros, unsafe policy, .GOV runtime reads, exception references, and report triggers and confirm fail-closed behavior."
     ],
-    "authority_decision_required": {
-      "conflict": "The canonical commands run from repository_root, but FF-CODEX-014 places build configuration under product/. rustup searches the current directory and ancestors for rust-toolchain.toml and does not follow --manifest-path into product/.",
-      "recommended_resolution": "Allow one root rust-toolchain.toml as a repository bootstrap selector while retaining product/rust-toolchain.toml as the product build configuration source, or explicitly move the single canonical file to the root and update the affected authority paths.",
-      "rejected_fallback": "Do not compile xtask with an ambient toolchain and only detect the mismatch after startup; that does not satisfy a pinned executable bootstrap."
+    "authority_decision": {
+      "status": "RESOLVED_BY_OPERATOR",
+      "decision": "Use .GOV/ for governance, product/ for shipped runtime code/assets and product-local tests, build/ for Cargo workspace/shared build-test infrastructure, and one root rust-toolchain.toml selector.",
+      "basis": "Cargo supports explicitly listed sibling workspace members through package.workspace, shares the workspace lockfile and target directory under build/, and rustup requires the selector in repository-root ancestry for canonical root commands.",
+      "rejected_fallbacks": [
+        "Product-only Cargo workspace with build/ used merely as target output",
+        "Separate product and build workspaces with two lockfiles and policy graphs",
+        "Root Cargo.toml",
+        "Duplicate toolchain files",
+        "cargo +version duplicated across every command",
+        "Symlink or junction based ownership"
+      ]
     }
   },
   "red_team": {
@@ -124,7 +134,8 @@
       "A fixture failing before it reaches the intended validator",
       "A validator checking Cargo metadata but overclaiming runtime, package, or artifact behavior",
       "verify-pr converting NOT_IMPLEMENTED, NOT_RUN, or skipped checks into PASS",
-      "Product or clean-artifact execution reading .GOV",
+      "Product or clean-artifact execution reading .GOV or build/",
+      "Cargo/test infrastructure placed under product/ or governance placed under build/",
       "Toolchain and external-tool drift",
       "Architecture policy self-authorizing exceptions"
     ],
@@ -134,7 +145,8 @@
       "Mutation fixtures with exact failure identifiers",
       "Explicit proof-class and residual-limitation reporting",
       "Aggregate PASS only when every required applicable child check passes",
-      "Clean copy verification with .GOV absent",
+      "Three-root placement checks and duplicate-selector rejection",
+      "Clean copy verification with .GOV and build/ absent from shipped runtime ancestry",
       "Pinned toolchain and exact tool preflight without auto-install",
       "Separate canonical exception allowlist references"
     ]
@@ -150,9 +162,10 @@
     "WP-FF-003-executable-gate-bootstrap-v1-AC-008"
   ],
   "execution_decomposition": [
-    "Commit and push packet activation plus the detailed Phase 0 stub queue",
+    "Use the verified remote packet/stub checkpoint",
     "Complete current research and select the smallest field-aligned bootstrap design",
-    "Create the locked non-shipped Cargo/xtask substrate and policies",
+    "Update authority, topology, design, registry, and stubs for the Operator-selected three-root layout",
+    "Create the root toolchain selector and locked non-shipped build/ Cargo/xtask substrate and policies",
     "Implement architecture-check, exact negative fixtures, and versioned reports",
     "Implement bootstrap-applicable verify-pr and clean-artifact smoke",
     "Write the no-context model manual stub",

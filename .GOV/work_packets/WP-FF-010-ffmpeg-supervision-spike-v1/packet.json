@@ -88,17 +88,21 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json",
-      "product/Cargo.toml",
-      "product/Cargo.lock",
-      "product/architecture-policy.toml",
-      "product/tooling-policy.toml",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/tooling-policy.toml",
+      "build/rule-to-proof.toml",
       "product/crates/fforager-contracts/",
       "product/crates/fforager-core/",
       "product/crates/fforager-ffmpeg/",
-      "product/crates/fforager-testkit/",
-      "product/tools/fforager-xtask/",
-      "product/fixtures/",
-      "product/integration-tests/"
+      "build/crates/fforager-testkit/",
+      "build/tools/fforager-xtask/",
+      "build/fixtures/",
+      "build/integration-tests/",
+      "build/reports/",
+      "build/target/",
+      "product/MODEL_MANUAL.md"
     ],
     "dependencies": [
       "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
@@ -189,6 +193,17 @@
     ]
   },
   "extensions": {
+    "repository_layout": {
+      "governance_root": ".GOV/",
+      "product_root": "product/",
+      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "build_root": "build/",
+      "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
+      "toolchain_selector": "rust-toolchain.toml",
+      "canonical_manifest": "build/Cargo.toml",
+      "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
+      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+    },
     "stub_contract": {
       "implementation_authorized": false,
       "promotion_requirements": [
@@ -254,9 +269,9 @@
     ],
     "verification_needs": {
       "required_commands_at_execution": [
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- architecture-check",
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard"
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard"
       ],
       "required_proof_classes": [
         "Contract schemas and typed plan fixtures",

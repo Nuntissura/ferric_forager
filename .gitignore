@@ -1,5 +1,7 @@
 /target/
-/product/target/
+/build/target/
+/build/reports/*
+!/build/reports/.gitkeep
 /.idea/
 /.vscode/
 *.swp
@@ -17,4 +19,3 @@
 /.GOV/logs/
 /product/watcher/runtime/
 /product/watcher/crash-dumps/
-

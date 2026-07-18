@@ -90,10 +90,11 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-011-equivalent-work-vertical-slice-v1/packet.json",
-      "product/Cargo.toml",
-      "product/Cargo.lock",
-      "product/architecture-policy.toml",
-      "product/tooling-policy.toml",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/tooling-policy.toml",
+      "build/rule-to-proof.toml",
       "product/crates/fforager/",
       "product/crates/fforager-contracts/",
       "product/crates/fforager-diagnostics-contract/",
@@ -103,15 +104,18 @@
       "product/crates/fforager-storage/",
       "product/crates/fforager-ffmpeg/",
       "product/crates/fforager-javascript/",
-      "product/crates/fforager-testkit/",
+      "build/crates/fforager-testkit/",
       "product/apps/fforager-cli/",
       "product/apps/fforager-launcher/",
       "product/apps/fforager-worker/",
       "product/watcher/",
-      "product/tools/fforager-xtask/",
-      "product/fixtures/",
-      "product/integration-tests/",
-      "product/benches/"
+      "build/tools/fforager-xtask/",
+      "build/fixtures/",
+      "build/integration-tests/",
+      "build/benches/",
+      "build/reports/",
+      "build/target/",
+      "product/MODEL_MANUAL.md"
     ],
     "dependencies": [
       "WP-FF-003 through WP-FF-010 applicable closure commits validated in main",
@@ -154,6 +158,17 @@
     "not_proven": ["Any end-to-end product behavior", "Direct HTTP or HLS equivalence", "Crash-safe commit/archive", "Watcher integration", "Equivalent-work performance", "Broad or release readiness"]
   },
   "extensions": {
+    "repository_layout": {
+      "governance_root": ".GOV/",
+      "product_root": "product/",
+      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "build_root": "build/",
+      "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
+      "toolchain_selector": "rust-toolchain.toml",
+      "canonical_manifest": "build/Cargo.toml",
+      "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
+      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+    },
     "stub_contract": {
       "implementation_authorized": false,
       "promotion_requirements": [
@@ -206,10 +221,10 @@
     },
     "verification_needs": {
       "required_commands_at_execution": [
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- architecture-check",
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
-        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- watcher-check"
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- watcher-check"
       ],
       "required_proof_classes": ["oracle equality", "local/replayed network integration", "resource saturation/cancellation", "FFmpeg process fault/validation", "durable-prefix crash recovery", "watcher failure/stall independence", "equivalent-work statistics", "unequal-work negative fixtures", "independent adversarial review"],
       "closure_rule": "No performance or slice PASS unless all correctness/resource/recovery/watcher/equality gates pass on the exact same provenance manifest and every prerequisite closure is contained in main."

@@ -79,17 +79,21 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
-      "product/Cargo.toml",
-      "product/Cargo.lock",
-      "product/architecture-policy.toml",
-      "product/tooling-policy.toml",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/tooling-policy.toml",
+      "build/rule-to-proof.toml",
       "product/crates/fforager-contracts/",
       "product/crates/fforager-javascript/",
-      "product/crates/fforager-testkit/",
-      "product/tools/fforager-xtask/",
-      "product/fixtures/",
-      "product/integration-tests/",
-      "product/benches/",
+      "build/crates/fforager-testkit/",
+      "build/tools/fforager-xtask/",
+      "build/fixtures/",
+      "build/integration-tests/",
+      "build/fuzz/",
+      "build/benches/",
+      "build/reports/",
+      "build/target/",
       "product/MODEL_MANUAL.md"
     ],
     "dependencies": [
@@ -168,6 +172,17 @@
     ]
   },
   "extensions": {
+    "repository_layout": {
+      "governance_root": ".GOV/",
+      "product_root": "product/",
+      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "build_root": "build/",
+      "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
+      "toolchain_selector": "rust-toolchain.toml",
+      "canonical_manifest": "build/Cargo.toml",
+      "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
+      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+    },
     "stub_implementation_brief": {
       "base_scope": "Resolve the highest-risk Rust-only YouTube challenge dependency question through a bounded non-shipped worker and executable pinned corpus, returning proof or exact failure evidence.",
       "readiness_matrix_links": {

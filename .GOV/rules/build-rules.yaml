@@ -1,34 +1,34 @@
 schema_id: ff.build_rules@2
 file_id: FF-GOV-RULES-001
-updated_at: "2026-07-18"
+updated_at: "2026-07-19"
 authority: canonical
 verification_gates:
   - id: FF-GATE-ARCH-001
-    command: cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- architecture-check
+    command: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check
     working_directory: repository_root
     purpose: Validate declared graph policy, source/build-script policy, and the rule-to-proof map using their assigned negative fixtures without treating Cargo metadata as runtime or artifact proof.
-    required_when: product/Cargo.toml exists
-    current_status: REQUIRED_NOT_YET_IMPLEMENTED
+    required_when: build/Cargo.toml exists
+    current_status: IMPLEMENTED_PHASE_0
   - id: FF-GATE-PR-001
-    command: cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard
+    command: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard
     working_directory: repository_root
     purpose: Validate active change evidence and run formatting, compile, declared feature profiles, Clippy, tests, doctests, docs, architecture, dependency policy, clean-artifact smoke, and every watcher gate applicable to the current phase.
-    required_when: product/Cargo.toml exists
-    current_status: REQUIRED_NOT_YET_IMPLEMENTED
+    required_when: build/Cargo.toml exists
+    current_status: IMPLEMENTED_PHASE_0
   - id: FF-GATE-DEEP-001
-    command: cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard
+    command: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard
     working_directory: repository_root
     purpose: Run triggered model, fuzz, mutation, unsafe, feature-combination, fault, replay, benchmark, watcher cross-version, and packaging gates.
-    required_when: product/Cargo.toml exists and the active work packet changes a governed risk surface
-    current_status: REQUIRED_NOT_YET_IMPLEMENTED
+    required_when: the active work packet explicitly activates a deep_gate trigger after Phase 0 bootstrap
+    current_status: NOT_IMPLEMENTED_TRIGGER_GATED
   - id: FF-GATE-RELEASE-001
-    command: cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-release
+    command: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-release
     working_directory: repository_root
     purpose: Aggregate mandatory hashed per-target CI reports for the same source, lockfile, toolchain, and artifact manifest into the compatibility, update, provenance, platform, watcher, security, and equivalent-work release verdict.
     required_when: a release or replacement claim is proposed
     current_status: REQUIRED_NOT_YET_IMPLEMENTED
   - id: FF-GATE-WATCHER-001
-    command: cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- watcher-check
+    command: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- watcher-check
     working_directory: repository_root
     purpose: Validate diagnostic schema coverage, current-build replay, artifact pairing, lifecycle, crash survival, staleness, saturation, storage failure, and supported cross-version behavior.
     required_when: product/watcher/Cargo.toml exists or a Phase 1 watcher or release claim is proposed
@@ -50,10 +50,10 @@ change_evidence_contract:
   validation: FF-GATE-PR-001 MUST reject a missing field, an uninspected reuse rung, a narrowed accepted outcome, or absent post-simplification rerun evidence.
   conditional_nested_fields:
     ceilings_exceptions_and_evidence.when_deliberate_ceiling: [ceiling_id, current_ceiling, replacement_trigger, likely_upgrade_path, trigger_detection_method, linked_evidence]
-  runtime_boundary: Build tooling may read the explicitly resolved active packet; shipped Ferric and watcher binaries MUST NOT read .GOV files.
+  runtime_boundary: Build tooling may read the explicitly resolved active packet; shipped Ferric and watcher binaries MUST NOT read .GOV or build/ files at runtime.
 exception_authority:
   canonical_allowlist: []
-  rule: product/architecture-policy.toml MUST reference a stable decision ID in this separate allowlist and MUST NOT authorize native runtimes, unsafe crates, forbidden edges, build-time downloads, prebuilt binaries, FFI, or other architecture exceptions by editing product policy alone.
+  rule: build/architecture-policy.toml MUST reference a stable decision ID in this separate allowlist and MUST NOT authorize native runtimes, unsafe crates, forbidden edges, build-time downloads, prebuilt binaries, FFI, or other architecture exceptions by editing build policy alone.
 rules:
   - id: FF-BUILD-001
     category: independent_watcher
@@ -203,19 +203,19 @@ rules:
 
   - id: FF-BUILD-036
     category: architecture
-    statement: The first product change MUST atomically create the minimal locked Cargo workspace, pinned toolchain, fforager-xtask, architecture policy, rule-to-proof map, negative fixtures, and CI command and pass the bootstrap architecture gate before adding any shipped crate; later workspace growth MUST use the accepted coarse topology and inward dependency rings.
+    statement: The first product change MUST atomically create the minimal locked Cargo workspace under build/, the sole root rust-toolchain.toml selector, fforager-xtask, architecture policy, rule-to-proof map, negative fixtures, and CI command and pass the bootstrap architecture gate before adding any shipped crate; later workspace growth MUST use the accepted coarse topology and inward dependency rings.
     enforcement: REQUIRED
   - id: FF-BUILD-037
     category: architecture
-    statement: product/architecture-policy.toml MUST declare every workspace member, layer, shipped or test-only status, allowed and forbidden direct edge, split trigger, runtime/native constraint reference, unsafe decision reference, feature owner, and exception reference and MUST NOT self-authorize an exception absent the separate canonical allowlist.
+    statement: build/architecture-policy.toml MUST declare every workspace member, layer, shipped or test-only status, allowed and forbidden direct edge, split trigger, runtime/native constraint reference, unsafe decision reference, feature owner, and exception reference and MUST NOT self-authorize an exception absent the separate canonical allowlist.
     enforcement: REQUIRED
   - id: FF-BUILD-038
     category: architecture
-    statement: FF-GATE-ARCH-001 MUST derive normal, build, dev, target, and optional dependency edges from cargo metadata --manifest-path product/Cargo.toml --format-version=1 --locked and MUST fail on undeclared members, cycles, forbidden graph edges, and unapproved split triggers.
+    statement: FF-GATE-ARCH-001 MUST derive normal, build, dev, target, and optional dependency edges from cargo metadata --manifest-path build/Cargo.toml --format-version=1 --locked and MUST fail on undeclared members, cycles, forbidden graph edges, and unapproved split triggers.
     enforcement: REQUIRED
   - id: FF-BUILD-039
     category: architecture
-    statement: Frontends MUST depend inward on the engine and adapters; the engine MUST NOT depend on frontends, concrete adapters, watcher code, or .GOV/ runtime files.
+    statement: Frontends MUST depend inward on the engine and adapters; the engine MUST NOT depend on frontends, concrete adapters, watcher code, .GOV/ files, or build/ files at runtime.
     enforcement: REQUIRED
   - id: FF-BUILD-040
     category: architecture
@@ -248,7 +248,7 @@ rules:
 
   - id: FF-BUILD-047
     category: coding_discipline
-    statement: The Rust toolchain MUST be pinned, every workspace member MUST inherit the workspace lint policy, product/tooling-policy.toml MUST pin every external validation tool by exact version/source/checksum or toolchain/Cargo.lock identity and supported host/invocation, and tool updates MUST occur through a dedicated validated change.
+    statement: The Rust toolchain MUST be pinned by the sole repository-root rust-toolchain.toml selector, every workspace member MUST inherit the build/ workspace lint policy, build/tooling-policy.toml MUST pin every external validation tool by exact version/source/checksum or toolchain/Cargo.lock identity and supported host/invocation, and tool updates MUST occur through a dedicated validated change.
     enforcement: REQUIRED
   - id: FF-BUILD-048
     category: coding_discipline
@@ -367,4 +367,9 @@ rules:
   - id: FF-BUILD-076
     category: watcher_freshness
     statement: Watcher freshness requires independent inventory coverage, canonical synthetic corpora, current-binary replay, and the required cross-version/platform rows; file timestamps, self-declared registry agreement, one natural trace, touch requirements, and process existence are forbidden as sufficient evidence.
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-077
+    category: architecture
+    statement: "The repository MUST maintain three non-overlapping roots: .GOV/ owns governance; product/ owns shipped runtime code, assets, the watcher, and package-local product tests; build/ owns the Cargo workspace, lockfile, build policies, non-shipped tooling, shared test infrastructure, reports, and target output. rust-toolchain.toml at repository root is the sole rustup selector, and shipped product runtime MUST NOT require .GOV/ or build/ at runtime."
     enforcement: REQUIRED

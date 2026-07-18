@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Merge peer reviews into the executable architecture design",
     "created_at_utc": "2026-07-18T00:30:03Z",
-    "updated_at_utc": "2026-07-18T01:24:59Z"
+    "updated_at_utc": "2026-07-18T01:27:36Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -42,15 +42,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "1144bb93ba7469f844bf8a950e8e102455f3373d",
+    "main_containment_status": "MERGE_PENDING",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the validated closure, record MERGE_PENDING, merge to main, and prove containment.",
+    "next_action": "Merge the validated closure and this MERGE_PENDING record to main, then prove ancestry and finalize task state.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -136,16 +136,9 @@
       "recorded_at_utc": "2026-07-18T01:24:59Z",
       "branch": "codex/architecture-review-merge",
       "base_sha": "0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
-      "head_sha": "5bf08d33e9a22d226c8a41b45c4709fc8626c686",
+      "head_sha": "1144bb93ba7469f844bf8a950e8e102455f3373d",
       "dirty_paths": [
-        ".GOV/codex.yaml",
-        ".GOV/id-registry.yaml",
-        ".GOV/rules/build-rules.yaml",
-        ".GOV/topology.yaml",
-        ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json",
-        ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json",
-        ".GOV/spec/ferric_forager_technical_design_v0.3.0.md",
-        "START_HERE.yaml"
+        ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json"
       ],
       "checks_run": [
         "git branch --show-current: codex/architecture-review-merge",
@@ -157,12 +150,12 @@
         "authority, active-state, topic, portability, allowed-path, and adversarial contract probes pass",
         "independent final Ponytail/YAGNI audit: PASS",
         "independent final watcher/build-rule audit: PASS",
-        "independent design audit: 14 substantive findings resolved; Git tracking closes with the commit",
+        "independent design audit: all 15 findings resolved after closure commit 1144bb93ba7469f844bf8a950e8e102455f3373d tracked v0.3.0 atomically",
         "git diff --check: PASS",
         "canonical architecture command: expected failure because product/Cargo.toml does not yet exist"
       ],
       "blockers": [],
-      "next_action": "Commit the validated closure, record MERGE_PENDING, merge to main, and prove containment."
+      "next_action": "Merge the validated closure and this MERGE_PENDING record to main, then prove ancestry and finalize task state."
     }
   },
   "validation": {
@@ -178,7 +171,7 @@
       "dirty_paths_within_allowed_paths: PASS",
       "AGENTS_CLAUDE_byte_identity: PASS",
       "git_diff_check: PASS",
-      "final_design_audit: PASS_PENDING_GIT_TRACKING",
+      "final_design_audit: PASS",
       "final_watcher_build_audit: PASS",
       "final_ponytail_yagni_audit: PASS"
     ],

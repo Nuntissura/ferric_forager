@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Low-friction governance workflow",
     "created_at_utc": "2026-07-17T23:53:21Z",
-    "updated_at_utc": "2026-07-18T00:13:03Z"
+    "updated_at_utc": "2026-07-18T00:14:34Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -27,23 +27,23 @@
     "canonical_branch": "main",
     "base_sha": "40ab5e90c34870d9fa97ddd95770bb1446ead612",
     "work_branch": "codex/governance-low-friction",
-    "worktree_policy": "ACTIVE",
-    "worktree_id": "WP-FF-001-governance-workflow-v1",
+    "worktree_policy": "REMOVED",
+    "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/governance-low-friction",
-      "head_sha": "cf9d47ab8145b0ad182bc696bf81db059defbbff",
-      "verified_at_utc": "2026-07-18T00:13:03Z"
+      "head_sha": "c201babcd20ec0b9327bdfee19af0ea2657b6d1f",
+      "verified_at_utc": "2026-07-18T00:14:34Z"
     },
     "closure_commit": "cf9d47ab8145b0ad182bc696bf81db059defbbff",
-    "main_containment_status": "PENDING",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "7eda44ec9f0b37e4742e25d44afffa78e4567773"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "LOW",
     "blockers": [],
-    "next_action": "Merge codex/governance-low-friction into main and prove closure commit cf9d47ab8145b0ad182bc696bf81db059defbbff is an ancestor of main.",
+    "next_action": null,
     "supersedes": [],
     "superseded_by": null
   },
@@ -121,25 +121,21 @@
     {
       "id": "WP-FF-001-governance-workflow-v1-AC-006",
       "requirement": "Closure becomes VALIDATED only after git merge-base proves the closure commit is contained in main.",
-      "status": "PENDING",
+      "status": "PROVED",
       "evidence": [
-        "Negative probe passed: git merge-base --is-ancestor rejected a non-commit closure object with exit 128."
+        "Negative probe passed: git merge-base --is-ancestor rejected a non-commit closure object with exit 128.",
+        "git merge-base --is-ancestor cf9d47ab8145b0ad182bc696bf81db059defbbff main exited 0 after merge commit 7eda44ec9f0b37e4742e25d44afffa78e4567773."
       ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T00:13:03Z",
-      "branch": "codex/governance-low-friction",
+      "recorded_at_utc": "2026-07-18T00:14:34Z",
+      "branch": "main",
       "base_sha": "40ab5e90c34870d9fa97ddd95770bb1446ead612",
-      "head_sha": "cf9d47ab8145b0ad182bc696bf81db059defbbff",
+      "head_sha": "7eda44ec9f0b37e4742e25d44afffa78e4567773",
       "dirty_paths": [
-        "START_HERE.yaml",
-        ".GOV/codex.yaml",
-        ".GOV/id-registry.yaml",
         ".GOV/taskboard/taskboard.yaml",
-        ".GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json",
-        ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
         ".GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json"
       ],
       "checks_run": [
@@ -152,10 +148,13 @@
         "git diff --check: PASS",
         "git fsck --no-dangling: PASS",
         "git worktree list/repair/prune-preview: PASS",
-        "git push and git ls-remote: origin/codex/governance-low-friction at cf9d47ab8145b0ad182bc696bf81db059defbbff"
+        "git push and git ls-remote: origin/codex/governance-low-friction at c201babcd20ec0b9327bdfee19af0ea2657b6d1f",
+        "git merge-base --is-ancestor closure main: PASS",
+        "git merge-base --is-ancestor branch-state main: PASS",
+        "clean locked worktree unlock/remove: PASS"
       ],
       "blockers": [],
-      "next_action": "Merge codex/governance-low-friction into main and prove closure commit cf9d47ab8145b0ad182bc696bf81db059defbbff is an ancestor of main."
+      "next_action": "Commit this validated closure state and push main."
     }
   },
   "validation": {
@@ -167,9 +166,7 @@
       {"result": "git diff --check and git fsck --no-dangling passed."},
       {"result": "Branch checkpoint cf9d47ab8145b0ad182bc696bf81db059defbbff was pushed and independently resolved from origin."}
     ],
-    "not_proven": [
-      "The closure commit has not yet been merged into and verified in main."
-    ]
+    "not_proven": []
   },
   "extensions": {}
 }

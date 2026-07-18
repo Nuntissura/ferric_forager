@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: Execute WP-FF-001-governance-workflow-v1 to its acceptance surface.
-  active_wp_id: WP-FF-001-governance-workflow-v1
+  statement: Select the next product work packet from the allowed Phase 0 work.
+  active_wp_id: null
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

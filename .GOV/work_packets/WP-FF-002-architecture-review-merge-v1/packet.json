@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Merge peer reviews into the executable architecture design",
     "created_at_utc": "2026-07-18T00:30:03Z",
-    "updated_at_utc": "2026-07-18T01:27:36Z"
+    "updated_at_utc": "2026-07-18T01:28:31Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -38,19 +38,19 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/architecture-review-merge",
+      "head_sha": "4bcfcff0b7bb1acfd82d718a955af8bf02e745cd",
+      "verified_at_utc": "2026-07-18T01:28:31Z"
     },
     "closure_commit": "1144bb93ba7469f844bf8a950e8e102455f3373d",
-    "main_containment_status": "MERGE_PENDING",
-    "merged_main_commit": null
+    "main_containment_status": "VALIDATED",
+    "merged_main_commit": "442409455004e57c75c7126938585ca54c55fbf0"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Merge the validated closure and this MERGE_PENDING record to main, then prove ancestry and finalize task state.",
+    "next_action": "Closed. A new work packet may implement the Phase 0 executable-gate bootstrap defined by v0.3.0.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -133,11 +133,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T01:24:59Z",
-      "branch": "codex/architecture-review-merge",
+      "recorded_at_utc": "2026-07-18T01:28:31Z",
+      "branch": "main",
       "base_sha": "0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
-      "head_sha": "1144bb93ba7469f844bf8a950e8e102455f3373d",
+      "head_sha": "442409455004e57c75c7126938585ca54c55fbf0",
       "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
         ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json"
       ],
       "checks_run": [
@@ -152,10 +153,12 @@
         "independent final watcher/build-rule audit: PASS",
         "independent design audit: all 15 findings resolved after closure commit 1144bb93ba7469f844bf8a950e8e102455f3373d tracked v0.3.0 atomically",
         "git diff --check: PASS",
-        "canonical architecture command: expected failure because product/Cargo.toml does not yet exist"
+        "canonical architecture command: expected failure because product/Cargo.toml does not yet exist",
+        "git merge-base --is-ancestor 1144bb93ba7469f844bf8a950e8e102455f3373d main: exit 0",
+        "remote work branch 4bcfcff0b7bb1acfd82d718a955af8bf02e745cd verified"
       ],
       "blockers": [],
-      "next_action": "Merge the validated closure and this MERGE_PENDING record to main, then prove ancestry and finalize task state."
+      "next_action": "Closed. A new work packet may implement the Phase 0 executable-gate bootstrap defined by v0.3.0."
     }
   },
   "validation": {

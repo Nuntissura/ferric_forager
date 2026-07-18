@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Low-friction governance workflow",
     "created_at_utc": "2026-07-17T23:53:21Z",
-    "updated_at_utc": "2026-07-18T00:10:09Z"
+    "updated_at_utc": "2026-07-18T00:13:03Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -31,19 +31,19 @@
     "worktree_id": "WP-FF-001-governance-workflow-v1",
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/governance-low-friction",
+      "head_sha": "cf9d47ab8145b0ad182bc696bf81db059defbbff",
+      "verified_at_utc": "2026-07-18T00:13:03Z"
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "cf9d47ab8145b0ad182bc696bf81db059defbbff",
+    "main_containment_status": "PENDING",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "LOW",
     "blockers": [],
-    "next_action": "Commit and push the validated implementation, record that closure as MERGE_PENDING, then merge and prove main containment.",
+    "next_action": "Merge codex/governance-low-friction into main and prove closure commit cf9d47ab8145b0ad182bc696bf81db059defbbff is an ancestor of main.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -112,8 +112,11 @@
     {
       "id": "WP-FF-001-governance-workflow-v1-AC-005",
       "requirement": "Recovery uses a checkpoint commit on a remote-backed work branch.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PROVED",
+      "evidence": [
+        "Implementation checkpoint cf9d47ab8145b0ad182bc696bf81db059defbbff was committed on codex/governance-low-friction.",
+        "git push created origin/codex/governance-low-friction and git ls-remote returned the same SHA."
+      ]
     },
     {
       "id": "WP-FF-001-governance-workflow-v1-AC-006",
@@ -126,10 +129,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T00:10:09Z",
+      "recorded_at_utc": "2026-07-18T00:13:03Z",
       "branch": "codex/governance-low-friction",
       "base_sha": "40ab5e90c34870d9fa97ddd95770bb1446ead612",
-      "head_sha": "40ab5e90c34870d9fa97ddd95770bb1446ead612",
+      "head_sha": "cf9d47ab8145b0ad182bc696bf81db059defbbff",
       "dirty_paths": [
         "START_HERE.yaml",
         ".GOV/codex.yaml",
@@ -148,10 +151,11 @@
         "Adversarial state-drift and physical-path probes: PASS",
         "git diff --check: PASS",
         "git fsck --no-dangling: PASS",
-        "git worktree list/repair/prune-preview: PASS"
+        "git worktree list/repair/prune-preview: PASS",
+        "git push and git ls-remote: origin/codex/governance-low-friction at cf9d47ab8145b0ad182bc696bf81db059defbbff"
       ],
       "blockers": [],
-      "next_action": "Commit and push the validated implementation, record that closure as MERGE_PENDING, then merge and prove main containment."
+      "next_action": "Merge codex/governance-low-friction into main and prove closure commit cf9d47ab8145b0ad182bc696bf81db059defbbff is an ancestor of main."
     }
   },
   "validation": {
@@ -160,10 +164,10 @@
       {"result": "Rule-ID, ID-registry, taskboard/packet, topology, bootstrap-mirror, scope, and no-product-edit invariants passed."},
       {"result": "Negative probes rejected derived taskboard state, copied lifecycle state, a missing active packet, a physical worktree path, and an invalid closure object."},
       {"result": "Native Git worktree list, repair, and prune preview passed; the packet worktree remains locked."},
-      {"result": "git diff --check and git fsck --no-dangling passed."}
+      {"result": "git diff --check and git fsck --no-dangling passed."},
+      {"result": "Branch checkpoint cf9d47ab8145b0ad182bc696bf81db059defbbff was pushed and independently resolved from origin."}
     ],
     "not_proven": [
-      "The work-branch recovery commit and remote backup are pending.",
       "The closure commit has not yet been merged into and verified in main."
     ]
   },

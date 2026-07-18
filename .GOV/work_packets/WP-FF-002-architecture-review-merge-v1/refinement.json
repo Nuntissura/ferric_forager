@@ -1,0 +1,86 @@
+{
+  "schema_id": "ff.work_packet_refinement@1",
+  "file_id": "WP-FF-002-architecture-review-merge-v1-REFINEMENT-001",
+  "wp_id": "WP-FF-002-architecture-review-merge-v1",
+  "updated_at_utc": "2026-07-18T00:30:03Z",
+  "operator_request": "Create a new starting design that merges all peer reviews into the original documentation, improves the yt-dlp-derived architecture, enforces the architecture and good coding habits through build rules, keeps the independent diagnostic watcher current, and distills Ponytail critiques and YAGNI research into useful project heuristics.",
+  "spec_anchors": [
+    {"path": ".GOV/spec/ferric_forager_technical_design_v0.2.0.md", "scope": "complete source design"},
+    {"path": ".GOV/reviews/peer-review-v0.2.0/primary-synthesis.md", "scope": "complete synthesis and adjudications"},
+    {"path": ".GOV/reviews/peer-review-v0.2.0/architecture-performance-review.md", "scope": "complete lens report"},
+    {"path": ".GOV/reviews/peer-review-v0.2.0/compatibility-product-review.md", "scope": "complete lens report"},
+    {"path": ".GOV/reviews/peer-review-v0.2.0/security-reliability-review.md", "scope": "complete lens report"},
+    {"path": ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json", "scope": "all blockers, decisions, and gates"}
+  ],
+  "scope_edges": {
+    "preserve": [
+      "Complete expanded Ferric Forager feature scope",
+      "Rust-only production implementation",
+      "FFmpeg and ffprobe as supervised external processes",
+      "yt-dlp as pinned oracle and source research rather than production dependency",
+      "Independent diagnostic watcher failure domain"
+    ],
+    "change": [
+      "Resolve review findings into explicit contracts and phase gates",
+      "Replace premature fine-grained crate topology with coarse enforceable architecture",
+      "Add executable architecture and coding-quality enforcement requirements",
+      "Add watcher anti-staleness contract",
+      "Add evidence-based YAGNI/Ponytail heuristics"
+    ],
+    "non_goals": [
+      "Product implementation",
+      "Dependency-boundary exceptions",
+      "Silent narrowing for an easier parity claim"
+    ]
+  },
+  "assumptions": [
+    "The intended Ponytail project will be identified from current external evidence; ambiguity remains explicit until verified.",
+    "The new v0.3.0 file becomes the design source only after authority paths and validators are updated together.",
+    "YAGNI limits speculative mechanisms, not known compatibility scope or mandatory correctness controls."
+  ],
+  "research": {
+    "status": "IN_PROGRESS",
+    "sources": [],
+    "patterns_found": [],
+    "reuse_opportunities": [],
+    "rejected_options": [],
+    "selected_approach": null,
+    "risks": [],
+    "mitigations": [],
+    "validation_plan": []
+  },
+  "red_team": {
+    "attack_surfaces": [
+      "A review finding is summarized away instead of integrated or explicitly rejected",
+      "YAGNI is misused to delete required parity or reliability scope",
+      "Architecture rules exist only as prose and drift from code",
+      "The watcher still builds while no longer understanding current product events or failure modes",
+      "Coarse initial crates become an accidental monolith or premature fine-grained crates recreate the original topology risk",
+      "New design authority paths drift across bootstrap, Codex, topology, registry, and task state"
+    ],
+    "minimum_controls": [
+      "Machine-checkable review-finding traceability",
+      "Explicit scope-preservation and YAGNI applicability boundaries",
+      "Named executable conformance gates and exception policy",
+      "Watcher protocol handshake, coverage manifest, freshness tests, and release gate",
+      "Mechanically checked dependency directions plus evidence-based split criteria",
+      "Cross-file authority and ID invariant validation"
+    ]
+  },
+  "acceptance_ids": [
+    "WP-FF-002-architecture-review-merge-v1-AC-001",
+    "WP-FF-002-architecture-review-merge-v1-AC-002",
+    "WP-FF-002-architecture-review-merge-v1-AC-003",
+    "WP-FF-002-architecture-review-merge-v1-AC-004",
+    "WP-FF-002-architecture-review-merge-v1-AC-005",
+    "WP-FF-002-architecture-review-merge-v1-AC-006",
+    "WP-FF-002-architecture-review-merge-v1-AC-007"
+  ],
+  "execution_decomposition": [
+    "Inspect and trace the complete v0.2.0 design and all peer reviews",
+    "Research Ponytail/YAGNI and current Rust architecture/watcher enforcement practices",
+    "Author v0.3.0 by preservation-first integration",
+    "Update canonical build rules and authority routing",
+    "Run structural, traceability, parse, invariant, and adversarial checks"
+  ]
+}

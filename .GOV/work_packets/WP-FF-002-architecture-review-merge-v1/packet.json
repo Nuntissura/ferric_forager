@@ -1,0 +1,174 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-002-architecture-review-merge-v1",
+    "base_wp_id": "WP-FF-002-architecture-review-merge",
+    "version": "1",
+    "title": "Merge peer reviews into the executable architecture design",
+    "created_at_utc": "2026-07-18T00:30:03Z",
+    "updated_at_utc": "2026-07-18T00:30:03Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator requested a new project-start design file that merges all peer reviews into the original design, improves the yt-dlp-derived Rust architecture, enforces architecture and coding habits through build rules, prevents the independent diagnostic watcher from going stale, and incorporates research-backed Ponytail critiques and YAGNI principles.",
+    "recorded_at_utc": "2026-07-18T00:30:03Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.2.0.md",
+      ".GOV/reviews/peer-review-v0.2.0/primary-synthesis.md",
+      ".GOV/reviews/peer-review-v0.2.0/architecture-performance-review.md",
+      ".GOV/reviews/peer-review-v0.2.0/compatibility-product-review.md",
+      ".GOV/reviews/peer-review-v0.2.0/security-reliability-review.md",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
+    "work_branch": "codex/architecture-review-merge",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
+    },
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "IN_PROGRESS",
+    "risk": "HIGH",
+    "blockers": [],
+    "next_action": "Complete source inspection and current research, then author the v0.3.0 design and enforceable build-rule changes.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Create the next canonical Ferric Forager design by preservation-first integration of the v0.2.0 design, all peer reviews, current architecture research, Ponytail/YAGNI heuristics, executable architecture rules, and watcher anti-staleness requirements.",
+    "in_scope": [
+      "Preservation-first v0.2.0 to v0.3.0 design revision with review traceability",
+      "Coarse Rust workspace architecture and dependency-direction contracts",
+      "Executable architecture and coding-quality enforcement requirements",
+      "Independent watcher lifecycle, freshness, compatibility, and regression contracts",
+      "Current Ponytail critique and YAGNI research distilled into project heuristics",
+      "Authority routing, topology, registry, and build-rule synchronization required by the new design"
+    ],
+    "non_goals": [
+      "Production implementation",
+      "Reducing the final extractor, protocol, metadata, archive, diagnostics, or expanded-product scope",
+      "Authorizing new production runtimes or native dependencies",
+      "Claiming full implementation readiness or yt-dlp replacement parity"
+    ],
+    "allowed_paths": [
+      "START_HERE.yaml",
+      ".GOV/codex.yaml",
+      ".GOV/topology.yaml",
+      ".GOV/id-registry.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json",
+      ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json"
+    ],
+    "dependencies": [
+      "Pinned yt-dlp 2026.07.04 review evidence",
+      "Current primary-source software architecture and Rust tooling research",
+      "Git"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-001",
+      "requirement": "The v0.3.0 design preserves the complete v0.2.0 product scope and explicitly traces every primary-synthesis and lens-review finding to an accepted change, retained decision, deferred proof gate, or documented rejection.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-002",
+      "requirement": "The architecture defines coarse Rust components, allowed dependency directions, public boundary contracts, state-machine ownership, and split criteria that can be checked mechanically without freezing premature crate granularity.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-003",
+      "requirement": "Canonical build rules require executable architecture conformance, disciplined Rust coding defaults, exception handling, and CI evidence rather than prose-only compliance.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-004",
+      "requirement": "Watcher requirements prevent diagnostic staleness through versioned protocol compatibility, feature/incident coverage, freshness signals, end-to-end fixtures, lifecycle tests, and release gates while preserving process and correctness independence.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-005",
+      "requirement": "The design records current primary-source Ponytail/YAGNI research, critiques, selected heuristics, rejected interpretations, risks, mitigations, and validation implications.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-006",
+      "requirement": "START_HERE.yaml, project Codex authority, topology, ID registry, taskboard, build rules, and the new design agree on authority paths, stable IDs, and active work state.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-002-architecture-review-merge-v1-AC-007",
+      "requirement": "All changed YAML and JSON parse, Markdown topic structure and review traceability validate, rule and registry IDs remain consistent, and adversarial negative-path checks expose unresolved uncertainty without false readiness claims.",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-18T00:30:03Z",
+      "branch": "codex/architecture-review-merge",
+      "base_sha": "0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
+      "head_sha": "0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
+      "dirty_paths": [
+        ".GOV/id-registry.yaml",
+        ".GOV/taskboard/taskboard.yaml",
+        ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json",
+        ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json"
+      ],
+      "checks_run": [
+        "git branch --show-current: codex/architecture-review-merge",
+        "git rev-parse HEAD: 0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
+        "git merge-base main HEAD: 0b2fd8a4d8a01eff4c96dc820219647f6b1d72b9",
+        "git status --porcelain=v2 --branch: clean before activation",
+        "git worktree list --porcelain: one main worktree"
+      ],
+      "blockers": [],
+      "next_action": "Complete source inspection and current research, then author the v0.3.0 design and enforceable build-rule changes."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Peer-review integration completeness",
+      "Ponytail project identity and applicable critique research",
+      "Architecture and watcher rule enforceability",
+      "Full implementation readiness",
+      "yt-dlp replacement parity"
+    ]
+  },
+  "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json",
+    "delegated_research": {
+      "authorized_by_operator": true,
+      "primary_agent_proof_review_required": true
+    }
+  }
+}

@@ -13,7 +13,14 @@ namespaces:
     next_numeric_id: 3
   FF-BUILD:
     entity_kind: build_rule
-    next_numeric_id: 36
+    next_numeric_id: 77
+  FF-GATE:
+    entity_kind: validation_gate
+    next_numeric_id: 2
+    note: Compound stable suffixes are registered below.
+  FF-DOC-DESIGN:
+    entity_kind: technical_design
+    next_numeric_id: 2
   FF-NODE:
     entity_kind: topology_node
     next_numeric_id: 2
@@ -37,7 +44,7 @@ namespaces:
     next_numeric_id: 7
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 2
+    next_numeric_id: 3
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -64,8 +71,14 @@ registered_files:
     path: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
   - id: FF-GOV-WP-REQUIREMENTS-001
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
+  - id: FF-DOC-DESIGN-001
+    path: .GOV/spec/ferric_forager_technical_design_v0.3.0.md
   - id: WP-FF-001-governance-workflow-v1
     path: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
+  - id: WP-FF-002-architecture-review-merge-v1
+    path: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json
+  - id: WP-FF-002-architecture-review-merge-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
@@ -80,8 +93,8 @@ registered_rule_ranges:
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001
-    last: FF-BUILD-035
-    count: 35
+    last: FF-BUILD-076
+    count: 76
     path: .GOV/rules/build-rules.yaml
   - namespace: FF-TASKBOARD-RULE
     first: FF-TASKBOARD-RULE-001
@@ -133,3 +146,9 @@ registered_topology_ids:
   - FF-BOUNDARY-RUNTIME-DEPENDENCY-001
   - FF-BOUNDARY-WATCHER-001
   - FF-BOUNDARY-PYTHON-001
+registered_validation_gate_ids:
+  - FF-GATE-ARCH-001
+  - FF-GATE-PR-001
+  - FF-GATE-DEEP-001
+  - FF-GATE-RELEASE-001
+  - FF-GATE-WATCHER-001

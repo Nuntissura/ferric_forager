@@ -1,6 +1,6 @@
 schema_id: ff.repository_topology@1
 file_id: FF-GOV-TOPOLOGY-001
-updated_at: "2026-07-18"
+updated_at: "2026-07-19"
 project:
   id: FF-PROJ-001
   name: Ferric Forager
@@ -46,7 +46,17 @@ nodes:
     kind: product_root
     path: product/
     owner: product
-    contains: [shipped_code, product_tests, product_assets, build_configuration]
+    contains: [shipped_code, product_package_local_tests, product_assets, watcher]
+  - id: FF-NODE-BUILD-001
+    kind: build_root
+    path: build/
+    owner: build_tooling
+    contains: [cargo_workspace, lockfile, policies, non_shipped_tools, shared_test_harnesses, fixtures, fuzzing, benchmarks, reports, target_output]
+  - id: FF-NODE-TOOLCHAIN-SELECTOR-001
+    kind: rustup_selector
+    path: rust-toolchain.toml
+    owner: build_tooling
+    responsibility: sole_repository_toolchain_selector
   - id: FF-NODE-WATCHER-001
     kind: product_component
     path: product/watcher/
@@ -130,6 +140,18 @@ edges:
     from: FF-NODE-WORK-PACKETS-001
     to: FF-NODE-PRODUCT-001
     relation: scopes_and_validates
+  - id: FF-EDGE-PACKETS-GOVERN-BUILD-001
+    from: FF-NODE-WORK-PACKETS-001
+    to: FF-NODE-BUILD-001
+    relation: scopes_and_validates
+  - id: FF-EDGE-BUILD-BUILDS-PRODUCT-001
+    from: FF-NODE-BUILD-001
+    to: FF-NODE-PRODUCT-001
+    relation: builds_and_tests
+  - id: FF-EDGE-TOOLCHAIN-SELECTS-BUILD-001
+    from: FF-NODE-TOOLCHAIN-SELECTOR-001
+    to: FF-NODE-BUILD-001
+    relation: selects_toolchain
   - id: FF-EDGE-WATCHER-OBSERVES-PRODUCT-001
     from: FF-NODE-WATCHER-001
     to: FF-NODE-PRODUCT-001
@@ -144,7 +166,9 @@ edges:
     relation: supplies_readiness_gates
 boundaries:
   - id: FF-BOUNDARY-PRODUCT-GOV-001
-    statement: Product runtime code under product/ MUST NOT depend on .GOV/ at runtime.
+    statement: Product runtime code under product/ MUST NOT depend on .GOV/ or build/ at runtime.
+  - id: FF-BOUNDARY-PRODUCT-BUILD-001
+    statement: Product-local tests remain with their product package; shared and cross-package build or test infrastructure belongs under build/ and is never shipped.
   - id: FF-BOUNDARY-RUNTIME-DEPENDENCY-001
     statement: Production implementation is Rust with supervised FFmpeg and ffprobe; any other runtime or native dependency requires explicit Operator approval.
   - id: FF-BOUNDARY-WATCHER-001
@@ -162,4 +186,7 @@ entrypoints:
   work_packet_template: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
   work_packet_requirements: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
   product_root: product/
+  build_root: build/
+  cargo_workspace: build/Cargo.toml
+  rust_toolchain_selector: rust-toolchain.toml
   watcher_root: product/watcher/

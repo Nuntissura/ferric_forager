@@ -1,19 +1,19 @@
 schema_id: ff.id_registry@1
 file_id: FF-GOV-ID-REGISTRY-001
-updated_at: "2026-07-18"
+updated_at: "2026-07-19"
 namespaces:
   FF-PROJ:
     entity_kind: project
     next_numeric_id: 2
   FF-CODEX:
     entity_kind: project_rule
-    next_numeric_id: 48
+    next_numeric_id: 49
   FF-BOOT:
     entity_kind: bootstrap_rule
     next_numeric_id: 3
   FF-BUILD:
     entity_kind: build_rule
-    next_numeric_id: 77
+    next_numeric_id: 78
   FF-GATE:
     entity_kind: validation_gate
     next_numeric_id: 2
@@ -44,7 +44,7 @@ namespaces:
     next_numeric_id: 7
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 3
+    next_numeric_id: 12
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -73,12 +73,42 @@ registered_files:
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
   - id: FF-DOC-DESIGN-001
     path: .GOV/spec/ferric_forager_technical_design_v0.3.0.md
+  - id: FF-GOV-BUILD-ARCH-POLICY-001
+    path: build/architecture-policy.toml
+  - id: FF-GOV-BUILD-TOOLING-POLICY-001
+    path: build/tooling-policy.toml
+  - id: FF-GOV-BUILD-RULE-PROOF-001
+    path: build/rule-to-proof.toml
+  - id: FF-PRODUCT-MODEL-MANUAL-001
+    path: product/MODEL_MANUAL.md
   - id: WP-FF-001-governance-workflow-v1
     path: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
   - id: WP-FF-002-architecture-review-merge-v1
     path: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json
   - id: WP-FF-002-architecture-review-merge-v1-REFINEMENT-001
     path: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json
+  - id: WP-FF-003-executable-gate-bootstrap-v1
+    path: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json
+  - id: WP-FF-003-executable-gate-bootstrap-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/refinement.json
+  - id: WP-FF-003-executable-gate-bootstrap-v1-CEILING-001
+    path: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
+  - id: WP-FF-004-compatibility-inventory-corpus-v1
+    path: .GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json
+  - id: WP-FF-005-versioned-core-contracts-v1
+    path: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json
+  - id: WP-FF-006-rust-youtube-challenge-spike-v1
+    path: .GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json
+  - id: WP-FF-007-transport-fingerprint-spike-v1
+    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json
+  - id: WP-FF-008-archive-store-evidence-v1
+    path: .GOV/work_packets/WP-FF-008-archive-store-evidence-v1/packet.json
+  - id: WP-FF-009-resource-durability-models-v1
+    path: .GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json
+  - id: WP-FF-010-ffmpeg-supervision-spike-v1
+    path: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json
+  - id: WP-FF-011-equivalent-work-vertical-slice-v1
+    path: .GOV/work_packets/WP-FF-011-equivalent-work-vertical-slice-v1/packet.json
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
@@ -88,13 +118,13 @@ registered_rule_ranges:
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX
     first: FF-CODEX-001
-    last: FF-CODEX-047
-    count: 47
+    last: FF-CODEX-048
+    count: 48
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001
-    last: FF-BUILD-076
-    count: 76
+    last: FF-BUILD-077
+    count: 77
     path: .GOV/rules/build-rules.yaml
   - namespace: FF-TASKBOARD-RULE
     first: FF-TASKBOARD-RULE-001
@@ -119,6 +149,8 @@ registered_topology_ids:
   - FF-NODE-START-001
   - FF-NODE-TOPOLOGY-001
   - FF-NODE-PRODUCT-001
+  - FF-NODE-BUILD-001
+  - FF-NODE-TOOLCHAIN-SELECTOR-001
   - FF-NODE-WATCHER-001
   - FF-NODE-GOV-001
   - FF-NODE-RULES-001
@@ -139,10 +171,14 @@ registered_topology_ids:
   - FF-EDGE-TASKBOARD-INDEXES-PACKETS-001
   - FF-EDGE-REQUIREMENTS-GOVERN-PACKETS-001
   - FF-EDGE-PACKETS-GOVERN-PRODUCT-001
+  - FF-EDGE-PACKETS-GOVERN-BUILD-001
+  - FF-EDGE-BUILD-BUILDS-PRODUCT-001
+  - FF-EDGE-TOOLCHAIN-SELECTS-BUILD-001
   - FF-EDGE-WATCHER-OBSERVES-PRODUCT-001
   - FF-EDGE-SPEC-INFORMS-PACKETS-001
   - FF-EDGE-REVIEWS-GATE-PACKETS-001
   - FF-BOUNDARY-PRODUCT-GOV-001
+  - FF-BOUNDARY-PRODUCT-BUILD-001
   - FF-BOUNDARY-RUNTIME-DEPENDENCY-001
   - FF-BOUNDARY-WATCHER-001
   - FF-BOUNDARY-PYTHON-001

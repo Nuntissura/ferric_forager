@@ -1,6 +1,6 @@
 schema_id: ff.project_codex@2
 file_id: FF-GOV-CODEX-001
-updated_at: "2026-07-18"
+updated_at: "2026-07-19"
 authority: canonical_project_codex
 always_reads:
   - START_HERE.yaml
@@ -53,13 +53,15 @@ rules:
     statement: Preserve the expanded functionality in the current technical design and do not narrow scope silently to obtain an easier replacement claim.
   - id: FF-CODEX-014
     category: repository_boundary
-    statement: Keep shipped product code, product tests, product assets, build configuration, and the independent watcher under product/.
+    statement: Keep shipped product code, product assets, the independent watcher, and product-package-local unit, integration, documentation, and compile-time tests under product/.
+    revision: 2
   - id: FF-CODEX-015
     category: repository_boundary
     statement: Keep governance contracts, rules, topology, task state, work packets, templates, reviews, and specifications under .GOV/.
   - id: FF-CODEX-016
     category: repository_boundary
-    statement: Do not introduce product runtime dependencies on .GOV/; governance may inspect product artifacts, but product execution must not require governance files.
+    statement: Do not introduce product runtime dependencies on .GOV/ or build/; governance and build/test tooling may inspect product artifacts, but shipped product execution must require neither non-runtime root.
+    revision: 2
   - id: FF-CODEX-017
     category: repository_boundary
     statement: Use repository-relative paths in committed artifacts and isolate unavoidable machine-local paths in ignored local configuration.
@@ -158,4 +160,8 @@ rules:
   - id: FF-CODEX-047
     category: recovery
     statement: Do not use uncommitted changes, stashes, linked worktrees, local reflogs, generated evidence, or chat history as the sole recovery source; checkpoint commits and remote-backed branches are the canonical durable recovery path for paused or handed-off work.
+
+  - id: FF-CODEX-048
+    category: repository_boundary
+    statement: Keep the Cargo workspace manifest and lockfile, architecture/tooling/proof policies, non-shipped xtask and testkit packages, shared fixtures, cross-package test harnesses, fuzzing, benchmarks, generated reports, and Cargo target output under build/; keep rust-toolchain.toml at repository root as the sole rustup selector for canonical repository-root commands.
 

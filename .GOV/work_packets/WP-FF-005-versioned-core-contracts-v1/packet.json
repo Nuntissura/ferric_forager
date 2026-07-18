@@ -1,0 +1,310 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-005-versioned-core-contracts-v1",
+    "base_wp_id": "WP-FF-005-versioned-core-contracts",
+    "version": "1",
+    "title": "Define versioned core contracts and executable state-machine specifications",
+    "created_at_utc": "2026-07-18T21:12:21Z",
+    "updated_at_utc": "2026-07-18T21:12:21Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB.",
+    "recorded_at_utc": "2026-07-18T21:12:21Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#85-dependency-rings-and-composition-roots",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#86-owned-state-machines",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#101-canonical-serializable-source-graph",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#105-extension-fields",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#106-acquisition-and-output-sink-model",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#161-atomic-resource-vectors",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#167-saturation-and-cancellation-proof",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#232-journal-model",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#236-filesystem-capability-and-rooted-path-contract",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0b--contracts-and-state-machines",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#317-broad-feature-implementation-readiness-gates"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "work_branch": "codex/versioned-core-contracts",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "STUB",
+    "risk": "HIGH",
+    "blockers": [
+      "STUB status forbids implementation until the Operator promotes and activates this packet.",
+      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before compiled contracts or model tests are added.",
+      "Compatibility-facing fields and semantics require the WP-FF-004 inventory/corpus contract or an explicitly documented provisional boundary; do not freeze guessed parity semantics."
+    ],
+    "next_action": "After WP-003 is VALIDATED and the Operator authorizes implementation, inspect WP-004 contract outputs/status, complete the research-backed refinement, map every contract/state machine to exact invariants and proof methods, and promote to READY_FOR_DEV.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Freeze the Phase 0B serializable product and diagnostic contracts, identity relationships, bounded resource models, and owned state-machine specifications needed before broad implementation.",
+    "in_scope": [
+      "Versioned serializable source graph, item/representation/track/asset/derived-output identities, provenance, tri-state validity, configuration, event, error, cancellation, and public JSON contracts.",
+      "Versioned process, plugin IPC, JavaScript-worker IPC, and diagnostic envelope contracts with limits, request IDs, compatibility ranges, errors, cancellation acknowledgement, and provenance.",
+      "Atomic multi-resource admission and end-to-end byte-credit models with item/byte bounds, fairness, cancellation, and durable-position semantics.",
+      "Executable transition specifications for job/cancel, source/redirect, admission, fragment/durability, live, sink, FFmpeg, JavaScript, plugin, commit/archive, filesystem-capability, and watcher lifecycles.",
+      "Versioning, compatibility, migration, serialization round-trip, malformed-input, and cross-version fixture policies.",
+      "Machine-readable contract inventory mapping every contract/state transition to stable IDs, owners, invariants, proof methods, and readiness gates.",
+      "No-context model manual updates for contract inspection, fixture replay, model tests, and schema-change recovery."
+    ],
+    "non_goals": [
+      "Implementing concrete network, extractor, storage, FFmpeg, JavaScript, plugin, scheduler, or watcher behavior beyond narrow contract/model-test scaffolding.",
+      "Selecting an archive store, JavaScript engine, transport backend, or new runtime/native dependency.",
+      "Freezing compatibility behavior not grounded in the pinned profile/corpus.",
+      "Treating example Rust types in the design as complete normative implementations.",
+      "Claiming liveness, durability, or cancellation safety without executable model and failure-prefix evidence."
+    ],
+    "allowed_paths": [
+      ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/tooling-policy.toml",
+      "build/rule-to-proof.toml",
+      "product/crates/fforager-contracts/",
+      "product/crates/fforager-diagnostics-contract/",
+      "product/crates/fforager-core/",
+      "build/crates/fforager-testkit/",
+      "build/tools/fforager-xtask/",
+      "build/fixtures/",
+      "build/integration-tests/",
+      "build/reports/",
+      "build/target/",
+      "product/MODEL_MANUAL.md"
+    ],
+    "dependencies": [
+      "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
+      "WP-FF-004 compatibility profile/corpus schemas or an explicitly provisional compatibility mapping",
+      "Accepted coarse rings and crate-boundary rules in design Sections 8.5 and 9",
+      "FF-BUILD-010 through FF-BUILD-035 invariance, effect-boundary, backpressure, and termination rules",
+      "FF-GATE-ARCH-001, FF-GATE-PR-001, and risk-triggered FF-GATE-DEEP-001"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-001",
+      "requirement": "Every required Phase 0B contract has a stable ID, schema/version policy, owner, documented limits/errors, compatibility range, serialization fixture, and machine-readable inventory entry; no runtime handles, Tokio types, sockets, processes, or runtime trait objects occur in contract crates.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-002",
+      "requirement": "Identity contracts distinguish item, representation, track, asset, and derived output, preserve provenance and relationships across serialization, and reject collisions, ambiguous canonicalization, and archive-ineligible partial outputs.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-003",
+      "requirement": "Each named state machine declares states, owner, preconditions, invariants, postconditions, cancellation outcomes, durable prefixes, invalid transitions, and finite-model assumptions; model/property tests cover success, failure, cancellation, restart, and counterfactual invalid transitions.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-004",
+      "requirement": "Atomic resource-vector and byte-credit models have checked arithmetic, item/byte ceilings, admission/release invariants, no permit leaks, bounded cancellation progress, and saturation tests demonstrating bounded state under stalled consumers.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-005",
+      "requirement": "Cross-version fixtures prove documented current/current and supported compatibility outcomes, while unknown mandatory kinds, incompatible major versions, malformed/oversized frames, partial frames, duplicate IDs, and illegal transitions fail with typed bounded errors.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-006",
+      "requirement": "The canonical architecture, PR, and triggered deep gates pass; reports map every acceptance row and readiness-gate contract to concrete tests and residual uncertainty.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-005-versioned-core-contracts-v1-AC-007",
+      "requirement": "The Phase 0 model manual documents contract locations, schemas, versioning rules, inspection commands, model tests, fixture regeneration, safety limits, common failures, and recovery without requiring chat history.",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "branch": "codex/versioned-core-contracts",
+      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "dirty_paths": [],
+      "checks_run": [],
+      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
+      "next_action": "Wait for WP-003 validation and explicit activation, then complete refinement and contract-to-invariant mapping."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Any contract or state-machine implementation",
+      "Schema compatibility or migration safety",
+      "Resource boundedness, cancellation, liveness, or durability",
+      "Compatibility semantics pending WP-004 evidence",
+      "Implementation authorization"
+    ]
+  },
+  "extensions": {
+    "repository_layout": {
+      "governance_root": ".GOV/",
+      "product_root": "product/",
+      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "build_root": "build/",
+      "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
+      "toolchain_selector": "rust-toolchain.toml",
+      "canonical_manifest": "build/Cargo.toml",
+      "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
+      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+    },
+    "stub_implementation_brief": {
+      "base_scope": "Turn Phase 0B's product/public/process/diagnostic contracts and lifecycle promises into versioned Rust data plus executable transition and invariant proof surfaces.",
+      "readiness_matrix_links": {
+        "path": ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json",
+        "phase": "Phase 0",
+        "consensus_blocker_ids": ["SYN-004", "SYN-005", "SYN-006", "SYN-008", "SYN-009"],
+        "implementation_readiness_gate_items": [
+          "Accepted public behavior, dependency, security, identity, durability, and performance decisions",
+          "Versioned serializable source graph, identity, plugin IPC, event, error, cancellation, and process protocols",
+          "Atomic resource-vector and byte-credit invariants with executable saturation and cancellation tests",
+          "Commit/archive/resume fault injection across every durable state prefix",
+          "Executable phase gates with machine-readable reports",
+          "No-context model manual, structured diagnostics, stable identifiers, and parallel-agent-safe receipts"
+        ],
+        "peer_question_numbers": [2, 7, 8, 9, 11, 16, 17, 20, 21, 22, 23, 24]
+      },
+      "promotion_requirements": [
+        "Inspect WP-003 architecture/tooling output and WP-004 profile/corpus schemas before freezing physical paths or compatibility fields.",
+        "Research current primary-source Rust serialization/schema evolution, protocol framing, model/property testing, cancellation, resource accounting, and crash-safe state-machine patterns; record inspected code/tests and rejected options.",
+        "Create a clause-to-contract/state-machine map for only the touched design clauses and assign each invariant to a proof method.",
+        "Decide which state models are pure core functions and which effect boundaries remain adapter ports; hidden ambient state is forbidden."
+      ],
+      "planned_outputs": [
+        "Versioned Rust product and diagnostic contract crates",
+        "Machine-readable contract/state-machine inventory",
+        "Canonical serialization and cross-version fixtures",
+        "Pure transition models with property/model tests",
+        "Atomic resource-vector and byte-credit model tests",
+        "Malformed, oversized, incompatible, and invalid-transition negative fixtures",
+        "No-context contract operating instructions"
+      ],
+      "high_roi_additions": [
+        {
+          "addition": "Generate a contract index and compatibility matrix from the contract inventory.",
+          "why_high_roi": "Stable IDs, owners, versions, and fixtures are already required, so a generated view is cheap and prevents manual drift.",
+          "gap_or_risk_closed": "Makes contract discovery and cross-version support legible to humans and no-context models.",
+          "reuse": "Contract inventory, WP-003 report envelope, and rustdoc metadata.",
+          "verification": "Generation is deterministic and fails when a public contract lacks inventory metadata or a fixture."
+        },
+        {
+          "addition": "Create one reusable conformance harness for framed process protocols.",
+          "why_high_roi": "Plugin, JavaScript, worker, and watcher protocols share framing, versioning, bounds, request IDs, cancellation, and malformed-input needs.",
+          "gap_or_risk_closed": "Avoids duplicated parsers and inconsistent security behavior across later adapters.",
+          "reuse": "Shared contract types, testkit, fixture conventions, and negative probes.",
+          "verification": "Run the same partial/oversized/duplicate/incompatible/cancel cases against every registered framed protocol."
+        },
+        {
+          "addition": "Add schema-change diff and compatibility-budget checks.",
+          "why_high_roi": "Version and fixture metadata already exists; comparing it at PR time prevents accidental breaking changes before consumers multiply.",
+          "gap_or_risk_closed": "Reduces future migration and watcher/plugin compatibility rework.",
+          "reuse": "Canonical prior fixtures, contract inventory, and xtask reporting.",
+          "verification": "Breaking fixture/schema mutation fails unless a stable accepted decision and version transition are present."
+        },
+        {
+          "addition": "Expose deterministic transition traces and replay seeds in machine-readable test reports.",
+          "why_high_roi": "Model tests already produce transitions; retaining compact traces makes concurrency/durability failures reproducible for parallel agents.",
+          "gap_or_risk_closed": "Prevents non-reproducible state-machine failures and chat-only debugging context.",
+          "reuse": "Stable state/event IDs, WP-003 report format, and testkit controlled clocks/randomness.",
+          "verification": "A reported failing seed/trace replays to the same verdict on the pinned toolchain."
+        }
+      ],
+      "existing_systems_to_reuse": [
+        "WP-003 Cargo workspace, xtask, architecture policy, reports, and negative fixtures",
+        "WP-004 compatibility profile, stable oracle IDs, normalization, and fixtures",
+        "Accepted coarse contract/core/testkit crates from design Sections 8.5 and 9",
+        "Build-rule invariance, pure-core, backpressure, termination, and coding-discipline gates"
+      ],
+      "gaps_closed": [
+        "Persisted source and identity models become serializable and versioned.",
+        "Lifecycle prose becomes owned executable transition models.",
+        "Resource admission and byte flow gain atomic bounded invariants.",
+        "Process/public/diagnostic boundaries gain common versioning, limits, and typed failure semantics.",
+        "Later adapters can implement against stable ports instead of inventing incompatible contracts."
+      ],
+      "risk_scenarios": [
+        {
+          "risk": "Contracts freeze guessed behavior too early.",
+          "failure_scenario": "Later corpus or spike evidence forces pervasive schema breakage or compatibility hacks.",
+          "mitigation_and_hardening": "Ground compatibility fields in WP-004, separate typed stable identity/security fields from bounded namespaced extensions, and mark provisional fields explicitly until evidence closes them.",
+          "verification_needed": "Trace every compatibility-facing field to a design clause or corpus row and reject unreferenced public behavior."
+        },
+        {
+          "risk": "Serializable contracts leak runtime/effect types.",
+          "failure_scenario": "Contracts become tied to Tokio, filesystem handles, sockets, processes, or concrete adapters and cannot serve IPC/persistence consumers.",
+          "mitigation_and_hardening": "Architecture/source scans enforce data-only contract crates; runtime cursors and effect handles live behind core/adapter ports.",
+          "verification_needed": "Negative fixtures add prohibited types/dependencies and must fail architecture-check."
+        },
+        {
+          "risk": "State machines omit failure prefixes or cancellation races.",
+          "failure_scenario": "Happy-path tests pass while restart, duplicate commit, permit leak, or partial-frame states violate durability or liveness.",
+          "mitigation_and_hardening": "Enumerate every durable prefix and invalid transition, use pure transitions plus model/property tests, inject cancellation at every transition, and retain replay traces.",
+          "verification_needed": "Mutation/counterfactual tests remove one transition guard or release and the deep gate must detect it."
+        },
+        {
+          "risk": "Resource accounting overflows or admits coupled resources non-atomically.",
+          "failure_scenario": "Concurrent jobs each pass separate semaphores but exceed aggregate memory/disk/process limits or leak credits on cancellation.",
+          "mitigation_and_hardening": "Use checked arithmetic and one atomic resource vector with structured ownership/release; prove saturation and cancel paths under controlled schedules.",
+          "verification_needed": "Boundary tests cover zero, exact capacity, one-over, near-integer-limit, stalled consumer, cancellation, and repeated acquire/release."
+        },
+        {
+          "risk": "Version compatibility is asserted from round-trip tests only.",
+          "failure_scenario": "Current code reads its own output while prior/minor/unknown-major or partial frames fail unpredictably.",
+          "mitigation_and_hardening": "Retain canonical prior wire fixtures, explicit compatibility ranges, unknown-field policies, and independent cross-version readers/writers.",
+          "verification_needed": "Current/current, supported prior/current, unknown-compatible-minor, incompatible-major, malformed, and oversized matrices all emit expected typed outcomes."
+        }
+      ],
+      "verification_needs": [
+        "Architecture scans proving data-only contract crates and inward dependency direction",
+        "Serialization round-trip plus canonical prior/current cross-version fixtures",
+        "Property/model tests with deterministic replay traces",
+        "Saturation, checked-arithmetic, cancellation, and permit-leak probes",
+        "Malformed, partial, oversized, duplicate, reordered, unknown-kind, and incompatible-version protocol probes",
+        "Mutation tests for transition guards and invariants",
+        "FF-GATE-ARCH-001, FF-GATE-PR-001, and triggered FF-GATE-DEEP-001",
+        "Independent adversarial review before closure"
+      ],
+      "no_context_execution_order": [
+        "Read startup authority, taskboard, this active packet, topology, build rules, and cited design/readiness anchors.",
+        "Confirm promotion from STUB, WP-003 validation, WP-004 dependency status, and current Git checkpoint.",
+        "Complete current research and contract/state-machine clause mapping before changing code.",
+        "Define inventory metadata, version policy, pure transition ownership, limits, invariants, and fixtures before implementations.",
+        "Implement smallest data-only contracts and pure state models; reuse one framing/conformance harness.",
+        "Run architecture, serialization, cross-version, model, saturation, cancellation, mutation, and malformed-input proof.",
+        "Update manual and packet proof; merge only after canonical gates and independent adversarial validation pass."
+      ]
+    }
+  }
+}

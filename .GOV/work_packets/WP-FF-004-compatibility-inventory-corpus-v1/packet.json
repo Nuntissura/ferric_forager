@@ -1,0 +1,294 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-004-compatibility-inventory-corpus-v1",
+    "base_wp_id": "WP-FF-004-compatibility-inventory-corpus",
+    "version": "1",
+    "title": "Generate the pinned compatibility inventory and executable oracle corpus",
+    "created_at_utc": "2026-07-18T21:12:21Z",
+    "updated_at_utc": "2026-07-18T21:12:21Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB.",
+    "recorded_at_utc": "2026-07-18T21:12:21Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#71-baseline-release",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#202-compatibility-objective",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#204-compatibility-report",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#262-differential-test-harness",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#263-recorded-network-fixtures",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0a--compatibility-inventory-and-executable-oracle",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#296-reference-project-comparison-policy",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#316-compatibility",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#317-broad-feature-implementation-readiness-gates"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "work_branch": "codex/compatibility-inventory-corpus",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
+    },
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "STUB",
+    "risk": "HIGH",
+    "blockers": [
+      "STUB status forbids implementation until the Operator promotes and activates this packet.",
+      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before compiled generators or tests are added.",
+      "The pinned yt-dlp 2026.07.04 artifact identity and legally redistributable fixture boundaries must be recorded during refinement; do not substitute a newer moving baseline."
+    ],
+    "next_action": "After WP-FF-003 is VALIDATED and the Operator authorizes implementation, refresh source-control identity, complete current research and refinement, define the versioned artifact manifest and corpus partitions, then promote this packet to READY_FOR_DEV.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Create a generated, versioned yt-dlp 2026.07.04 compatibility profile and executable oracle corpus that enumerates behavior and provides deterministic comparison planes without making yt-dlp or Python a production dependency.",
+    "in_scope": [
+      "Generate option, alias, configuration, default, preset, interaction, extractor, and URL-class inventories from the pinned yt-dlp 2026.07.04 oracle.",
+      "Define separate Ferric-native semantics and yt-dlp compatibility-profile semantics so neither silently redefines the other.",
+      "Version source-graph, normalized result, sanitized network-transcript, filesystem/process artifact, error, archive, and migration oracle planes.",
+      "Create representative mandatory deterministic corpus partitions plus an explicitly opt-in live-canary policy.",
+      "Record normalization versions, provenance, artifact hashes, expected outcomes, intentional divergences, nondeterminism controls, and secret sanitization.",
+      "Implement machine-readable inventory/corpus validation and differential reporting through the accepted WP-003 tooling surface.",
+      "Update the Phase 0 no-context model manual with the implemented generation, replay, comparison, and recovery commands."
+    ],
+    "non_goals": [
+      "Production Python or yt-dlp execution.",
+      "Claiming full replacement parity before every mandatory row passes or has an explicit accepted divergence.",
+      "Implementing Ferric extractors, transport fingerprints, JavaScript execution, archive storage, or broad CLI compatibility.",
+      "Treating live network results as deterministic corpus proof.",
+      "Silently narrowing the final extractor, protocol, collection, archive, metadata, sink, or compatibility scope."
+    ],
+    "allowed_paths": [
+      ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/tooling-policy.toml",
+      "build/rule-to-proof.toml",
+      "build/tools/fforager-xtask/",
+      "product/crates/fforager-contracts/",
+      "build/crates/fforager-testkit/",
+      "build/fixtures/",
+      "build/integration-tests/",
+      "build/reports/",
+      "build/target/",
+      "product/MODEL_MANUAL.md"
+    ],
+    "dependencies": [
+      "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
+      "Pinned yt-dlp 2026.07.04 source and executable oracle",
+      "Accepted WP-003 architecture, tooling, report, and negative-fixture conventions",
+      "FF-GATE-ARCH-001 and FF-GATE-PR-001"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-001",
+      "requirement": "A generator produces a versioned machine-readable profile for yt-dlp 2026.07.04 covering options, aliases, config/default/preset interactions, extractor descriptors, and URL classes, with pinned provenance and deterministic regeneration proof.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-002",
+      "requirement": "A versioned mandatory corpus manifest covers source graph, normalized observation, sanitized transcript, artifact, failure, archive, and migration planes; each case has a stable ID, oracle identity, normalization version, expected result, and deterministic/live classification.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-003",
+      "requirement": "Executable validation rejects missing inventory rows, duplicate or unstable IDs, unsanitized secret fixtures, unpinned oracle inputs, unknown normalization versions, and deterministic cases that depend on live network state.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-004",
+      "requirement": "Differential reporting classifies each observed difference as Ferric defect, accepted baseline correction, nondeterministic response, accepted divergence with stable decision ID, or missing feature; no silent omission counts as pass.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-005",
+      "requirement": "The canonical architecture and PR gates pass on the pinned toolchain, and packet-specific corpus checks emit a machine-readable report linked to these acceptance IDs.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-006",
+      "requirement": "The Phase 0 model manual explains generation, offline replay, opt-in live canaries, inputs, outputs, sanitization, failure recovery, and the rule that corpus evidence is not a parity claim by itself.",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "branch": "codex/compatibility-inventory-corpus",
+      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "dirty_paths": [],
+      "checks_run": [],
+      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
+      "next_action": "Wait for WP-FF-003 validation and explicit activation, then perform refinement and current source-level research before implementation."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Compatibility profile completeness",
+      "Corpus representativeness or deterministic replay",
+      "Any Ferric behavior or parity",
+      "Sanitization coverage",
+      "Implementation authorization"
+    ]
+  },
+  "extensions": {
+    "repository_layout": {
+      "governance_root": ".GOV/",
+      "product_root": "product/",
+      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "build_root": "build/",
+      "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
+      "toolchain_selector": "rust-toolchain.toml",
+      "canonical_manifest": "build/Cargo.toml",
+      "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
+      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+    },
+    "stub_implementation_brief": {
+      "base_scope": "Produce the Phase 0A compatibility inventory and executable oracle foundation required to measure native Ferric behavior against the pinned yt-dlp baseline.",
+      "readiness_matrix_links": {
+        "path": ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json",
+        "phase": "Phase 0",
+        "consensus_blocker_ids": ["SYN-002", "SYN-009"],
+        "implementation_readiness_gate_items": [
+          "Generated versioned yt-dlp compatibility profile and mandatory corpus",
+          "Executable phase gates with machine-readable reports",
+          "No-context model manual, structured diagnostics, stable identifiers, and parallel-agent-safe receipts"
+        ],
+        "peer_question_numbers": [1, 13, 14]
+      },
+      "promotion_requirements": [
+        "Verify the exact yt-dlp 2026.07.04 source/artifact identity and generator inputs against current primary sources and pinned repository evidence.",
+        "Inspect WP-003 outputs and use its accepted report schemas, fixture layout, validator command conventions, and architecture policy instead of creating parallel infrastructure.",
+        "Record current research sources, inspected upstream implementation paths, selected and rejected generation approaches, sanitization threats, corpus sampling rationale, and validation plan.",
+        "Replace proposed output paths or command names only where the validated WP-003 topology requires it; update allowed_paths before implementation."
+      ],
+      "planned_outputs": [
+        "Versioned compatibility-profile manifest and schemas",
+        "Generated option/config/default/interaction inventory",
+        "Generated extractor and URL-class inventory",
+        "Versioned mandatory corpus manifest with stable case IDs",
+        "Sanitized deterministic fixtures and opt-in live-canary manifest",
+        "Machine-readable corpus validation and differential reports",
+        "No-context operating instructions"
+      ],
+      "high_roi_additions": [
+        {
+          "addition": "Generate inventory-diff reports between pinned profile versions.",
+          "why_high_roi": "The same parser and stable IDs already required for generation can expose added, removed, and changed behavior cheaply.",
+          "gap_or_risk_closed": "Prevents silent compatibility drift and makes future yt-dlp baseline updates reviewable.",
+          "reuse": "WP-003 report envelope, profile generator, stable IDs, and corpus manifest.",
+          "verification": "Mutation fixture adds/removes/changes one upstream row and the diff report must identify it exactly."
+        },
+        {
+          "addition": "Add a sanitizer validator with secret canaries and allowlisted normalized tokens.",
+          "why_high_roi": "Sanitized transcripts are already required; testing the sanitizer while fixtures are built avoids later corpus rewrites and leakage.",
+          "gap_or_risk_closed": "Prevents credentials, cookies, tokens, and machine-local data from entering committed fixtures or reports.",
+          "reuse": "Transcript normalization pipeline and negative-fixture convention from WP-003.",
+          "verification": "Seed representative secret forms and prove validation fails before any fixture is accepted."
+        },
+        {
+          "addition": "Shard corpus manifests by stable case ID with deterministic merge receipts.",
+          "why_high_roi": "Partition metadata is cheap when stable IDs are first defined and enables parallel models to generate or replay disjoint cases safely.",
+          "gap_or_risk_closed": "Reduces merge conflicts, duplicate work, and untraceable partial corpus results.",
+          "reuse": "Stable case IDs, machine-readable reports, and packet/Git recovery conventions.",
+          "verification": "Two disjoint shard reports merge deterministically; overlap, missing shards, and mismatched corpus versions fail."
+        },
+        {
+          "addition": "Keep deterministic offline corpus and opt-in live canaries as mechanically separate suites.",
+          "why_high_roi": "The classification is already required in every case and makes CI reliable without losing current-site signal.",
+          "gap_or_risk_closed": "Prevents network nondeterminism from masquerading as regression proof or blocking ordinary development.",
+          "reuse": "Corpus manifest classification and WP-003 gate selection.",
+          "verification": "Default checks prove no live network access; an explicit live command emits a distinct non-deterministic report."
+        }
+      ],
+      "existing_systems_to_reuse": [
+        "WP-003 fforager-xtask command/report framework",
+        "WP-003 architecture policy, rule-to-proof map, and negative fixtures",
+        "yt-dlp 2026.07.04 pinned behavioral oracle",
+        "Technical design Sections 20, 26, 29, and 31 compatibility classifications",
+        "Cargo-locked Rust workspace and testkit"
+      ],
+      "gaps_closed": [
+        "Compatibility target becomes enumerable rather than aspirational.",
+        "Oracle comparison becomes executable and versioned.",
+        "Nondeterminism, accepted divergence, and missing behavior become explicit machine states.",
+        "Future extractors and spikes receive reusable cases instead of inventing ad hoc fixtures."
+      ],
+      "risk_scenarios": [
+        {
+          "risk": "Inventory generator silently misses dynamically registered or interaction-dependent behavior.",
+          "failure_scenario": "The profile reports complete coverage while a pinned option, extractor, default interaction, or URL class is absent.",
+          "mitigation_and_hardening": "Combine source-level enumeration, runtime help/config inspection, independent counts, collision reports, and mutation fixtures; missing rows fail closed.",
+          "verification_needed": "Cross-check generated counts and stable IDs against at least two independent pinned upstream surfaces and remove one known row to prove failure."
+        },
+        {
+          "risk": "Corpus overfits a narrow happy path.",
+          "failure_scenario": "Mandatory cases pass while redirects, failure semantics, artifacts, archive behavior, or config interactions remain untested.",
+          "mitigation_and_hardening": "Use explicit plane and behavior-dimension coverage matrices; require each mandatory row to map to cases or a recorded gap.",
+          "verification_needed": "Coverage validator rejects an intentionally uncovered mandatory dimension and reports the exact missing mappings."
+        },
+        {
+          "risk": "Fixtures contain secrets or machine-specific state.",
+          "failure_scenario": "Cookies, tokens, absolute paths, timestamps, or host identifiers are committed and replay becomes unsafe or non-portable.",
+          "mitigation_and_hardening": "Normalize secrets and environmental values to deterministic tokens, scan before write and before commit, and keep credentials/live inputs outside committed artifacts.",
+          "verification_needed": "Secret/path/time canary fixtures must be rejected or normalized identically across supported hosts."
+        },
+        {
+          "risk": "A newer yt-dlp or live response silently replaces the pinned oracle.",
+          "failure_scenario": "Regeneration changes expected behavior without an explicit profile version or review.",
+          "mitigation_and_hardening": "Pin artifact/source identity and hashes in manifests, make network use explicit, and require versioned inventory diffs for baseline changes.",
+          "verification_needed": "Mismatched oracle version/hash and unexpected network access fail before generation or comparison."
+        }
+      ],
+      "verification_needs": [
+        "JSON/schema validation and deterministic regeneration comparison",
+        "Stable-ID uniqueness and coverage mapping",
+        "Secret, absolute-path, clock, randomness, and network negative probes",
+        "Mutation tests for omitted/duplicated/changed inventory rows",
+        "Offline differential replay with classified outcomes",
+        "FF-GATE-ARCH-001 and FF-GATE-PR-001",
+        "Independent adversarial review before closure"
+      ],
+      "no_context_execution_order": [
+        "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, this packet, topology, build rules, and only the cited design anchors/readiness items.",
+        "Confirm this packet is active and no longer STUB; confirm WP-003 is VALIDATED and refresh Git checkpoint fields.",
+        "Complete the research-backed refinement and validate the pinned oracle identity.",
+        "Define versioned schemas, stable IDs, coverage dimensions, normalization, sanitization, and deterministic/live partitions before collecting fixtures.",
+        "Implement generators and validators through fforager-xtask, then create corpus cases.",
+        "Run negative probes, deterministic regeneration, differential replay, canonical gates, and independent adversarial validation.",
+        "Update manual and packet proof, commit closure, set MERGE_PENDING only after acceptance, then prove main containment before VALIDATED."
+      ]
+    }
+  }
+}

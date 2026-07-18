@@ -1,0 +1,55 @@
+schema_id = "ff.tooling_policy@1"
+file_id = "FF-GOV-BUILD-TOOLING-POLICY-001"
+schema_version = "1.0.0"
+rust_toolchain = "1.97.1"
+supported_hosts = ["x86_64-pc-windows-msvc"]
+auto_install = false
+advisory_database_max_age_hours = 168
+
+[[tools]]
+name = "rustc"
+identity_contains = "rustc 1.97.1"
+command = ["rustc", "--version", "--verbose"]
+source = "root rust-toolchain.toml"
+owning_gate = "FF-GATE-PR-001"
+required_now = true
+
+[[tools]]
+name = "cargo"
+identity_contains = "cargo 1.97.1"
+command = ["cargo", "--version", "--verbose"]
+source = "root rust-toolchain.toml"
+owning_gate = "FF-GATE-PR-001"
+required_now = true
+
+[[tools]]
+name = "rustfmt"
+identity_contains = "rustfmt"
+command = ["rustfmt", "--version"]
+source = "pinned rustup component"
+owning_gate = "FF-GATE-PR-001"
+required_now = true
+
+[[tools]]
+name = "clippy"
+identity_contains = "clippy 0.1.97"
+command = ["cargo", "clippy", "--version"]
+source = "pinned rustup component"
+owning_gate = "FF-GATE-PR-001"
+required_now = true
+
+[[tools]]
+name = "git"
+identity_contains = "git version"
+command = ["git", "--version"]
+source = "supported host installation"
+owning_gate = "FF-GATE-PR-001"
+required_now = true
+
+[[tools]]
+name = "cargo-deny"
+identity_contains = "cargo-deny 0.20.2"
+command = ["cargo", "deny", "--version"]
+source = "cargo install cargo-deny --version 0.20.2 --locked"
+owning_gate = "FF-GATE-PR-001"
+required_now = true

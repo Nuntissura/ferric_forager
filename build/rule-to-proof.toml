@@ -1,0 +1,87 @@
+schema_id = "ff.rule_to_proof@1"
+file_id = "FF-GOV-BUILD-RULE-PROOF-001"
+schema_version = "1.0.0"
+
+[[rules]]
+rule_id = "FF-BUILD-036"
+proof_classes = ["graph", "policy"]
+validators = ["workspace-shape"]
+fixture_ids = ["shipped-before-bootstrap"]
+limitations = ["Phase 0 contains no shipped member."]
+
+[[rules]]
+rule_id = "FF-BUILD-037"
+proof_classes = ["policy"]
+validators = ["strict-policy"]
+fixture_ids = ["self-authorized-exception"]
+limitations = []
+
+[[rules]]
+rule_id = "FF-BUILD-038"
+proof_classes = ["graph"]
+validators = ["cargo-metadata"]
+fixture_ids = ["undeclared-member", "forbidden-edge", "cycle"]
+limitations = ["Cargo metadata is graph proof, not runtime proof."]
+
+[[rules]]
+rule_id = "FF-BUILD-039"
+proof_classes = ["graph", "source"]
+validators = ["runtime-boundary"]
+fixture_ids = ["shipped-governance-read"]
+limitations = ["Lexical scanning cannot prove absence of dynamically constructed paths."]
+
+[[rules]]
+rule_id = "FF-BUILD-040"
+proof_classes = ["graph", "policy"]
+validators = ["layer-edges"]
+fixture_ids = ["adapter-edge-without-decision"]
+limitations = []
+
+[[rules]]
+rule_id = "FF-BUILD-041"
+proof_classes = ["graph"]
+validators = ["testkit-boundary"]
+fixture_ids = ["testkit-production-edge"]
+limitations = []
+
+[[rules]]
+rule_id = "FF-BUILD-042"
+proof_classes = ["graph"]
+validators = ["watcher-boundary"]
+fixture_ids = ["watcher-product-edge"]
+limitations = ["Watcher package is absent in Phase 0."]
+
+[[rules]]
+rule_id = "FF-BUILD-043"
+proof_classes = ["runtime_fault", "graph"]
+validators = ["watcher-independence"]
+fixture_ids = ["product-watcher-edge"]
+limitations = ["Runtime-fault proof is NOT_APPLICABLE until the watcher exists."]
+
+[[rules]]
+rule_id = "FF-BUILD-044"
+proof_classes = ["policy"]
+validators = ["split-trigger"]
+fixture_ids = ["missing-split-trigger"]
+limitations = []
+
+[[rules]]
+rule_id = "FF-BUILD-045"
+proof_classes = ["policy"]
+validators = ["split-trigger"]
+fixture_ids = ["missing-split-trigger"]
+limitations = []
+
+[[rules]]
+rule_id = "FF-BUILD-046"
+proof_classes = ["policy", "negative_fixture"]
+validators = ["rule-map-completeness"]
+fixture_ids = ["missing-rule-map", "unknown-rule-map", "missing-fixture-binding"]
+limitations = []
+
+[[rules]]
+rule_id = "FF-BUILD-077"
+proof_classes = ["graph", "source", "artifact"]
+validators = ["three-root-boundary"]
+fixture_ids = ["wrong-root-build-file", "duplicate-toolchain-selector"]
+limitations = ["Zero shipped members makes clean shipped-artifact proof NOT_APPLICABLE."]

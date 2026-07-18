@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: Implement the Phase 0 executable-gate bootstrap; later Phase 0 packets remain non-authorizing stubs until individually promoted.
-  active_wp_id: WP-FF-003-executable-gate-bootstrap-v1
+  statement: No work packet is active; WP-FF-004 through WP-FF-011 remain non-authorizing stubs until individually refined and promoted.
+  active_wp_id: null
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

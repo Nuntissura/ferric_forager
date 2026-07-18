@@ -44,7 +44,7 @@ namespaces:
     next_numeric_id: 7
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 3
+    next_numeric_id: 12
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -79,6 +79,26 @@ registered_files:
     path: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json
   - id: WP-FF-002-architecture-review-merge-v1-REFINEMENT-001
     path: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/refinement.json
+  - id: WP-FF-003-executable-gate-bootstrap-v1
+    path: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json
+  - id: WP-FF-003-executable-gate-bootstrap-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/refinement.json
+  - id: WP-FF-004-compatibility-inventory-corpus-v1
+    path: .GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json
+  - id: WP-FF-005-versioned-core-contracts-v1
+    path: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json
+  - id: WP-FF-006-rust-youtube-challenge-spike-v1
+    path: .GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json
+  - id: WP-FF-007-transport-fingerprint-spike-v1
+    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json
+  - id: WP-FF-008-archive-store-evidence-v1
+    path: .GOV/work_packets/WP-FF-008-archive-store-evidence-v1/packet.json
+  - id: WP-FF-009-resource-durability-models-v1
+    path: .GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json
+  - id: WP-FF-010-ffmpeg-supervision-spike-v1
+    path: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json
+  - id: WP-FF-011-equivalent-work-vertical-slice-v1
+    path: .GOV/work_packets/WP-FF-011-equivalent-work-vertical-slice-v1/packet.json
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001

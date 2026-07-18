@@ -35,10 +35,28 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: Select the next product work packet from the allowed Phase 0 work, beginning with executable gate bootstrap.
-  active_wp_id: null
+  statement: Implement the Phase 0 executable-gate bootstrap; later Phase 0 packets remain non-authorizing stubs until individually promoted.
+  active_wp_id: WP-FF-003-executable-gate-bootstrap-v1
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
   - wp_id: WP-FF-002-architecture-review-merge-v1
     packet: .GOV/work_packets/WP-FF-002-architecture-review-merge-v1/packet.json
+  - wp_id: WP-FF-003-executable-gate-bootstrap-v1
+    packet: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json
+  - wp_id: WP-FF-004-compatibility-inventory-corpus-v1
+    packet: .GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json
+  - wp_id: WP-FF-005-versioned-core-contracts-v1
+    packet: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json
+  - wp_id: WP-FF-006-rust-youtube-challenge-spike-v1
+    packet: .GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json
+  - wp_id: WP-FF-007-transport-fingerprint-spike-v1
+    packet: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json
+  - wp_id: WP-FF-008-archive-store-evidence-v1
+    packet: .GOV/work_packets/WP-FF-008-archive-store-evidence-v1/packet.json
+  - wp_id: WP-FF-009-resource-durability-models-v1
+    packet: .GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json
+  - wp_id: WP-FF-010-ffmpeg-supervision-spike-v1
+    packet: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json
+  - wp_id: WP-FF-011-equivalent-work-vertical-slice-v1
+    packet: .GOV/work_packets/WP-FF-011-equivalent-work-vertical-slice-v1/packet.json

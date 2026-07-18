@@ -1,0 +1,294 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-006-rust-youtube-challenge-spike-v1",
+    "base_wp_id": "WP-FF-006-rust-youtube-challenge-spike",
+    "version": "1",
+    "title": "Prove or reject the bounded Rust-only YouTube challenge path",
+    "created_at_utc": "2026-07-18T21:12:21Z",
+    "updated_at_utc": "2026-07-18T21:12:21Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB and does not authorize any external JavaScript runtime.",
+    "recorded_at_utc": "2026-07-18T21:12:21Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#74-javascript-challenges",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#181-requirement",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#182-authorized-phase-0-direction",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#183-persistent-workers",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#184-sandbox-policy",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#185-failure-handling",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#246-javascript-safety",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#265-fuzzing-targets",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0c--dependency-and-risk-spikes",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#304-javascript-challenge-changes",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#317-broad-feature-implementation-readiness-gates"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "work_branch": "codex/rust-youtube-challenge-spike",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "STUB",
+    "risk": "HIGH",
+    "blockers": [
+      "STUB status forbids implementation until the Operator promotes and activates this packet.",
+      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before the prototype package is added.",
+      "The pinned yt-dlp EJS/YouTube challenge corpus from WP-FF-004 and versioned JavaScript worker IPC/limits from WP-FF-005 must exist or be explicitly co-developed under activated packet scope.",
+      "Deno, Node.js, Bun, external QuickJS, Wasmtime, or any other external runtime is not authorized as implementation or fallback."
+    ],
+    "next_action": "After prerequisites and explicit activation, research current pure-Rust engine candidates and pinned yt-dlp EJS implementation evidence, finalize the deterministic challenge corpus and resource/security thresholds, then promote to READY_FOR_DEV without adding an unauthorized runtime.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Build a prototype-only, policy-marked non-shipped Ferric-owned Rust worker around a maintained pure-Rust JavaScript engine candidate and produce measured corpus evidence for correctness, isolation, termination, memory, recycling, and performance.",
+    "in_scope": [
+      "Current primary-source evaluation and minimal selection of maintained pure-Rust JavaScript engine candidates compatible with the authorized dependency boundary.",
+      "A non-shipped Rust worker prototype with fresh capability-free per-job contexts and bounded length-prefixed versioned IPC.",
+      "Pinned yt-dlp EJS/YouTube challenge corpus execution with exact pass/fail classification and engine/version/script provenance.",
+      "Deterministic host inputs, script hashes, deadlines, recursion/depth, memory, input/output, environment, filesystem, network, process, and worker-lifetime limits.",
+      "Worker cancellation acknowledgement, crash/timeout/protocol-fault handling, recycling, quarantine, cache-key correctness, and no cross-job heap state.",
+      "Machine-readable operator-ready evidence that either selects the Rust-only path or reports exact failures and residual uncertainty without bypassing the dependency boundary.",
+      "No-context manual instructions for running the corpus, inspecting reports, reproducing failures, and recovering stuck workers."
+    ],
+    "non_goals": [
+      "Broad YouTube extractor implementation or full YouTube parity.",
+      "Adding any external JavaScript runtime, Python bridge, production yt-dlp invocation, Wasm runtime, or native dependency.",
+      "Treating ECMAScript standards conformance as sufficient challenge compatibility proof.",
+      "Allowing JavaScript worker access to arbitrary network, filesystem, inherited secrets, or product control.",
+      "Shipping the prototype package before a later active packet explicitly promotes an accepted path."
+    ],
+    "allowed_paths": [
+      ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+      "product/Cargo.toml",
+      "product/Cargo.lock",
+      "product/architecture-policy.toml",
+      "product/tooling-policy.toml",
+      "product/crates/fforager-contracts/",
+      "product/crates/fforager-javascript/",
+      "product/crates/fforager-testkit/",
+      "product/tools/fforager-xtask/",
+      "product/fixtures/",
+      "product/integration-tests/",
+      "product/benches/",
+      "product/MODEL_MANUAL.md"
+    ],
+    "dependencies": [
+      "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
+      "WP-FF-004 pinned EJS/YouTube challenge corpus and oracle provenance",
+      "WP-FF-005 JavaScript worker IPC, event/error/cancellation contracts and limits",
+      "Explicit Operator approval before any dependency outside Rust plus FFmpeg/ffprobe",
+      "FF-GATE-ARCH-001, FF-GATE-PR-001, and risk-triggered FF-GATE-DEEP-001"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001",
+      "requirement": "Research compares maintained pure-Rust engine candidates using current primary source, release, security, implementation, test, and maintenance evidence; the selected minimal candidate and rejected alternatives are recorded without authorizing an external runtime.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
+      "requirement": "The non-shipped worker executes every mandatory pinned EJS/challenge corpus case and reports stable case ID, engine/version, script hash, deterministic inputs, result/error, duration, peak resource observations, and exact mismatch; the passing threshold is 100 percent of mandatory deterministic cases or an Operator-resolved evidence outcome.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003",
+      "requirement": "Tests prove fresh per-job contexts, no arbitrary network/filesystem/process capability, no inherited secrets, bounded framed IPC, bounded input/output/depth/time/memory, cache keys including every behavior-affecting input, and no durable cross-job worker heap state.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004",
+      "requirement": "Cancellation, timeout, memory limit, worker crash, partial/oversized/malformed frame, protocol mismatch, sandbox violation, stale cache, and recycle/quarantine thresholds produce bounded typed outcomes with no orphan worker and reproducible evidence.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-005",
+      "requirement": "Source, dependency, process, and runtime scans prove no Python, yt-dlp production execution, Deno, Node.js, Bun, external QuickJS, Wasm runtime, build-time download, prebuilt binary, unapproved FFI, or native link was introduced.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-006",
+      "requirement": "Canonical architecture, PR, and triggered deep gates pass and a machine-readable verdict is PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION; neither verdict claims full YouTube parity.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-007",
+      "requirement": "The no-context model manual documents corpus execution, limits, reports, failure reproduction, worker cleanup/recovery, security constraints, and the prohibition on unauthorized fallback runtimes.",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "branch": "codex/rust-youtube-challenge-spike",
+      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "dirty_paths": [],
+      "checks_run": [],
+      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
+      "next_action": "Wait for prerequisites and explicit activation, then perform source-level candidate research and finalize the bounded corpus contract."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Any pure-Rust engine suitability",
+      "Any YouTube challenge case",
+      "Sandbox, termination, memory, recycling, or cancellation behavior",
+      "Dependency-boundary compliance of a future implementation",
+      "Full YouTube support or parity",
+      "Implementation authorization"
+    ]
+  },
+  "extensions": {
+    "stub_implementation_brief": {
+      "base_scope": "Resolve the highest-risk Rust-only YouTube challenge dependency question through a bounded non-shipped worker and executable pinned corpus, returning proof or exact failure evidence.",
+      "readiness_matrix_links": {
+        "path": ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json",
+        "phase": "Phase 0",
+        "consensus_blocker_ids": ["SYN-001", "SYN-009"],
+        "adjudicated_disagreement_topic": "youtube_javascript",
+        "implementation_readiness_gate_items": [
+          "Rust-only YouTube challenge corpus result",
+          "Versioned serializable source graph, identity, plugin IPC, event, error, cancellation, and process protocols",
+          "Executable phase gates with machine-readable reports"
+        ],
+        "peer_question_numbers": [6, 7, 18]
+      },
+      "promotion_requirements": [
+        "Verify current pure-Rust JavaScript engine candidates through official source, docs, releases, issue trackers, security records, benchmarks, and implementation tests; do not rely on model memory.",
+        "Inspect the pinned yt-dlp 2026.07.04 EJS/challenge implementation and WP-004 corpus provenance to ensure the spike tests actual required behavior.",
+        "Inspect WP-005 worker IPC/limits and reuse them; if unavailable, activate an explicit co-development dependency rather than inventing an incompatible protocol.",
+        "Define mandatory cases, 100-percent pass rule, resource ceilings, OS containment assumptions, timing methodology, and failed-spike operator evidence before implementation."
+      ],
+      "planned_outputs": [
+        "Current engine-candidate evidence matrix",
+        "Policy-marked non-shipped Rust worker prototype",
+        "Pinned EJS/YouTube challenge corpus runner",
+        "Security/resource/cancellation/recycling negative tests",
+        "Machine-readable per-case and aggregate verdict reports",
+        "Operator-ready failed-spike evidence when any mandatory gate cannot pass",
+        "No-context spike operating instructions"
+      ],
+      "high_roi_additions": [
+        {
+          "addition": "Separate the JavaScriptEngine port and corpus runner from the candidate backend.",
+          "why_high_roi": "The spike already needs a worker boundary; keeping the backend narrow makes replacement cheap if the first engine fails.",
+          "gap_or_risk_closed": "Avoids binding future YouTube work to an unproven engine and reduces rework after measured failures.",
+          "reuse": "WP-005 worker IPC/contracts and WP-004 corpus case IDs.",
+          "verification": "Run the same conformance/corpus harness through a deliberately failing test backend and the candidate backend without changing cases."
+        },
+        {
+          "addition": "Emit deterministic failure bundles with script hash, engine identity, limits, replay seed, and minimal non-secret inputs.",
+          "why_high_roi": "The runner already has this metadata; packaging it makes failures reproducible across models and machines.",
+          "gap_or_risk_closed": "Prevents flaky or chat-only failure diagnosis and makes an Operator dependency decision evidence-based.",
+          "reuse": "WP-003 report envelope and WP-004 stable corpus IDs/normalization.",
+          "verification": "A second process replays a reported failure to the same typed outcome on the pinned environment."
+        },
+        {
+          "addition": "Add worker-pool churn and isolation soak cases while lifecycle controls are being implemented.",
+          "why_high_roi": "Recycle, cache, and context reset paths already exist; a bounded soak cheaply catches cross-job leakage and orphan growth.",
+          "gap_or_risk_closed": "Addresses memory drift, stale compiled artifacts, leaked contexts, and non-deterministic worker accumulation.",
+          "reuse": "Worker lifecycle, deterministic corpus, resource telemetry, and controlled clock.",
+          "verification": "Repeated heterogeneous jobs stay within declared RSS/process/cache bounds and cross-job secret canaries never appear."
+        },
+        {
+          "addition": "Make dependency/runtime prohibition scanning a reusable xtask policy check.",
+          "why_high_roi": "The spike directly touches the dependency boundary; a reusable scan protects every later JavaScript/update change.",
+          "gap_or_risk_closed": "Prevents accidental external-runtime, build-download, prebuilt-binary, FFI, or native-link introduction.",
+          "reuse": "WP-003 architecture rule-to-proof map, Cargo metadata, source/build scans, and negative fixtures.",
+          "verification": "Fixtures introducing each prohibited runtime/dependency mechanism must fail with its stable rule ID."
+        }
+      ],
+      "existing_systems_to_reuse": [
+        "WP-003 architecture/dependency policy, xtask reports, and negative-fixture system",
+        "WP-004 pinned EJS corpus, case IDs, oracle provenance, and deterministic normalization",
+        "WP-005 JavaScript worker IPC, errors, cancellation, limits, and transition traces",
+        "Design-authorized Rust executable worker and pure-Rust engine boundary"
+      ],
+      "gaps_closed": [
+        "Rust-only full-YouTube feasibility becomes measured rather than assumed.",
+        "Worker sandbox, bounds, failure, recycling, and quarantine behavior becomes executable.",
+        "A failed candidate produces an Operator-ready decision surface instead of an unauthorized fallback.",
+        "Later YouTube extraction work receives a stable backend seam and reproducible corpus."
+      ],
+      "risk_scenarios": [
+        {
+          "risk": "Standards conformance is mistaken for challenge compatibility.",
+          "failure_scenario": "The engine passes generic JavaScript tests but fails yt-dlp EJS transformations or current player challenge cases.",
+          "mitigation_and_hardening": "Make the pinned mandatory challenge corpus the selection gate and treat generic conformance only as supporting evidence.",
+          "verification_needed": "All mandatory deterministic EJS/challenge cases pass exactly or the aggregate verdict is failed-spike evidence."
+        },
+        {
+          "risk": "In-process or persistent state leaks capabilities or data across jobs.",
+          "failure_scenario": "One challenge reads prior job state, inherited secrets, filesystem/network data, or unbounded host resources.",
+          "mitigation_and_hardening": "Use a separate worker, fresh capability-free contexts, restricted environment, no network/filesystem by default, content-addressed host-owned caches, recycle thresholds, and secret canaries.",
+          "verification_needed": "Cross-job canary, capability-denial, environment, cache-poisoning, and recycle tests pass under repeated jobs."
+        },
+        {
+          "risk": "Timeout or cancellation leaves an orphan or wedged worker.",
+          "failure_scenario": "A nonterminating script holds resources, ignores cancellation, or poisons the worker pool.",
+          "mitigation_and_hardening": "Use deadline/cancel protocol plus bounded grace, process-tree termination/reaping, quarantine, and a finite worker lifecycle with residual uncertainty reported.",
+          "verification_needed": "Infinite-loop, allocation-bomb, cancellation-race, hung-IPC, child-crash, and repeated-timeout cases terminate within declared bounds with no surviving worker."
+        },
+        {
+          "risk": "A candidate pulls an unapproved native/runtime/build dependency transitively.",
+          "failure_scenario": "Cargo features, build scripts, downloads, prebuilt binaries, FFI, or Cargo links violate the Rust-only boundary.",
+          "mitigation_and_hardening": "Inspect source/build scripts/features/transitive graph and artifacts, disable defaults, pin lockfile, and fail architecture policy on undeclared runtime/native mechanisms.",
+          "verification_needed": "Cargo metadata, lockfile, source/build scan, clean-artifact smoke, and linkage/provenance inspection show only approved boundaries."
+        },
+        {
+          "risk": "Performance is reported from unequal or warm-only work.",
+          "failure_scenario": "A cached persistent worker appears fast while startup, isolation, cache miss, or failure costs are hidden.",
+          "mitigation_and_hardening": "Report cold/warm/recycle/cache-hit/cache-miss topologies separately after correctness and resource gates; use distributions, not a single timing.",
+          "verification_needed": "Versioned manifest records exact topology, case set, cache state, sample distribution, failures, and no speed verdict before correctness."
+        }
+      ],
+      "verification_needs": [
+        "Pinned mandatory EJS/YouTube challenge corpus with per-case diagnostics",
+        "Capability denial, secret isolation, cache poisoning, and cross-job leakage probes",
+        "Infinite-loop, allocation, recursion/depth, oversized-output, malformed-frame, timeout, cancellation, crash, and orphan-process probes",
+        "Cargo graph/source/build-script/artifact/runtime dependency inspection",
+        "Cold/warm/recycle resource and timing distributions after correctness",
+        "FF-GATE-ARCH-001, FF-GATE-PR-001, and triggered FF-GATE-DEEP-001",
+        "Independent adversarial review before closure"
+      ],
+      "no_context_execution_order": [
+        "Read startup authority, active packet, topology, build rules, and cited design/readiness anchors.",
+        "Confirm promotion from STUB, prerequisite proof, and exact authorization boundary; external runtimes remain forbidden.",
+        "Complete current source-level research and freeze corpus/resource/security/verdict manifests.",
+        "Implement the backend-neutral worker port and minimal non-shipped candidate adapter.",
+        "Run correctness first, then sandbox/resource/cancel/recycle/fault tests, then performance measurements.",
+        "Emit PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION with exact residual uncertainty; never silently add a fallback.",
+        "Update manual and packet proof; merge only after canonical gates and independent adversarial validation pass."
+      ]
+    }
+  }
+}

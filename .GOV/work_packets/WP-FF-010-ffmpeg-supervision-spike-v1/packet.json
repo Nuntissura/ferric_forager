@@ -1,0 +1,308 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-010-ffmpeg-supervision-spike-v1",
+    "base_wp_id": "WP-FF-010-ffmpeg-supervision-spike",
+    "version": "1",
+    "title": "Prove cross-platform FFmpeg supervision",
+    "created_at_utc": "2026-07-18T21:13:04Z",
+    "updated_at_utc": "2026-07-18T21:13:04Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator authorized Phase 0 planning, requested WP-FF-008 through WP-FF-011 as detailed no-context STUB packets linked to the canonical design and readiness topics, and required the stubs to be committed and pushed before WP-FF-003 implementation begins.",
+    "recorded_at_utc": "2026-07-18T21:13:04Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#76-ffmpeg",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#161-atomic-resource-vectors",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#19-ffmpeg-and-post-processing-integration",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#242-subprocess-safety",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0c--dependency-and-risk-spikes",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-2--cross-boundary-proof-slice",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#317-broad-feature-implementation-readiness-gates",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#appendix-c--benchmark-matrix",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#/consensus_blockers/6",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#/peer_question_resolutions/9",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#/peer_question_resolutions/14",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#/peer_question_resolutions/16",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#/implementation_readiness_gates/8"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "work_branch": "codex/ffmpeg-supervision-spike",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
+    },
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "STUB",
+    "risk": "HIGH",
+    "blockers": [
+      "WP-FF-003 executable gate bootstrap must be VALIDATED before this compiled spike starts.",
+      "WP-FF-005 process/error/diagnostic contracts and WP-FF-009 compound-resource/cancellation models must be stable enough to consume.",
+      "Windows and Unix CI or equivalent reproducible validation hosts must be available for descendant-process proof."
+    ],
+    "next_action": "After prerequisites pass, refresh official FFmpeg and current Rust/OS process-supervision research, freeze supported host and FFmpeg identity profiles, promote the STUB, then implement deterministic fake-child and real FFmpeg/ffprobe containment tests on Windows and Unix.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Build a bounded Phase 0 supervisor prototype proving that required FFmpeg and ffprobe external processes can be selected, invoked, observed, cancelled, fully reaped, and output-validated on Windows and Unix without a shell or hidden unbounded pipes.",
+    "in_scope": [
+      "Define trusted absolute FFmpeg/ffprobe executable selection, identity binding, version/capability probing, cache invalidation, and typed missing/wrong-version/capability errors.",
+      "Define typed operation plans and direct argument vectors with explicit stream maps and stream-copy selection; arbitrary shell command construction is forbidden.",
+      "Scrub inherited environment, govern working directory, pass -nostdin, restrict protocols/input mechanisms, and treat stderr/progress/output as untrusted bounded inputs.",
+      "Implement the Spawned, Running, GracefulStopRequested, ForcedKillRequested, Reaped, and Validated supervisor state model with a terminal reap on every path.",
+      "Attach Unix process groups or Windows Job Objects at creation and prove bounded graceful stop, forced descendant-tree termination, orphan detection, and cancellation races.",
+      "Drain media/stdout, framed progress, and stderr concurrently with item/byte bounds, bounded parser work, bounded diagnostic tail, and explicit chatty-child handling.",
+      "Account for FFmpeg process slots, CPU threads, memory, disk I/O, and pipe bytes through the resource model; distinguish mux/stream-copy and transcode admission classes.",
+      "Validate successful outputs with ffprobe-normalized facts before commit/archive eligibility and reject crashed, partial, wrong-stream, malformed, or unprobed outputs.",
+      "Run deterministic fake-child cases plus basic real FFmpeg discovery, stream-copy, progress, cancellation, reaping, and ffprobe validation on Windows and Unix.",
+      "Produce machine-readable reports with executable identities, argument-plan hash, lifecycle transitions, limits, exit/reap result, descendant result, output validation, and residual uncertainty without exposing sensitive paths or inputs."
+    ],
+    "non_goals": [
+      "Implementing every post-processing operation, codec, container, metadata, subtitle, thumbnail, chapter, transcode, or live-mux feature.",
+      "Shipping or silently downloading an FFmpeg bundle, adding a shell, or adding another runtime/native dependency without Operator approval.",
+      "Treating process exit code alone as successful output validation.",
+      "Claiming all possible child hangs or all platform process failures can be detected.",
+      "Claiming release performance, complete FFmpeg compatibility, or broad implementation readiness from the spike."
+    ],
+    "allowed_paths": [
+      ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json",
+      "product/Cargo.toml",
+      "product/Cargo.lock",
+      "product/architecture-policy.toml",
+      "product/tooling-policy.toml",
+      "product/crates/fforager-contracts/",
+      "product/crates/fforager-core/",
+      "product/crates/fforager-ffmpeg/",
+      "product/crates/fforager-testkit/",
+      "product/tools/fforager-xtask/",
+      "product/fixtures/",
+      "product/integration-tests/"
+    ],
+    "dependencies": [
+      "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
+      "WP-FF-005-versioned-core-contracts-v1 accepted process, error, cancellation, event, and diagnostic contracts",
+      "WP-FF-009-resource-durability-models-v1 accepted compound admission and cancellation models",
+      "Required external FFmpeg and ffprobe test identities available on Windows and Unix hosts",
+      "Canonical architecture, PR, and triggered deep gates implemented by fforager-xtask"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-001",
+      "requirement": "A versioned process contract defines trusted executable identity/capability selection, typed operation plans, direct argument vectors, scrubbed environment, working directory, protocol/input allowlist, resource vector, deadlines, lifecycle transitions, cancellation, reaping, diagnostics, and ffprobe validation.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-002",
+      "requirement": "Windows tests attach a Job Object at child creation and Unix tests establish a process group; bounded graceful and forced cancellation leave no surviving descendant in the declared test matrix, and every terminal path awaits and records reaping.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-003",
+      "requirement": "Bounded concurrent draining handles chatty, blocked, malformed, reordered, truncated, and stalled progress/stderr/stdout without deadlock, unbounded memory, silent required-data loss, or parser work beyond declared limits.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-004",
+      "requirement": "Mandatory cases cover missing, wrong-version, capability-mismatch, hung, chatty, crashed, cancelled, partial-output, invalid-output, stale capability cache, path substitution, and descendant-process behavior on Windows and Unix with typed failure oracles.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-005",
+      "requirement": "Basic real-tool discovery, stream-copy with explicit maps and -c copy, machine-readable progress, cancellation, reaping, and ffprobe-normalized output validation pass on pinned test identities; success is impossible before Reaped and Validated.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-006",
+      "requirement": "Machine-readable reports bind source, host, executable/version/capability identity, plan, limits, lifecycle, exit/reap/descendant results, output facts, fixture hashes, timeouts, and residual uncertainty without leaking sensitive input values.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-010-ffmpeg-supervision-spike-v1-AC-007",
+      "requirement": "FF-GATE-ARCH-001, FF-GATE-PR-001, triggered process/fault/platform deep gates, and independent adversarial review pass for the same source and fixture/tool manifest.",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-18T21:13:04Z",
+      "branch": "main",
+      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "dirty_paths": [
+        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json"
+      ],
+      "checks_run": [
+        "git branch --show-current: main",
+        "git rev-parse HEAD: 447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+        "git status --porcelain=v2 --branch: main at 447b4dbb0d64df56b3c956d8f311ff24f5b51c50 before packet creation",
+        "git worktree list --porcelain: one main worktree; no packet worktree created"
+      ],
+      "blockers": [
+        "Packet is a STUB and does not authorize implementation."
+      ],
+      "next_action": "Wait for prerequisites and cross-platform proof hosts, then refresh research and promote before prototype code."
+    }
+  },
+  "validation": {
+    "checks": [
+      "packet_json_parse: PASS",
+      "template_required_sections: PASS",
+      "authority_and_readiness_anchor_review: PASS",
+      "allowed_path_review: PASS"
+    ],
+    "not_proven": [
+      "FFmpeg/ffprobe trusted selection",
+      "Bounded pipe handling or cancellation",
+      "Windows Job Object or Unix process-group descendant containment",
+      "Reaping and output validation",
+      "Complete post-processing support or broad readiness"
+    ]
+  },
+  "extensions": {
+    "stub_contract": {
+      "implementation_authorized": false,
+      "promotion_requirements": [
+        "WP-FF-003, WP-FF-005, and WP-FF-009 prerequisite evidence is accepted.",
+        "Current official FFmpeg documentation and current Rust/Windows/Unix process-supervision implementations are inspected at source and test level.",
+        "Supported host, FFmpeg/ffprobe identity, capability, and fixture profiles are pinned.",
+        "Deterministic fake-child behaviors and real-tool cases have exact deadlines, limits, failure oracles, and report schema.",
+        "Windows and Unix proof execution is available; one platform cannot stand in for both."
+      ]
+    },
+    "documentation_topics": [
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "7.6", "heading": "FFmpeg", "lines": "446-451", "use": "required external-process baseline"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "16.1", "heading": "Atomic resource vectors", "lines": "1397-1419", "use": "FFmpeg process/thread/resource admission"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "19.1-19.7", "heading": "FFmpeg and Post-Processing Integration", "lines": "1732-1798", "use": "complete supervised-process contract and mandatory cases"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "24.2", "heading": "Subprocess safety", "lines": "2150-2159", "use": "shell/path/environment/limit/tree-kill security rules"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "Phase 0C", "heading": "Dependency and risk spikes", "lines": "2580-2586", "use": "authorized containment prototype"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "Phase 2", "heading": "Cross-boundary proof slice", "lines": "2605-2614", "use": "first-slice discovery/progress/cancel/reap/validate expectations"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "31.7", "heading": "Broad-feature implementation readiness gates", "lines": "2914-2929", "use": "gate 9"},
+      {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "Appendix C", "heading": "Benchmark Matrix", "lines": "3237-3269", "use": "B-016, B-017, and B-018"}
+    ],
+    "readiness_matrix_items": [
+      {"json_pointer": "/consensus_blockers/6", "id": "SYN-007", "required_resolution": "Trusted selection, capability/version, restrictions, bounded pipes, containment, cancellation, reaping, and ffprobe validation."},
+      {"json_pointer": "/peer_question_resolutions/9", "question": 10, "required_resolution": "Compound process, CPU, memory, disk, and pipe admission; stricter transcode admission."},
+      {"json_pointer": "/peer_question_resolutions/14", "question": 15, "required_resolution": "Trusted absolute FFmpeg/ffprobe paths or an Operator-chosen verified bundle."},
+      {"json_pointer": "/peer_question_resolutions/16", "question": 17, "required_resolution": "Versioned FFmpeg process state machine."},
+      {"json_pointer": "/implementation_readiness_gates/8", "gate": "FFmpeg supervision failure and descendant-process tests on Windows and Unix"}
+    ],
+    "base_scope": [
+      "Trusted executable/capability selection",
+      "Bounded direct invocation and pipe handling",
+      "Cross-platform cancellation, containment, and reaping",
+      "ffprobe output validation and machine-readable evidence"
+    ],
+    "high_roi_additions": [
+      {"addition": "Create a small deterministic Rust fake-child test executable with modes for chatty pipes, malformed progress, grandchildren, ignored graceful stop, delayed exit, partial output, and exit races.", "why_high_roi": "The supervisor already needs all these paths and a fake child makes them fast, offline, deterministic, and reusable for plugin/worker supervision.", "gap_closed": "Real FFmpeg cannot reliably produce every failure schedule.", "reuses": ["fforager-testkit", "process contract", "xtask deep-gate fixtures"], "validation": "Each mode has a golden lifecycle report and a mutation that must fail."},
+      {"addition": "Bind capability-cache entries to executable file identity plus version/capability probe and invalidate on identity change.", "why_high_roi": "Identity is already collected, and this prevents stale or substituted-tool execution without another subsystem.", "gap_closed": "A path-stable binary replacement could otherwise reuse incorrect capabilities.", "reuses": ["trusted executable identity", "structured provenance"], "validation": "Replace the test executable at the same path and require a re-probe."},
+      {"addition": "Expose one stable supervisor timeline schema usable by the watcher and no-context diagnostics without making watcher acknowledgement part of correctness.", "why_high_roi": "Lifecycle instrumentation is being built now and will make Phase 2 failures much cheaper to isolate.", "gap_closed": "Process-tree and pipe stalls are otherwise opaque.", "reuses": ["versioned diagnostic contract", "state IDs", "structured reports"], "validation": "Replay covers success, hung, killed, reaped, and invalid-output timelines; product behavior is identical with watcher absent."}
+    ],
+    "reused_systems": [
+      "WP-FF-003 executable gate and tooling policy",
+      "WP-FF-005 process/error/event/diagnostic contracts",
+      "WP-FF-009 resource vectors, cancellation, and controlled clock",
+      "fforager-ffmpeg coarse ownership boundary",
+      "fforager-testkit fake-child and fault fixtures",
+      "fforager-xtask platform/deep report aggregation",
+      "Required external FFmpeg and ffprobe binaries"
+    ],
+    "gaps_closed": [
+      "Untrusted or stale executable selection",
+      "Shell/environment/protocol injection exposure",
+      "Pipe deadlock and unbounded stderr/progress memory",
+      "Descendant leaks after cancellation",
+      "Terminal paths that fail to reap",
+      "Partial or wrong output accepted from exit code alone",
+      "No cross-platform supervisor evidence"
+    ],
+    "red_team": [
+      {"risk": "A child or descendant survives cancellation.", "failure_scenarios": ["grandchild escapes process tree", "child exits during kill race", "graceful stop ignored", "PID reused"], "mitigations": ["attach group/job at creation", "bounded graceful then forced tree kill", "identity-aware observation", "await reaping on every terminal path"], "verification": "Fake-child descendant matrix on Windows and Unix plus post-exit orphan scan."},
+      {"risk": "Bounded progress/stderr handling deadlocks media output.", "failure_scenarios": ["stderr floods while stdout blocks", "progress frame never terminates", "parser receives adversarial length"], "mitigations": ["concurrent drains", "framed length/cadence/allocation limits", "bounded stderr tail", "consumer-stall cancellation"], "verification": "Chatty/malformed/stalled fake-child cases stay within memory/time bounds and terminate."},
+      {"risk": "A substituted binary inherits trusted cached capabilities.", "failure_scenarios": ["same path replaced", "symlink/reparse target changes", "version output spoofed without file identity"], "mitigations": ["absolute verified handle/path", "file identity plus probe binding", "cache invalidation", "configured trust source"], "verification": "Same-path replacement and link-target mutation force rejection or re-probe."},
+      {"risk": "Successful exit masks partial or semantically wrong output.", "failure_scenarios": ["zero-byte output", "missing selected stream", "wrong duration/container", "stale prior output"], "mitigations": ["job-scoped temporary path", "artifact identity", "ffprobe-normalized equality", "commit only after validation"], "verification": "Partial/wrong/stale artifacts never reach Validated or archive eligibility."},
+      {"risk": "Cross-platform evidence is inferred from one OS.", "failure_scenarios": ["Unix group logic assumed on Windows", "Windows Job behavior assumed under Unix"], "mitigations": ["separate platform implementations and fixtures", "mandatory Windows and Unix report rows", "residual gaps explicit"], "verification": "Closure aggregator rejects a missing platform report or mismatched source/tool manifest."}
+    ],
+    "verification_needs": {
+      "required_commands_at_execution": [
+        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
+        "cargo run --manifest-path product/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard"
+      ],
+      "required_proof_classes": [
+        "Contract schemas and typed plan fixtures",
+        "Deterministic fake-child boundary and negative cases",
+        "Real FFmpeg/ffprobe smoke and stream-copy validation",
+        "Windows Job Object descendant tests",
+        "Unix process-group descendant tests",
+        "Pipe saturation/allocation/parser limits",
+        "Executable identity/cache substitution tests",
+        "Independent adversarial review"
+      ],
+      "closure_rule": "No PASS without both Windows and Unix descendant/reaping reports for the same source contract, bounded pipe evidence, and ffprobe validation; exit code or process disappearance alone is insufficient."
+    },
+    "applicable_rule_ids": [
+      "FF-BUILD-011",
+      "FF-BUILD-012",
+      "FF-BUILD-013",
+      "FF-BUILD-014",
+      "FF-BUILD-018",
+      "FF-BUILD-022",
+      "FF-BUILD-023",
+      "FF-BUILD-024",
+      "FF-BUILD-025",
+      "FF-BUILD-026",
+      "FF-BUILD-027",
+      "FF-BUILD-029",
+      "FF-BUILD-030",
+      "FF-BUILD-031",
+      "FF-BUILD-032",
+      "FF-BUILD-033",
+      "FF-BUILD-034",
+      "FF-BUILD-035",
+      "FF-BUILD-047",
+      "FF-BUILD-048",
+      "FF-BUILD-050",
+      "FF-BUILD-051",
+      "FF-BUILD-054",
+      "FF-BUILD-055",
+      "FF-BUILD-057",
+      "FF-BUILD-058",
+      "FF-BUILD-059",
+      "FF-BUILD-060",
+      "FF-BUILD-064",
+      "FF-BUILD-066",
+      "FF-BUILD-067",
+      "FF-BUILD-072"
+    ]
+  }
+}

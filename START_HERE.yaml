@@ -32,7 +32,7 @@ deterministic_navigation:
     - when: The task designs, implements, reviews, or validates product behavior.
       read: [.GOV/rules/build-rules.yaml]
     - when: The active packet cites design clauses or the task changes product design.
-      read: [.GOV/spec/ferric_forager_technical_design_v0.2.0.md]
+      read: [.GOV/spec/ferric_forager_technical_design_v0.3.0.md]
       scope: Read cited anchors first; read the complete design only for broad design or readiness work.
     - when: The task changes implementation-readiness gates or selects blocked Phase 0 work.
       read: [.GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json]
@@ -74,7 +74,7 @@ state:
   design_verdict:
     phase_0_charter: PASS
     complete_product_implementation_readiness: FAIL
-  allowed_next_work: [inventory, compatibility_corpus, contract_definition, risk_prototypes, equivalent_work_benchmark_design]
+  allowed_next_work: [executable_gate_bootstrap, inventory, compatibility_corpus, contract_definition, risk_prototypes, equivalent_work_benchmark_design]
   broad_parallel_implementation_blocked: true
   dynamic_work_state_source: .GOV/taskboard/taskboard.yaml
   git:

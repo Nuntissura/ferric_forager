@@ -14,7 +14,7 @@ authority_precedence:
   - .GOV/taskboard/taskboard.yaml
   - .GOV/work_packets/<WP_ID>/packet.json
   - .GOV/work_packets/<WP_ID>/refinement.json
-  - .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+  - .GOV/spec/ferric_forager_technical_design_v0.3.0.md
   - .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json
 context_entrypoint: START_HERE.yaml
 nodes:
@@ -63,7 +63,7 @@ nodes:
     owner: governance
   - id: FF-NODE-SPEC-001
     kind: design_source
-    path: .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+    path: .GOV/spec/ferric_forager_technical_design_v0.3.0.md
     owner: governance
   - id: FF-NODE-REVIEWS-001
     kind: review_collection
@@ -157,6 +157,7 @@ entrypoints:
   claude_bootstrap: CLAUDE.md
   project_codex: .GOV/codex.yaml
   build_rules: .GOV/rules/build-rules.yaml
+  build_verification_contracts: .GOV/rules/build-rules.yaml#verification_gates
   task_state: .GOV/taskboard/taskboard.yaml
   work_packet_template: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
   work_packet_requirements: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml

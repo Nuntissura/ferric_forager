@@ -9,7 +9,7 @@ conditional_reads:
   topology: .GOV/topology.yaml
   product_behavior: .GOV/rules/build-rules.yaml
   active_packet: .GOV/work_packets/<ACTIVE_WP_ID>/packet.json
-  design_anchors: .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+  design_anchors: .GOV/spec/ferric_forager_technical_design_v0.3.0.md
   readiness_gates: .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json
 rules:
   - id: FF-CODEX-001
@@ -23,7 +23,7 @@ rules:
     statement: Read .GOV/rules/build-rules.yaml before designing, implementing, reviewing, or validating product behavior.
   - id: FF-CODEX-004
     category: authority
-    statement: Treat .GOV/spec/ferric_forager_technical_design_v0.2.0.md as the current product-design source and use .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json for unresolved readiness gates.
+    statement: Treat .GOV/spec/ferric_forager_technical_design_v0.3.0.md as the current product-design source and use .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json for unresolved readiness gates that v0.3.0 leaves as Phase 0 proof gates.
   - id: FF-CODEX-005
     category: authority
     statement: Treat .GOV/taskboard/taskboard.yaml as the sole canonical project-level work-packet index and active-focus surface; detailed lifecycle state lives only in each packet.json.

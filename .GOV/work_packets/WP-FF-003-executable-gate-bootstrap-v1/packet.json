@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Implement the Phase 0 executable-gate bootstrap",
     "created_at_utc": "2026-07-18T21:12:33Z",
-    "updated_at_utc": "2026-07-18T21:26:40Z"
+    "updated_at_utc": "2026-07-18T21:27:50Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -43,9 +43,9 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/executable-gate-bootstrap",
+      "head_sha": "7ec76344a9ff73f130ecb3f3be1cfff022127dd6",
+      "verified_at_utc": "2026-07-18T21:27:50Z"
     },
     "closure_commit": null,
     "main_containment_status": "NOT_STARTED",
@@ -165,23 +165,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:26:40Z",
+      "recorded_at_utc": "2026-07-18T21:27:50Z",
       "branch": "codex/executable-gate-bootstrap",
       "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "head_sha": "7ec76344a9ff73f130ecb3f3be1cfff022127dd6",
       "dirty_paths": [
-        ".GOV/id-registry.yaml",
-        ".GOV/taskboard/taskboard.yaml",
-        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json",
-        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/refinement.json",
-        ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json",
-        ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
-        ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-008-archive-store-evidence-v1/packet.json",
-        ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json",
-        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-011-equivalent-work-vertical-slice-v1/packet.json"
+        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json"
       ],
       "checks_run": [
         "git branch --show-current: codex/executable-gate-bootstrap",
@@ -197,7 +186,10 @@
         "STUB blockers, PENDING acceptance, no-context execution instructions, ROI, reuse, gaps, failure scenarios, mitigations, and verification surfaces reviewed: PASS",
         "AGENTS.md and CLAUDE.md byte identity: PASS",
         "git diff --check: PASS",
-        "changed paths are limited to the active packet's governance preparation allowlist; no product files changed: PASS"
+        "changed paths are limited to the active packet's governance preparation allowlist; no product files changed: PASS",
+        "git commit 7ec76344a9ff73f130ecb3f3be1cfff022127dd6: governance activation and eight detailed stubs",
+        "git push -u origin codex/executable-gate-bootstrap: PASS",
+        "git ls-remote origin/codex/executable-gate-bootstrap equals local HEAD 7ec76344a9ff73f130ecb3f3be1cfff022127dd6: PASS"
       ],
       "blockers": [
         "Root toolchain selection conflicts with the current product-only build-configuration boundary for repository-root Cargo invocation."

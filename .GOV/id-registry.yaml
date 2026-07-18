@@ -7,7 +7,7 @@ namespaces:
     next_numeric_id: 2
   FF-CODEX:
     entity_kind: project_rule
-    next_numeric_id: 40
+    next_numeric_id: 48
   FF-BOOT:
     entity_kind: bootstrap_rule
     next_numeric_id: 3
@@ -37,7 +37,7 @@ namespaces:
     next_numeric_id: 7
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 1
+    next_numeric_id: 2
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -64,6 +64,8 @@ registered_files:
     path: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
   - id: FF-GOV-WP-REQUIREMENTS-001
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
+  - id: WP-FF-001-governance-workflow-v1
+    path: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
@@ -73,8 +75,8 @@ registered_rule_ranges:
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX
     first: FF-CODEX-001
-    last: FF-CODEX-039
-    count: 39
+    last: FF-CODEX-047
+    count: 47
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001

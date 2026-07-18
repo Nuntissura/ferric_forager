@@ -1,12 +1,16 @@
-schema_id: ff.project_codex@1
+schema_id: ff.project_codex@2
 file_id: FF-GOV-CODEX-001
 updated_at: "2026-07-18"
 authority: canonical_project_codex
-required_reads:
+always_reads:
   - START_HERE.yaml
-  - .GOV/topology.yaml
-  - .GOV/rules/build-rules.yaml
   - .GOV/taskboard/taskboard.yaml
+conditional_reads:
+  topology: .GOV/topology.yaml
+  product_behavior: .GOV/rules/build-rules.yaml
+  active_packet: .GOV/work_packets/<ACTIVE_WP_ID>/packet.json
+  design_anchors: .GOV/spec/ferric_forager_technical_design_v0.2.0.md
+  readiness_gates: .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json
 rules:
   - id: FF-CODEX-001
     category: authority
@@ -22,7 +26,7 @@ rules:
     statement: Treat .GOV/spec/ferric_forager_technical_design_v0.2.0.md as the current product-design source and use .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json for unresolved readiness gates.
   - id: FF-CODEX-005
     category: authority
-    statement: Treat .GOV/taskboard/taskboard.yaml as the sole canonical project-level work-packet index and state surface.
+    statement: Treat .GOV/taskboard/taskboard.yaml as the sole canonical project-level work-packet index and active-focus surface; detailed lifecycle state lives only in each packet.json.
   - id: FF-CODEX-006
     category: authority
     statement: Treat each .GOV/work_packets/<WP_ID>/packet.json as authoritative for that work packet's scope, lifecycle, acceptance, and evidence.
@@ -64,16 +68,19 @@ rules:
     statement: Do not create new file or directory names containing spaces.
   - id: FF-CODEX-019
     category: work_packet
-    statement: Do not begin product implementation without an active work packet indexed in .GOV/taskboard/taskboard.yaml and backed by .GOV/work_packets/<WP_ID>/packet.json.
+    statement: Do not begin product implementation without an active TRACKED or EXPANDED work packet indexed in .GOV/taskboard/taskboard.yaml and backed by .GOV/work_packets/<WP_ID>/packet.json.
+    revision: 2
   - id: FF-CODEX-020
     category: work_packet
-    statement: Create work packets from .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json, satisfy .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml, and do not create Markdown packet or task-state projections.
+    statement: Create one minimal packet.json from the canonical template for TRACKED or EXPANDED work, use the smallest applicable profile, and do not create Markdown packet, task-state, receipt, or handoff projections.
+    revision: 2
   - id: FF-CODEX-021
     category: work_packet
     statement: Use stable WP-FF-<number>-<name>-v<number> identifiers, keep base_wp_id stable across revisions, and never encode dates in work-packet IDs.
   - id: FF-CODEX-022
     category: work_packet
-    statement: Complete and link a research-backed refinement before a work packet becomes READY_FOR_DEV.
+    statement: Require a research-backed refinement only for EXPANDED work or when a specific risk trigger requires it; TRACKED work must not carry empty refinement paperwork.
+    revision: 2
   - id: FF-CODEX-023
     category: work_packet
     statement: Make every acceptance criterion executable or tie it to a named artifact and review method; qualitative completion prose is not closure proof.
@@ -85,7 +92,8 @@ rules:
     statement: Archive superseded work packets under .GOV/archive/work_packets/<BASE_WP_ID>/ and do not delete lifecycle history.
   - id: FF-CODEX-026
     category: research_and_validation
-    statement: Perform current broad research before substantial product implementation and record sources, patterns, reuse choices, rejected choices, risks, mitigations, and validation plans in the work-packet refinement.
+    statement: Perform current broad research before substantial product implementation and record it in the EXPANDED packet refinement; do not require research ceremony for DIRECT or ordinary TRACKED work.
+    revision: 2
   - id: FF-CODEX-027
     category: research_and_validation
     statement: For yt-dlp compatibility claims, use a pinned upstream version, generated inventory, representative corpus, and executable oracle comparison.
@@ -125,4 +133,29 @@ rules:
   - id: FF-CODEX-039
     category: authority_maintenance
     statement: Ask the Operator before changing the authorized dependency boundary, final product scope, or canonical authority precedence.
+
+  - id: FF-CODEX-040
+    category: product_first_governance
+    statement: Product delivery is the goal; governance is supporting infrastructure and MUST be limited to the minimum state, recovery, scope, and proof required to deliver the current product closure unit safely.
+  - id: FF-CODEX-041
+    category: product_first_governance
+    statement: Use DIRECT, TRACKED, or EXPANDED exactly as classified by START_HERE.yaml; never require empty sections, repeated not-applicable prose, refinements, microtasks, research, red-team material, performance evidence, or handoff paperwork outside their declared triggers.
+  - id: FF-CODEX-042
+    category: state_tracking
+    statement: For TRACKED and EXPANDED work, keep stable identity, authorization, scope, lifecycle, acceptance, blockers, branch, base/head commits, and exact next action in packet.json; keep only the packet index and active ID in the taskboard.
+  - id: FF-CODEX-043
+    category: recovery
+    statement: Create a recovery checkpoint at activation, material verification, blocking, handoff, and closure; a recoverable checkpoint includes Git identity and dirty paths, but only a commit plus appropriate remote backup is durable across filesystem or machine loss.
+  - id: FF-CODEX-044
+    category: worktrees
+    statement: Worktrees are optional and default to NONE; use native Git worktree commands only for parallel work, long-running dirty work, isolated validation, or high-risk experiments, keep physical paths out of committed state, and never treat a worktree as a backup.
+  - id: FF-CODEX-045
+    category: model_navigation
+    statement: A no-context model MUST follow START_HERE.yaml deterministic_navigation, read the small always-read set, resolve the active packet, and load only condition-triggered authority or cited spec anchors before acting.
+  - id: FF-CODEX-046
+    category: state_tracking
+    statement: Do not maintain derived taskboard counts or mirror packet lifecycle, branch, risk, acceptance, blocker, or next-action fields into the taskboard; update its index only when packets are added, archived, or selected as active.
+  - id: FF-CODEX-047
+    category: recovery
+    statement: Do not use uncommitted changes, stashes, linked worktrees, local reflogs, generated evidence, or chat history as the sole recovery source; checkpoint commits and remote-backed branches are the canonical durable recovery path for paused or handed-off work.
 

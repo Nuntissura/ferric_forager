@@ -1,4 +1,4 @@
-schema_id: ff.model_entrypoint@1
+schema_id: ff.model_entrypoint@2
 file_id: FF-DOC-START-001
 updated_at: "2026-07-18"
 project:
@@ -9,71 +9,109 @@ project:
   required_external_processes: [ffmpeg, ffprobe]
   optimization_policy: Speed first after equivalent-work correctness, compatibility, bounded-resource, recoverability, and security gates pass.
   expanded_design_scope_preserved: true
-mandatory_reading_order:
-  - path: AGENTS.md
-    purpose: Minimal project bootstrap router.
-  - path: .GOV/codex.yaml
-    purpose: Canonical project Codex rules.
-  - path: .GOV/topology.yaml
-    purpose: Paths, ownership, boundaries, and topology links.
-  - path: .GOV/rules/build-rules.yaml
-    purpose: Watcher, invariance, referential-transparency, backpressure, and computability rules.
-  - path: .GOV/taskboard/taskboard.yaml
-    purpose: Canonical work-packet state.
-  - path: .GOV/work_packets/<WP_ID>/packet.json
-    purpose: Active scope, lifecycle, acceptance, and evidence authority.
-  - path: .GOV/work_packets/<WP_ID>/refinement.json
-    purpose: Current research, red team, selected approach, and spec anchors.
-  - path: .GOV/spec/ferric_forager_technical_design_v0.2.0.md
-    purpose: Existing product-design source.
-  - path: .GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json
-    purpose: Machine-readable readiness verdict, blockers, and gates.
-  - path: .GOV/reviews/peer-review-v0.2.0/primary-synthesis.md
-    purpose: Research-backed adversarial review narrative.
+operating_priority:
+  primary_deliverable: product
+  governance_role: Minimal state, recovery, scope, and proof support for product delivery.
+  rule: Never create governance paperwork unless it is the requested deliverable or the minimum state/proof needed to safely deliver product work.
+deterministic_navigation:
+  run_from: repository_root
+  always_read_in_order:
+    - path: START_HERE.yaml
+      purpose: Task classification, navigation, state, and recovery entrypoint.
+    - path: AGENTS.md
+      purpose: Minimal bootstrap router; verify it remains byte-identical to CLAUDE.md.
+    - path: .GOV/codex.yaml
+      purpose: Canonical project rules.
+    - path: .GOV/taskboard/taskboard.yaml
+      purpose: Canonical work-packet index and active state.
+  conditional_reads:
+    - when: active_wp_id is non-null or the requested work names a packet.
+      read: [.GOV/work_packets/<ACTIVE_WP_ID>/packet.json]
+    - when: The task makes path, ownership, dependency, workflow, architecture, or governance-topology claims.
+      read: [.GOV/topology.yaml]
+    - when: The task designs, implements, reviews, or validates product behavior.
+      read: [.GOV/rules/build-rules.yaml]
+    - when: The active packet cites design clauses or the task changes product design.
+      read: [.GOV/spec/ferric_forager_technical_design_v0.2.0.md]
+      scope: Read cited anchors first; read the complete design only for broad design or readiness work.
+    - when: The task changes implementation-readiness gates or selects blocked Phase 0 work.
+      read: [.GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json]
+    - when: The task adjudicates review rationale or unresolved reviewer recommendations.
+      read: [.GOV/reviews/peer-review-v0.2.0/primary-synthesis.md]
+    - when: The task creates or changes a work packet or governance workflow.
+      read: [.GOV/templates/WORK_PACKET_REQUIREMENTS.yaml, .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json]
+  prohibition: Do not read the full specification and review corpus by default when the active packet supplies narrower authoritative anchors.
+task_profiles:
+  precedence: EXPANDED > TRACKED > DIRECT
+  DIRECT:
+    packet_required: false
+    use_when:
+      - Read-only inspection, explanation, or status reporting.
+      - A trivial non-product documentation correction that does not change authority, scope, behavior, dependencies, or task state.
+    forbidden_for:
+      - Product code changes.
+      - Multi-session work.
+      - Worktree work.
+      - Authority or lifecycle changes.
+  TRACKED:
+    packet_required: true
+    use_when:
+      - Any product code or product-test change.
+      - Any authority, task-state, or governance-workflow change.
+      - Work that may span sessions, use a worktree, or require a recoverable handoff.
+    required_state: [identity, authorization, scope, branch, base_sha, status, acceptance, next_action, last_checkpoint]
+  EXPANDED:
+    packet_required: true
+    extends: TRACKED
+    use_when:
+      - Architecture, dependency, security-boundary, public-contract, compatibility, durability, or performance-claim work.
+      - Broad product design or specification changes.
+      - Medium/high-risk work whose safe implementation requires research or adversarial validation.
+    conditional_state: [refinement, research, red_team, contracts, performance, microtasks]
 state:
   governance_initialized: true
   product_implementation_started: false
   design_verdict:
     phase_0_charter: PASS
     complete_product_implementation_readiness: FAIL
-  allowed_next_work:
-    - inventory
-    - compatibility_corpus
-    - contract_definition
-    - risk_prototypes
-    - equivalent_work_benchmark_design
+  allowed_next_work: [inventory, compatibility_corpus, contract_definition, risk_prototypes, equivalent_work_benchmark_design]
   broad_parallel_implementation_blocked: true
-  active_wp_id: null
-  indexed_work_packet_count: 0
+  dynamic_work_state_source: .GOV/taskboard/taskboard.yaml
   git:
-    initialized: true
-    branch: main
-    remote_configured: true
-    origin_url: https://github.com/Nuntissura/ferric_forager
-topology_summary:
-  product_root: product/
-  watcher_root: product/watcher/
-  governance_root: .GOV/
-  authority_files: [AGENTS.md, CLAUDE.md]
-  project_codex: .GOV/codex.yaml
-  rules: .GOV/rules/build-rules.yaml
-  topology: .GOV/topology.yaml
-  id_registry: .GOV/id-registry.yaml
-  design: .GOV/spec/
-  research_reviews: .GOV/reviews/
-  templates: .GOV/templates/
-  taskboard: .GOV/taskboard/taskboard.yaml
-  work_packets: .GOV/work_packets/
-  archive: .GOV/archive/
-startup_workflow:
-  - step: Read every mandatory authority surface in order.
-  - step: Locate the requested wp_id in .GOV/taskboard/taskboard.yaml.
-  - step: If no active packet exists, do not implement product code.
-  - step: Create packet.json from .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json.
-  - step: Satisfy .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml and complete refinement.json.
-  - step: Obtain the activation and signature required by packet.json before product edits.
-  - step: Work only in allowed paths and prove every required acceptance row.
-  - step: Update packet.json and canonical taskboard YAML; do not create Markdown status projections.
+    state_source: git status --porcelain=v2 --branch
+    baseline_commit_required: false
+    remote_backup_required_for_handoff: true
+    canonical_branch: main
+workflow:
+  startup:
+    - Read deterministic_navigation.always_read_in_order.
+    - Classify the task using task_profiles and use the highest applicable profile.
+    - Inspect `git status --porcelain=v2 --branch` and `git worktree list --porcelain` before changing TRACKED or EXPANDED work.
+    - For TRACKED or EXPANDED work, resolve current_focus.active_wp_id or allocate the next registered WP-FF ID, instantiate one packet.json from the template, and index it on the taskboard.
+    - Record the Operator request as authorization; do not require a separate signature, receipt, or approval file.
+    - Resume from packet lifecycle.next_action and recovery.last_checkpoint instead of chat history.
+    - Work only inside packet scope and its explicit allowed_paths.
+  checkpoints:
+    - At activation, material verification, blocking, handoff, or closure, update only the active packet's relevant acceptance, lifecycle, validation, and recovery fields.
+    - Record exact output from `git branch --show-current`, `git rev-parse HEAD`, `git merge-base main HEAD`, and `git status --porcelain=v2 --branch`, plus checks, blockers, and the exact next action.
+    - Create a Git checkpoint commit before relying on a checkpoint for recovery; push the work branch before cross-machine or long-pause handoff.
+  closure:
+    - Run required acceptance checks.
+    - Commit the closure on the work branch.
+    - Record the closure commit and MERGE_PENDING in the packet.
+    - Merge the closure to main.
+    - Run `git merge-base --is-ancestor <CLOSURE_SHA> main`; only exit code 0 produces VALIDATED.
+    - Clear current_focus.active_wp_id when closure is proven; do not copy packet lifecycle details into the taskboard.
+  worktrees:
+    default: NONE
+    use_only_when: [parallel_work, long_running_dirty_work, isolated_validation, high_risk_experiment]
+    create: git worktree add --lock --reason <WP_ID> -b codex/<SLUG> <LOCAL_PATH> main
+    inspect: git worktree list --porcelain
+    remove_clean: git worktree unlock <LOCAL_PATH>, then git worktree remove <LOCAL_PATH>
+    repair: git worktree repair <LOCAL_PATH>
+    prune_preview: git worktree prune --dry-run --verbose
+    local_paths: Physical paths are machine-local and MUST NOT be committed; Git worktree metadata is the local registry.
+    warning: A worktree is isolation, not backup; durable recovery requires commits and remote backup.
 critical_boundaries:
   - id: FF-START-BOUNDARY-001
     statement: Do not add Python, production yt-dlp execution, another JS runtime, Wasmtime, BoringSSL-backed transports, SQLite native bindings, or another runtime/native dependency without explicit Operator approval.

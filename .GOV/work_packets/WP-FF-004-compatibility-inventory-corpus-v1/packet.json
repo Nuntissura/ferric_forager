@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Generate the pinned compatibility inventory and executable oracle corpus",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T13:44:12Z"
+    "updated_at_utc": "2026-07-19T13:46:47Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -42,18 +42,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/compatibility-inventory-corpus",
-      "head_sha": "ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
-      "verified_at_utc": "2026-07-19T13:44:12Z"
+      "head_sha": "74c246544cdb5d41b070d51bb8cdc84af20ec736",
+      "verified_at_utc": "2026-07-19T13:46:47Z"
     },
     "closure_commit": "ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "44741f452801a72b769f816aed6703866e91f815"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit and push the MERGE_PENDING packet plus clean-source reports, merge the approved closure into main, then verify mechanical containment before setting VALIDATED.",
+    "next_action": "Await Operator activation of a later work packet; WP-FF-005 and later packets remain non-authorizing stubs.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -164,10 +164,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T13:44:12Z",
-      "branch": "codex/compatibility-inventory-corpus",
+      "recorded_at_utc": "2026-07-19T13:46:47Z",
+      "branch": "main",
       "base_sha": "91404decb77599c0491084627b7ef97c96bfb9b5",
-      "head_sha": "ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
+      "head_sha": "44741f452801a72b769f816aed6703866e91f815",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json"
       ],
@@ -192,10 +192,13 @@
         "Inventory-diff provenance hardening commit: ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
         "Final clean-source FF-GATE-PR-001 PASS: build/reports/verify-pr-1784468566986366700-641512.json",
         "Final clean-source FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784468643263715300-637432.json",
-        "Final clean-source compatibility validation/replay/diff reports all bind to closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928"
+        "Final clean-source compatibility validation/replay/diff reports all bind to closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
+        "Merge commit: 44741f452801a72b769f816aed6703866e91f815 with parents 91404decb77599c0491084627b7ef97c96bfb9b5 and 74c246544cdb5d41b070d51bb8cdc84af20ec736",
+        "git merge-base --is-ancestor ca6f41f28870a9a3ec355840487f1bf3e3fc8928 main: exit 0",
+        "git merge-base --is-ancestor 74c246544cdb5d41b070d51bb8cdc84af20ec736 main: exit 0"
       ],
       "blockers": [],
-      "next_action": "Commit and push MERGE_PENDING proof, merge the approved closure into main, and verify containment before VALIDATED."
+      "next_action": "Commit the VALIDATED containment record on main, rerun the architecture gate, and push main."
     }
   },
   "validation": {
@@ -206,7 +209,8 @@
       "Deterministic regeneration, compatibility validation, full and sharded replay, differential completeness, independent oracle-set comparison, warnings-denied Clippy, and 28 tests: PASS",
       "Final clean-source FF-GATE-ARCH-001: PASS at build/reports/architecture-check-1784468643263715300-637432.json",
       "Final clean-source FF-GATE-PR-001: PASS at build/reports/verify-pr-1784468566986366700-641512.json",
-      "All six acceptance rows are PASS; closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928 is not yet proven contained in main, so lifecycle is MERGE_PENDING."
+      "All six acceptance rows are PASS.",
+      "Closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928 and MERGE_PENDING evidence commit 74c246544cdb5d41b070d51bb8cdc84af20ec736 are mechanically contained in main merge commit 44741f452801a72b769f816aed6703866e91f815."
     ],
     "not_proven": [
       "Any Ferric feature behavior or parity",

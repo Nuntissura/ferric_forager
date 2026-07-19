@@ -4858,8 +4858,32 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-005-FINDING-FIXTURE-001" => Some(
             "core::lifecycle::tests::success_and_durable_prefixes_require_effect_acknowledgements",
         ),
-        "WP-FF-005-FINDING-GATE-001" => {
-            Some("testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind")
+        "WP-FF-005-FINDING-INSTANCE-001" => {
+            Some("core::lifecycle::tests::acknowledgement_rejects_cross_instance_routing")
+        }
+        "WP-FF-005-FINDING-RESTORE-001" => Some(
+            "core::lifecycle::tests::restoration_accepts_only_inventory_enumerated_durable_states",
+        ),
+        "WP-FF-005-FINDING-ATTRIBUTION-001" => Some(
+            "core::resource::tests::consumed_claim_transfer_is_rejected_without_rewriting_attribution",
+        ),
+        "WP-FF-005-FINDING-INVENTORY-001" => {
+            Some("testkit::tests::inventory_digest_rejects_semantic_field_mutations")
+        }
+        "WP-FF-005-FINDING-GATE-SCANNER-001" => {
+            Some("xtask::tests::data_model_scan_rejects_runtime_handle_import_aliases")
+        }
+        "WP-FF-005-FINDING-GATE-PROGRESS-001" => {
+            Some("xtask::tests::prerequisite_zero_claim_surface_rejects_parallel_progress_claims")
+        }
+        "WP-FF-005-FINDING-GATE-DISPOSITION-001" => {
+            Some("xtask::tests::adversarial_review_evidence_rejects_placeholder_findings")
+        }
+        "WP-FF-005-FINDING-GATE-DEEP-001" => {
+            Some("xtask::tests::deep_verification_composes_doctest_gate")
+        }
+        "WP-FF-005-FINDING-GATE-INVENTORY-001" => {
+            Some("xtask::tests::contract_inventory_rejects_required_field_and_stable_id_mutations")
         }
         _ => None,
     }
@@ -6361,10 +6385,10 @@ mod tests {
                 "NEGATIVE_PATH_CHECKS": rows,
                 "INDEPENDENT_FINDINGS": [
                     {
-                        "finding_id": "WP-FF-005-FINDING-GATE-001",
+                        "finding_id": "WP-FF-005-FINDING-GATE-DISPOSITION-001",
                         "finding": "HIGH mutation bypass now fails through the production oracle",
                         "status": "REMEDIATED",
-                        "proof_id": "testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind"
+                        "proof_id": "xtask::tests::adversarial_review_evidence_rejects_placeholder_findings"
                     }
                 ],
                 "RESIDUAL_UNCERTAINTY": [
@@ -6399,10 +6423,10 @@ mod tests {
             "HIGH mutation bypass is unresolved in the production oracle",
         ] {
             evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
-                "finding_id": "WP-FF-005-FINDING-GATE-001",
+                "finding_id": "WP-FF-005-FINDING-GATE-DISPOSITION-001",
                 "finding": unresolved,
                 "status": "REMEDIATED",
-                "proof_id": "testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind"
+                "proof_id": "xtask::tests::adversarial_review_evidence_rejects_placeholder_findings"
             }]);
             assert!(
                 validate_adversarial_review_evidence(&evidence)
@@ -6418,7 +6442,7 @@ mod tests {
                 .contains("structured disposition object")
         );
         evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
-            "finding_id": "WP-FF-005-FINDING-GATE-001",
+            "finding_id": "WP-FF-005-FINDING-GATE-DISPOSITION-001",
             "finding": "HIGH mutation bypass now fails through the production oracle",
             "status": "REMEDIATED",
             "proof_id": "fabricated::tests::does_not_exist"
@@ -6429,7 +6453,7 @@ mod tests {
                 .contains("canonical executable proof")
         );
         evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
-            "finding_id": "WP-FF-005-FINDING-GATE-001",
+            "finding_id": "WP-FF-005-FINDING-GATE-DISPOSITION-001",
             "finding": "HIGH mutation bypass now fails through the production oracle",
             "status": "REMEDIATED",
             "proof_id": "core::resource::tests::atomic_zero_exact_one_over_and_release_identity"

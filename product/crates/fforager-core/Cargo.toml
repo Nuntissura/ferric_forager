@@ -11,7 +11,7 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-fforager-contracts = { path = "../fforager-contracts" }
+fforager-contracts = { version = "0.1.0", path = "../fforager-contracts" }
 
 [lints]
 workspace = true

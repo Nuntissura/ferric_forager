@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: The Operator requested fresh multi-lens adversarial evaluation and remediation of the validated WP-FF-004 implementation.
-  active_wp_id: WP-FF-004-compatibility-inventory-corpus-v2
+  statement: WP-FF-004-compatibility-inventory-corpus-v2 is VALIDATED; no later stub is active without Operator selection.
+  active_wp_id: null
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

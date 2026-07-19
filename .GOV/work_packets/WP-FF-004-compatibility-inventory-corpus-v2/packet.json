@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Adversarially re-evaluate and remediate the compatibility inventory and corpus",
     "created_at_utc": "2026-07-19T14:34:48Z",
-    "updated_at_utc": "2026-07-19T15:19:14Z"
+    "updated_at_utc": "2026-07-19T15:22:02Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -40,18 +40,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/wp-ff-004-adversarial-remediation",
-      "head_sha": "0eb89a45d995b9230fc8a40ccce8c1f1e0004195",
-      "verified_at_utc": "2026-07-19T15:19:14Z"
+      "head_sha": "5804802cabb98e380addfc7ae13a975af88557bc",
+      "verified_at_utc": "2026-07-19T15:20:14Z"
     },
     "closure_commit": "9a39cc597da1fc646c628e64910dbfcf2a0f947e",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "2e985c883b45e9a6f12b721e3749722748657f91"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Push the work branch, merge the closure to main, and mechanically verify containment before VALIDATED.",
+    "next_action": "Await Operator selection before activating any later work-packet stub.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -146,11 +146,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T15:18:00Z",
-      "branch": "codex/wp-ff-004-adversarial-remediation",
+      "recorded_at_utc": "2026-07-19T15:20:14Z",
+      "branch": "main",
       "base_sha": "f94c17854213fff4dbd82e754314f37a011db3a3",
-      "head_sha": "cd07c4c9cc31dc990c50abf3ba30d7ce628ae4ae",
+      "head_sha": "2e985c883b45e9a6f12b721e3749722748657f91",
       "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
         ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v2/packet.json"
       ],
       "checks_run": [
@@ -164,10 +165,13 @@
         "Clean compatibility validate/replay/shards/diff/inventory-diff and FF-GATE-ARCH-001 PASS at 9a39cc597da1fc646c628e64910dbfcf2a0f947e",
         "Canonical containment junction probe and corrupted-corpus differential probe rejected for the exact intended diagnostics",
         "Initial FF-GATE-PR-001 correctly rejected pending packet evidence; failure report build/reports/verify-pr-1784473626788804400-630820.json",
-        "Final clean FF-GATE-PR-001 PASS at cd07c4c9cc31dc990c50abf3ba30d7ce628ae4ae; report build/reports/verify-pr-1784474179254131400-638204.json"
+        "Final clean FF-GATE-PR-001 PASS at cd07c4c9cc31dc990c50abf3ba30d7ce628ae4ae; report build/reports/verify-pr-1784474179254131400-638204.json",
+        "git merge-base mechanically verified closure commit 9a39cc597da1fc646c628e64910dbfcf2a0f947e and branch head 5804802cabb98e380addfc7ae13a975af88557bc are ancestors of main merge 2e985c883b45e9a6f12b721e3749722748657f91",
+        "Post-merge focused compatibility regression: 24 PASS",
+        "Post-merge FF-GATE-ARCH-001 PASS at build/reports/architecture-check-1784474490074057900-655980.json"
       ],
       "blockers": [],
-      "next_action": "Push the work branch, merge to main, and prove closure containment."
+      "next_action": "Await Operator selection before activating any later work-packet stub."
     }
   },
   "validation": {
@@ -180,7 +184,9 @@
       "Inventory-diff v2 PASS across options, presets, interactions, extractors, and extractor descriptions",
       "FF-GATE-ARCH-001 PASS at build/reports/architecture-check-1784473609459449000-615092.json",
       "Canonical containment and corrupted-corpus command probes PASS by exact rejection",
-      "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784474179254131400-638204.json"
+      "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784474179254131400-638204.json",
+      "Main containment VERIFIED at merge 2e985c883b45e9a6f12b721e3749722748657f91",
+      "Post-merge 24-test compatibility regression PASS and FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784474490074057900-655980.json"
     ],
     "not_proven": [
       "Any Ferric feature behavior or replacement parity",

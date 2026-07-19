@@ -850,14 +850,6 @@ fn expected_inventory_proof(id: &str) -> Option<&'static str> {
     }
 }
 
-fn canonical_inventory_proof_ids() -> BTreeSet<&'static str> {
-    expected_contract_inventory_ids()
-        .into_iter()
-        .chain(expected_state_inventory_ids())
-        .filter_map(expected_inventory_proof)
-        .collect()
-}
-
 fn expected_contract_inventory_ids() -> BTreeSet<&'static str> {
     BTreeSet::from([
         "FF-CONTRACT-IDENTITY-001",
@@ -1165,7 +1157,9 @@ fn forbidden_std_io_handle_token(compact: &str) -> Option<&'static str> {
             {
                 return Some(LIVE_HANDLE);
             }
-            if imported_io_module_alias_is_used(group, compact, &live_names) {
+            if imported_io_module_alias_is_used(group, compact, &live_names)
+                || plain_grouped_io_module_is_used(group, compact, &live_names)
+            {
                 return Some(LIVE_HANDLE);
             }
         }
@@ -1192,6 +1186,16 @@ fn imported_io_module_alias_is_used(group: &str, compact: &str, live_names: &[&s
                     .any(|name| compact.contains(&format!("{alias}::{name}")))
         })
     })
+}
+
+fn plain_grouped_io_module_is_used(group: &str, compact: &str, live_names: &[&str]) -> bool {
+    let imports_io_module = group
+        .split(',')
+        .any(|item| item == "io" || item == "io::self" || item.starts_with("io::{self"));
+    imports_io_module
+        && live_names
+            .iter()
+            .any(|name| compact.contains(&format!("io::{name}")))
 }
 
 fn validate_contract_manual(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
@@ -2938,28 +2942,28 @@ fn validate_prerequisite_zero_claim_surface(packet: &Value) -> Result<(), String
 }
 
 fn reject_progress_claims(value: &Value) -> Result<(), String> {
-    reject_progress_claims_at(value, &mut Vec::new())
+    reject_progress_claims_at(value, false)
 }
 
-fn reject_progress_claims_at(value: &Value, path: &mut Vec<String>) -> Result<(), String> {
+fn reject_progress_claims_at(value: &Value, progress_subject_in_scope: bool) -> Result<(), String> {
     match value {
         Value::Object(object) => {
             for (key, child) in object {
-                if (is_prerequisite_progress_key(key) || nested_progress_key(path, key))
+                let child_progress_subject =
+                    progress_subject_in_scope || is_progress_subject_key(key);
+                if (is_prerequisite_progress_key(key) || child_progress_subject)
                     && affirmative_progress_value(child)
                 {
                     return Err(format!(
                         "FF-RUNTIME-E-PREREQUISITE-PROGRESS-CLAIM: {key}={child}"
                     ));
                 }
-                path.push(normalize_claim_key(key));
-                reject_progress_claims_at(child, path)?;
-                path.pop();
+                reject_progress_claims_at(child, child_progress_subject)?;
             }
         }
         Value::Array(values) => {
             for child in values {
-                reject_progress_claims_at(child, path)?;
+                reject_progress_claims_at(child, progress_subject_in_scope)?;
             }
         }
         Value::String(text) if asserts_forbidden_prerequisite_completion(text) => {
@@ -2976,19 +2980,11 @@ fn normalize_claim_key(key: &str) -> String {
     key.to_ascii_lowercase().replace('-', "_")
 }
 
-fn nested_progress_key(path: &[String], key: &str) -> bool {
-    let key = normalize_claim_key(key);
-    let scoped = path.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "product" | "capability" | "runtime" | "packaging" | "release" | "phase"
-        )
-    });
-    scoped
-        && matches!(
-            key.as_str(),
-            "status" | "state" | "progress" | "completion" | "result" | "verdict"
-        )
+fn is_progress_subject_key(key: &str) -> bool {
+    matches!(
+        normalize_claim_key(key).as_str(),
+        "product" | "capability" | "runtime" | "packaging" | "release" | "phase"
+    )
 }
 
 fn is_prerequisite_progress_key(key: &str) -> bool {
@@ -4777,8 +4773,8 @@ fn validate_finding_dispositions(value: &Value) -> Result<(), String> {
         .as_array()
         .filter(|rows| !rows.is_empty())
         .ok_or("INDEPENDENT_FINDINGS must be a nonempty array")?;
-    let allowed_proofs = canonical_inventory_proof_ids();
-    let expected = BTreeSet::from(["finding", "proof_id", "status"]);
+    let expected = BTreeSet::from(["finding", "finding_id", "proof_id", "status"]);
+    let mut observed_finding_ids = BTreeSet::new();
     for row in rows {
         let disposition = row
             .as_object()
@@ -4804,13 +4800,24 @@ fn validate_finding_dispositions(value: &Value) -> Result<(), String> {
         if !matches!(status, "REMEDIATED" | "NO_BLOCKING_FINDING") {
             return Err(format!("invalid independent finding status {status}"));
         }
+        let finding_id = disposition
+            .get("finding_id")
+            .and_then(Value::as_str)
+            .ok_or("independent finding finding_id is not a string")?;
+        if !observed_finding_ids.insert(finding_id) {
+            return Err(format!(
+                "independent finding_id is duplicated: {finding_id}"
+            ));
+        }
         let proof = disposition
             .get("proof_id")
             .and_then(Value::as_str)
             .ok_or("independent finding proof_id is not a string")?;
-        if !allowed_proofs.contains(proof) {
+        let expected_proof = expected_adversarial_finding_proof(finding_id)
+            .ok_or_else(|| format!("independent finding_id is not canonical: {finding_id}"))?;
+        if proof != expected_proof {
             return Err(format!(
-                "independent finding proof_id is not a canonical executable proof: {proof}"
+                "independent finding {finding_id} does not cite its exact canonical executable proof: expected={expected_proof}; observed={proof}"
             ));
         }
         let normalized = finding.to_ascii_lowercase();
@@ -4835,6 +4842,27 @@ fn validate_finding_dispositions(value: &Value) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> {
+    match finding_id {
+        "WP-FF-005-FINDING-WIRE-001" => {
+            Some("testkit::tests::canonical_public_contract_fixtures_decode_and_validate")
+        }
+        "WP-FF-005-FINDING-LIFECYCLE-001" => Some(
+            "core::lifecycle::tests::transient_restore_and_stale_or_wrong_acknowledgements_are_rejected",
+        ),
+        "WP-FF-005-FINDING-RESOURCE-001" => Some(
+            "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution",
+        ),
+        "WP-FF-005-FINDING-FIXTURE-001" => Some(
+            "core::lifecycle::tests::success_and_durable_prefixes_require_effect_acknowledgements",
+        ),
+        "WP-FF-005-FINDING-GATE-001" => {
+            Some("testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind")
+        }
+        _ => None,
+    }
 }
 
 fn substantive_review_rows(object: &Value, field: &str) -> Result<Vec<String>, String> {
@@ -5559,6 +5587,9 @@ mod tests {
             "use std as platform; use platform::io::Stdin; pub struct Leak(pub Stdin);",
             "use std::io::{self as streams}; pub struct Leak(pub streams::Stdout);",
             "use std::{io::{Stdin as Input}}; pub struct Leak(pub Input);",
+            "use std::{io}; pub struct Leak(pub io::Stdin);",
+            "use std::{fmt, io}; pub struct Leak(pub io::Stdout);",
+            "use std::{io::{self}}; pub struct Leak(pub io::Stderr);",
         ] {
             assert_eq!(
                 forbidden_data_model_token(source),
@@ -6295,6 +6326,9 @@ mod tests {
             serde_json::json!({"runtime_status": "SUCCESS"}),
             serde_json::json!({"runtime": {"status": "DONE"}}),
             serde_json::json!({"runtime": {"details": {"verdict": "PASSED"}}}),
+            serde_json::json!({"runtime": {"outcome": "DONE"}}),
+            serde_json::json!({"runtime": {"details": {"arbitrary_key": "SUCCESS"}}}),
+            serde_json::json!({"phase": [{"metadata": {"terminal": "OPERATIONAL"}}]}),
         ] {
             assert!(
                 reject_progress_claims(&status_claim)
@@ -6327,9 +6361,10 @@ mod tests {
                 "NEGATIVE_PATH_CHECKS": rows,
                 "INDEPENDENT_FINDINGS": [
                     {
+                        "finding_id": "WP-FF-005-FINDING-GATE-001",
                         "finding": "HIGH mutation bypass now fails through the production oracle",
                         "status": "REMEDIATED",
-                        "proof_id": "core::resource::tests::atomic_zero_exact_one_over_and_release_identity"
+                        "proof_id": "testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind"
                     }
                 ],
                 "RESIDUAL_UNCERTAINTY": [
@@ -6349,14 +6384,25 @@ mod tests {
             }
         });
         validate_adversarial_review_evidence(&evidence).unwrap();
+        let mut missing_finding_id = evidence.clone();
+        missing_finding_id["adversarial_review"]["INDEPENDENT_FINDINGS"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("finding_id");
+        assert!(
+            validate_adversarial_review_evidence(&missing_finding_id)
+                .unwrap_err()
+                .contains("independent finding field mismatch")
+        );
         for unresolved in [
             "HIGH mutation bypass remains open in the production oracle",
             "HIGH mutation bypass is unresolved in the production oracle",
         ] {
             evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
+                "finding_id": "WP-FF-005-FINDING-GATE-001",
                 "finding": unresolved,
                 "status": "REMEDIATED",
-                "proof_id": "core::resource::tests::atomic_zero_exact_one_over_and_release_identity"
+                "proof_id": "testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind"
             }]);
             assert!(
                 validate_adversarial_review_evidence(&evidence)
@@ -6372,6 +6418,7 @@ mod tests {
                 .contains("structured disposition object")
         );
         evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
+            "finding_id": "WP-FF-005-FINDING-GATE-001",
             "finding": "HIGH mutation bypass now fails through the production oracle",
             "status": "REMEDIATED",
             "proof_id": "fabricated::tests::does_not_exist"
@@ -6380,6 +6427,17 @@ mod tests {
             validate_adversarial_review_evidence(&evidence)
                 .unwrap_err()
                 .contains("canonical executable proof")
+        );
+        evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
+            "finding_id": "WP-FF-005-FINDING-GATE-001",
+            "finding": "HIGH mutation bypass now fails through the production oracle",
+            "status": "REMEDIATED",
+            "proof_id": "core::resource::tests::atomic_zero_exact_one_over_and_release_identity"
+        }]);
+        assert!(
+            validate_adversarial_review_evidence(&evidence)
+                .unwrap_err()
+                .contains("exact canonical executable proof")
         );
     }
 

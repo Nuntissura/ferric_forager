@@ -81,15 +81,18 @@ pub fn frame(payload: &[u8]) -> Result<Vec<u8>, FixtureError> {
 mod tests {
     use super::*;
     use fforager_contracts::{
-        AcquisitionSource, ArchiveCandidate, AssetId, BackpressureMode,
-        CancellationAcknowledgement, CancellationRequest, CompatibilityRange, ConfigEnvelope,
-        DerivedOutputId, ErrorEnvelope, EventEnvelope, ExtensionLimits, FilesystemCapability,
-        FrameDecoder, FrameError, FrameLimits, GraphLimits, ItemId, JavaScriptWorkerEnvelope,
-        OutputSinkSpec, PluginEnvelope, ProcessEnvelope, ProtocolLimits, RepresentationId,
-        SchemaVersion, SinkSemantics, SourceGraph, TrackId,
+        AcquisitionSource, ArchiveCandidate, ArchiveCommitted, AssetId, BackpressureMode,
+        CancellationAcknowledgement, CancellationRequest, CommitPrepared, CommitRenamed,
+        CompatibilityRange, ConfigEnvelope, DerivedOutputId, DurabilityPosition, ErrorEnvelope,
+        EventEnvelope, ExtensionLimits, FilesystemCapability, FrameDecoder, FrameError,
+        FrameLimits, GraphLimits, ItemId, JavaScriptWorkerEnvelope, JournalRecord, OutputSinkSpec,
+        PluginEnvelope, ProcessEnvelope, ProtocolLimits, RepresentationId, SchemaVersion,
+        SinkSemantics, SourceGraph, TrackId,
     };
-    use fforager_core::lifecycle::{Event, MachineKind, StateMachine};
-    use fforager_core::resource::{Admission, OwnerId, ResourceLedger, ResourceVector};
+    use fforager_core::lifecycle::{Event, MachineKind, StateMachine, TransitionError};
+    use fforager_core::resource::{
+        Admission, ByteCreditLedger, CreditError, OwnerId, ResourceLedger, ResourceVector,
+    };
     use fforager_diagnostics_contract as diagnostics;
     use std::collections::BTreeSet;
 
@@ -256,6 +259,26 @@ mod tests {
         )
         .expect("archive fixture must decode");
         assert!(archive.validate().is_ok());
+
+        let durability: serde_json::Value = serde_json::from_slice(
+            &read_fixture("durability-contracts-v1.0.json").expect("durability fixture must load"),
+        )
+        .expect("durability fixture must be JSON");
+        let position: DurabilityPosition = serde_json::from_value(durability["position"].clone())
+            .expect("durability position must decode");
+        assert!(position.validate().is_ok());
+        let _: CommitPrepared = serde_json::from_value(durability["commit_prepared"].clone())
+            .expect("prepared commit must decode");
+        let _: CommitRenamed = serde_json::from_value(durability["commit_renamed"].clone())
+            .expect("renamed commit must decode");
+        let _: ArchiveCommitted = serde_json::from_value(durability["archive_committed"].clone())
+            .expect("archive commit must decode");
+        let _: JournalRecord = serde_json::from_value(durability["journal_record"].clone())
+            .expect("journal record must decode");
+        let durable_archive: ArchiveCandidate =
+            serde_json::from_value(durability["archive_candidate"].clone())
+                .expect("durability archive candidate must decode");
+        assert!(durable_archive.validate().is_ok());
         let filesystem: FilesystemCapability = serde_json::from_slice(
             &read_fixture("filesystem-capability-v1.0.json").expect("filesystem fixture must load"),
         )
@@ -386,7 +409,8 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_fixture_replays_every_registered_machine() {
+    #[allow(clippy::too_many_lines)]
+    fn lifecycle_fixture_executes_success_failure_cancel_restart_and_invalid_paths() {
         let fixture: serde_json::Value = serde_json::from_slice(
             &read_fixture("lifecycle-scenarios-v1.0.json").expect("lifecycle fixture must load"),
         )
@@ -394,53 +418,121 @@ mod tests {
         let scenarios = fixture["scenarios"]
             .as_array()
             .expect("scenarios are required");
-        assert_eq!(scenarios.len(), 12);
+        let all_machines = [
+            "JobCancellation",
+            "SourceRedirect",
+            "AtomicAdmission",
+            "ByteCreditDurability",
+            "Live",
+            "Sink",
+            "Ffmpeg",
+            "JavascriptWorker",
+            "PluginIpc",
+            "CommitArchiveReconciliation",
+            "FilesystemCapability",
+            "Watcher",
+        ];
+        let restart_machines = [
+            "JobCancellation",
+            "SourceRedirect",
+            "ByteCreditDurability",
+            "Live",
+            "Ffmpeg",
+            "JavascriptWorker",
+            "PluginIpc",
+            "CommitArchiveReconciliation",
+            "FilesystemCapability",
+            "Watcher",
+        ];
+        let failure_machines = [
+            "JobCancellation",
+            "SourceRedirect",
+            "ByteCreditDurability",
+            "Live",
+            "Sink",
+            "Ffmpeg",
+            "JavascriptWorker",
+            "PluginIpc",
+            "CommitArchiveReconciliation",
+            "FilesystemCapability",
+            "Watcher",
+        ];
+        let mut coverage = BTreeSet::new();
         for scenario in scenarios {
-            let kind = machine_kind(scenario["machine_kind"].as_str().unwrap_or_default())
-                .expect("registered machine kind");
+            let machine_name = scenario["machine_kind"].as_str().unwrap_or_default();
+            let case = scenario["case"]
+                .as_str()
+                .expect("scenario case is required");
+            let kind = machine_kind(machine_name).expect("registered machine kind");
             let events = scenario["events"].as_array().expect("events are required");
-            let mut model = StateMachine::new(kind, events.len());
+            let mut model = StateMachine::new(kind, events.len().saturating_add(1));
             for event in events {
                 let event = lifecycle_event(event.as_str().unwrap_or_default())
                     .expect("registered lifecycle event");
                 assert!(model.apply(event).is_ok());
             }
+            if case == "invalid" {
+                let prior_state = model.state();
+                let prior_trace_length = model.trace().len();
+                let invalid = lifecycle_event(
+                    scenario["invalid_event"]
+                        .as_str()
+                        .expect("invalid event is required"),
+                )
+                .expect("registered invalid lifecycle event");
+                assert!(matches!(
+                    model.apply(invalid),
+                    Err(TransitionError::InvalidTransition { .. })
+                ));
+                assert_eq!(model.state(), prior_state);
+                assert_eq!(model.trace().len(), prior_trace_length);
+                assert_eq!(scenario["expected_error"], "InvalidTransition");
+            }
             assert_eq!(
                 format!("{:?}", model.state()),
                 scenario["expected_state"].as_str().unwrap_or_default()
+            );
+            assert!(coverage.insert((case.to_owned(), machine_name.to_owned())));
+        }
+        for machine in all_machines {
+            for case in ["success", "cancel", "invalid"] {
+                assert!(
+                    coverage.contains(&(case.to_owned(), machine.to_owned())),
+                    "{machine} omits {case} coverage"
+                );
+            }
+        }
+        for machine in failure_machines {
+            assert!(
+                coverage.contains(&("failure".to_owned(), machine.to_owned())),
+                "{machine} omits applicable failure coverage"
+            );
+        }
+        for machine in restart_machines {
+            assert!(
+                coverage.contains(&("restart".to_owned(), machine.to_owned())),
+                "{machine} omits applicable restart coverage"
             );
         }
     }
 
     #[test]
-    fn resource_fixture_executes_exact_capacity_and_queues_one_over() {
+    fn resource_fixture_executes_all_dimensions_and_byte_credit_release() {
         let fixture: serde_json::Value = serde_json::from_slice(
             &read_fixture("resource-boundary-scenario.json").expect("resource fixture must load"),
         )
         .expect("resource fixture must be JSON");
-        let bytes = fixture["capacity"]["bytes"]
-            .as_u64()
-            .expect("capacity bytes");
-        let mut ledger = ResourceLedger::new(
-            ResourceVector {
-                memory_bytes: bytes,
-                ..ResourceVector::default()
-            },
-            1,
-            2,
-            bytes.saturating_add(1),
-        );
+        let capacity = resource_vector(&fixture["capacity"]);
+        let mut ledger = ResourceLedger::new(capacity, 1, 2, u64::MAX);
         let requests = fixture["requests"]
             .as_array()
             .expect("requests are required");
-        let first = ResourceVector {
-            memory_bytes: requests[0]["bytes"].as_u64().expect("first bytes"),
-            ..ResourceVector::default()
-        };
-        let second = ResourceVector {
-            memory_bytes: requests[1]["bytes"].as_u64().expect("second bytes"),
-            ..ResourceVector::default()
-        };
+        let first = resource_vector(&requests[0]);
+        let second = resource_vector(&requests[1]);
+        assert_eq!(
+            first, capacity,
+            "fixture must exercise every exact-capacity dimension"
+        );
         assert!(matches!(
             ledger.request(OwnerId(1), first),
             Ok(Admission::Granted(_))
@@ -450,6 +542,78 @@ mod tests {
             Ok(Admission::Queued(_))
         ));
         assert!(ledger.verify().is_ok());
+
+        let credit_fixture = &fixture["byte_credit"];
+        let capacity = credit_fixture["capacity"]
+            .as_u64()
+            .expect("credit capacity");
+        let claim_bytes = credit_fixture["claim_bytes"].as_u64().expect("claim bytes");
+        let received = credit_fixture["received_before_release"]
+            .as_u64()
+            .expect("received bytes");
+        let mut credits = ByteCreditLedger::new(capacity, 1);
+        let claim = credits
+            .claim(OwnerId(1), claim_bytes)
+            .expect("claim must fit");
+        assert!(
+            credits
+                .advance(DurabilityPosition {
+                    received_bytes: received,
+                    validated_bytes: received,
+                    durable_bytes: received,
+                })
+                .is_ok()
+        );
+        assert!(credits.release(claim, OwnerId(1)).is_ok());
+        assert!(matches!(
+            credits.advance(DurabilityPosition {
+                received_bytes: received.saturating_add(1),
+                validated_bytes: received,
+                durable_bytes: received,
+            }),
+            Err(CreditError::UncreditedBytes { credited, .. })
+                if credited == credit_fixture["credited_after_release"].as_u64().unwrap_or_default()
+        ));
+        assert!(credits.verify().is_ok());
+    }
+
+    fn resource_vector(value: &serde_json::Value) -> ResourceVector {
+        ResourceVector {
+            metadata_requests: u32::try_from(
+                value["metadata_requests"].as_u64().unwrap_or_default(),
+            )
+            .expect("metadata requests fit u32"),
+            media_requests: u32::try_from(value["media_requests"].as_u64().unwrap_or_default())
+                .expect("media requests fit u32"),
+            memory_bytes: value["memory_bytes"].as_u64().expect("memory bytes"),
+            disk_read_bytes_in_flight: value["disk_read_bytes_in_flight"]
+                .as_u64()
+                .expect("disk read bytes"),
+            disk_write_bytes_in_flight: value["disk_write_bytes_in_flight"]
+                .as_u64()
+                .expect("disk write bytes"),
+            open_handles: u32::try_from(value["open_handles"].as_u64().unwrap_or_default())
+                .expect("open handles fit u32"),
+            cpu_light_slots: u32::try_from(value["cpu_light_slots"].as_u64().unwrap_or_default())
+                .expect("light slots fit u32"),
+            cpu_heavy_slots: u32::try_from(value["cpu_heavy_slots"].as_u64().unwrap_or_default())
+                .expect("heavy slots fit u32"),
+            javascript_workers: u32::try_from(
+                value["javascript_workers"].as_u64().unwrap_or_default(),
+            )
+            .expect("javascript workers fit u32"),
+            ffmpeg_processes: u32::try_from(value["ffmpeg_processes"].as_u64().unwrap_or_default())
+                .expect("ffmpeg processes fit u32"),
+            ffmpeg_cpu_threads: u32::try_from(
+                value["ffmpeg_cpu_threads"].as_u64().unwrap_or_default(),
+            )
+            .expect("ffmpeg threads fit u32"),
+            archive_writer_slots: u32::try_from(
+                value["archive_writer_slots"].as_u64().unwrap_or_default(),
+            )
+            .expect("archive slots fit u32"),
+            sink_bytes: value["sink_bytes"].as_u64().expect("sink bytes"),
+        }
     }
 
     fn machine_kind(value: &str) -> Option<MachineKind> {
@@ -482,9 +646,13 @@ mod tests {
             "Continue" => Event::Continue,
             "Ready" => Event::Ready,
             "Serve" => Event::Serve,
+            "Refresh" => Event::Refresh,
             "Drain" => Event::Drain,
             "Spawn" => Event::Spawn,
+            "Reap" => Event::Reap,
             "Acknowledge" => Event::Acknowledge,
+            "Recycle" => Event::Recycle,
+            "Quarantine" => Event::Quarantine,
             "Prepare" => Event::Prepare,
             "Rename" => Event::Rename,
             "Archive" => Event::Archive,
@@ -492,8 +660,14 @@ mod tests {
             "Reconcile" => Event::Reconcile,
             "Probe" => Event::Probe,
             "Confine" => Event::Confine,
+            "Degrade" => Event::Degrade,
+            "MarkStale" => Event::MarkStale,
+            "Reject" => Event::Reject,
             "Release" => Event::Release,
             "Complete" => Event::Complete,
+            "Fail" => Event::Fail,
+            "Cancel" => Event::Cancel,
+            "Restart" => Event::Restart,
             _ => return None,
         })
     }

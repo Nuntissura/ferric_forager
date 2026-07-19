@@ -40,7 +40,9 @@ pub enum State {
     AdmissionCancelled,
     BytesEmpty,
     BytesReceived,
+    BytesWriting,
     BytesWritten,
+    BytesSynchronizing,
     BytesDurable,
     BytesFailed,
     BytesCancelled,
@@ -89,6 +91,11 @@ pub enum State {
     CommitCleaning,
     CommitCleaned,
     CommitReconciling,
+    CommitVerifyingPrepared,
+    CommitVerifyingRenamed,
+    CommitVerifyingArchived,
+    CommitVerifyingCleaned,
+    CommitCancelling,
     CommitReconciled,
     CommitInconsistent,
     CommitCancelled,
@@ -184,6 +191,7 @@ pub enum EffectIntent {
     ReportDiagnosticsDegraded,
     FlushWatcher,
     PreserveDiagnostics,
+    DrainInFlightEffect,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -359,7 +367,9 @@ fn belongs(kind: MachineKind, state: State) -> bool {
             MachineKind::ByteCreditDurability,
             State::BytesEmpty
                 | State::BytesReceived
+                | State::BytesWriting
                 | State::BytesWritten
+                | State::BytesSynchronizing
                 | State::BytesDurable
                 | State::BytesFailed
                 | State::BytesCancelled
@@ -420,6 +430,11 @@ fn belongs(kind: MachineKind, state: State) -> bool {
                 | State::CommitCleaning
                 | State::CommitCleaned
                 | State::CommitReconciling
+                | State::CommitVerifyingPrepared
+                | State::CommitVerifyingRenamed
+                | State::CommitVerifyingArchived
+                | State::CommitVerifyingCleaned
+                | State::CommitCancelling
                 | State::CommitReconciled
                 | State::CommitInconsistent
                 | State::CommitCancelled
@@ -547,15 +562,28 @@ fn bytes(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             step(State::BytesReceived, &[EffectIntent::AcceptBoundedBytes])
         }
         (State::BytesReceived, Event::Validate) => {
-            step(State::BytesWritten, &[EffectIntent::ValidateAndWrite])
+            step(State::BytesWriting, &[EffectIntent::ValidateAndWrite])
         }
+        (State::BytesWriting, Event::Acknowledge) => step(State::BytesWritten, &[]),
         (State::BytesWritten, Event::PersistDurably) => {
-            step(State::BytesDurable, &[EffectIntent::SynchronizeData])
+            step(State::BytesSynchronizing, &[EffectIntent::SynchronizeData])
         }
-        (State::BytesEmpty | State::BytesReceived | State::BytesWritten, Event::Cancel) => {
-            step(State::BytesCancelled, &[EffectIntent::ReleaseResources])
-        }
-        (State::BytesReceived | State::BytesWritten, Event::Fail) => step(
+        (State::BytesSynchronizing, Event::Acknowledge) => step(State::BytesDurable, &[]),
+        (
+            State::BytesEmpty
+            | State::BytesReceived
+            | State::BytesWriting
+            | State::BytesWritten
+            | State::BytesSynchronizing,
+            Event::Cancel,
+        ) => step(State::BytesCancelled, &[EffectIntent::ReleaseResources]),
+        (
+            State::BytesReceived
+            | State::BytesWriting
+            | State::BytesWritten
+            | State::BytesSynchronizing,
+            Event::Fail,
+        ) => step(
             State::BytesFailed,
             &[
                 EffectIntent::PreserveDiagnostics,
@@ -718,44 +746,46 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             State::CommitPreparing,
             &[EffectIntent::ValidateOutput, EffectIntent::SynchronizeData],
         ),
-        (State::CommitPreparing, Event::Acknowledge) => step(State::CommitPrepared, &[]),
+        (State::CommitPreparing | State::CommitVerifyingPrepared, Event::Acknowledge) => {
+            step(State::CommitPrepared, &[])
+        }
         (State::CommitPrepared, Event::Rename) => {
             step(State::CommitRenaming, &[EffectIntent::RenameOutput])
         }
-        (State::CommitRenaming, Event::Acknowledge) => step(State::CommitRenamed, &[]),
+        (State::CommitRenaming | State::CommitVerifyingRenamed, Event::Acknowledge) => {
+            step(State::CommitRenamed, &[])
+        }
         (State::CommitRenamed, Event::Archive) => {
             step(State::CommitArchiving, &[EffectIntent::InsertArchiveRow])
         }
-        (State::CommitArchiving, Event::Acknowledge) => step(State::CommitArchived, &[]),
+        (State::CommitArchiving | State::CommitVerifyingArchived, Event::Acknowledge) => {
+            step(State::CommitArchived, &[])
+        }
         (State::CommitArchived, Event::Cleanup) => {
             step(State::CommitCleaning, &[EffectIntent::RemoveTemporaryState])
         }
-        (State::CommitCleaning, Event::Acknowledge) => step(State::CommitCleaned, &[]),
+        (State::CommitCleaning | State::CommitVerifyingCleaned, Event::Acknowledge) => {
+            step(State::CommitCleaned, &[])
+        }
         (State::CommitCleaned, Event::Reconcile) => step(
             State::CommitReconciling,
             &[EffectIntent::VerifyArchiveOutputPair],
         ),
         (State::CommitReconciling, Event::Acknowledge) => step(State::CommitReconciled, &[]),
         (State::CommitPrepared, Event::Restart | Event::Reconcile) => step(
-            State::CommitPrepared,
+            State::CommitVerifyingPrepared,
             &[EffectIntent::RevalidatePreparedOutput],
         ),
         (State::CommitRenamed, Event::Restart | Event::Reconcile) => step(
-            State::CommitRenamed,
-            &[
-                EffectIntent::VerifyFinalArtifact,
-                EffectIntent::InsertArchiveRow,
-            ],
+            State::CommitVerifyingRenamed,
+            &[EffectIntent::VerifyFinalArtifact],
         ),
         (State::CommitArchived, Event::Restart | Event::Reconcile) => step(
-            State::CommitArchived,
-            &[
-                EffectIntent::VerifyArchiveOutputPair,
-                EffectIntent::RemoveTemporaryState,
-            ],
+            State::CommitVerifyingArchived,
+            &[EffectIntent::VerifyArchiveOutputPair],
         ),
         (State::CommitCleaned, Event::Restart) => step(
-            State::CommitCleaned,
+            State::CommitVerifyingCleaned,
             &[EffectIntent::VerifyArchiveOutputPair],
         ),
         (
@@ -783,15 +813,22 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             | State::CommitArchived
             | State::CommitCleaning
             | State::CommitCleaned
-            | State::CommitReconciling,
+            | State::CommitReconciling
+            | State::CommitVerifyingPrepared
+            | State::CommitVerifyingRenamed
+            | State::CommitVerifyingArchived
+            | State::CommitVerifyingCleaned,
             Event::Cancel,
         ) => step(
-            State::CommitCancelled,
+            State::CommitCancelling,
             &[
                 EffectIntent::PreserveDiagnostics,
-                EffectIntent::ReleaseResources,
+                EffectIntent::DrainInFlightEffect,
             ],
         ),
+        (State::CommitCancelling, Event::Acknowledge) => {
+            step(State::CommitCancelled, &[EffectIntent::ReleaseResources])
+        }
         _ => None,
     }
 }
@@ -878,6 +915,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn every_named_lifecycle_has_a_success_path() {
         let cases: &[(MachineKind, &[Event], State)] = &[
             (
@@ -902,7 +940,13 @@ mod tests {
             ),
             (
                 MachineKind::ByteCreditDurability,
-                &[Event::Receive, Event::Validate, Event::PersistDurably],
+                &[
+                    Event::Receive,
+                    Event::Validate,
+                    Event::Acknowledge,
+                    Event::PersistDurably,
+                    Event::Acknowledge,
+                ],
                 State::BytesDurable,
             ),
             (
@@ -1066,7 +1110,7 @@ mod tests {
             ),
             (
                 MachineKind::CommitArchiveReconciliation,
-                &[Event::Prepare, Event::Cancel],
+                &[Event::Prepare, Event::Cancel, Event::Acknowledge],
                 State::CommitCancelled,
             ),
         ];
@@ -1156,21 +1200,37 @@ mod tests {
         let prefixes = [
             (
                 State::CommitPrepared,
+                State::CommitVerifyingPrepared,
                 EffectIntent::RevalidatePreparedOutput,
             ),
-            (State::CommitRenamed, EffectIntent::VerifyFinalArtifact),
-            (State::CommitArchived, EffectIntent::VerifyArchiveOutputPair),
-            (State::CommitCleaned, EffectIntent::VerifyArchiveOutputPair),
+            (
+                State::CommitRenamed,
+                State::CommitVerifyingRenamed,
+                EffectIntent::VerifyFinalArtifact,
+            ),
+            (
+                State::CommitArchived,
+                State::CommitVerifyingArchived,
+                EffectIntent::VerifyArchiveOutputPair,
+            ),
+            (
+                State::CommitCleaned,
+                State::CommitVerifyingCleaned,
+                EffectIntent::VerifyArchiveOutputPair,
+            ),
         ];
-        for (state, required) in prefixes {
+        for (state, verifying, required) in prefixes {
             let model =
-                StateMachine::from_state(MachineKind::CommitArchiveReconciliation, state, 1);
+                StateMachine::from_state(MachineKind::CommitArchiveReconciliation, state, 2);
             let Ok(mut model) = model else {
                 return Err("commit prefix must belong to commit model".to_owned());
             };
             let result = model.apply(Event::Restart);
-            assert!(matches!(result, Ok(record) if record.effects.contains(&required)));
+            assert!(matches!(result, Ok(record) if record.effects == [required]));
+            assert_eq!(model.state(), verifying);
             assert_ne!(model.state(), State::CommitReconciled);
+            assert!(model.apply(Event::Acknowledge).is_ok());
+            assert_eq!(model.state(), state);
         }
         Ok(())
     }
@@ -1211,6 +1271,35 @@ mod tests {
             assert!(commit.apply(Event::Acknowledge).is_ok());
             assert_eq!(commit.state(), acknowledged);
         }
+
+        let mut bytes = StateMachine::new(MachineKind::ByteCreditDurability, 5);
+        assert!(bytes.apply(Event::Receive).is_ok());
+        assert!(bytes.apply(Event::Validate).is_ok());
+        assert_eq!(bytes.state(), State::BytesWriting);
+        assert!(bytes.apply(Event::Acknowledge).is_ok());
+        assert_eq!(bytes.state(), State::BytesWritten);
+        assert!(bytes.apply(Event::PersistDurably).is_ok());
+        assert_eq!(bytes.state(), State::BytesSynchronizing);
+        assert!(bytes.apply(Event::Acknowledge).is_ok());
+        assert_eq!(bytes.state(), State::BytesDurable);
+
+        let mut cancelling = StateMachine::new(MachineKind::CommitArchiveReconciliation, 3);
+        assert!(cancelling.apply(Event::Prepare).is_ok());
+        let cancel = cancelling
+            .apply(Event::Cancel)
+            .expect("cancel begins draining");
+        assert_eq!(cancel.next, State::CommitCancelling);
+        assert!(cancel.effects.contains(&EffectIntent::DrainInFlightEffect));
+        assert!(!cancel.effects.contains(&EffectIntent::ReleaseResources));
+        let acknowledged = cancelling
+            .apply(Event::Acknowledge)
+            .expect("drain acknowledgement completes cancellation");
+        assert!(
+            acknowledged
+                .effects
+                .contains(&EffectIntent::ReleaseResources)
+        );
+        assert_eq!(cancelling.state(), State::CommitCancelled);
     }
 
     #[test]
@@ -1243,7 +1332,13 @@ mod tests {
     fn replay_detects_counterfactual_trace_mutation() {
         let model = run(
             MachineKind::ByteCreditDurability,
-            &[Event::Receive, Event::Validate, Event::PersistDurably],
+            &[
+                Event::Receive,
+                Event::Validate,
+                Event::Acknowledge,
+                Event::PersistDurably,
+                Event::Acknowledge,
+            ],
             State::BytesDurable,
         );
         let mut mutated = model.trace().to_vec();
@@ -1251,7 +1346,7 @@ mod tests {
             record.next = State::BytesDurable;
         }
         assert!(matches!(
-            StateMachine::replay(MachineKind::ByteCreditDurability, 3, &mutated),
+            StateMachine::replay(MachineKind::ByteCreditDurability, 5, &mutated),
             Err(TransitionError::ReplayMismatch { index: 1 })
         ));
     }

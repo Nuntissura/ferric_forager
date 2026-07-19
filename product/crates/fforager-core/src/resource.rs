@@ -376,19 +376,15 @@ impl ResourceLedger {
     fn drain_waiters(&mut self) -> Result<Vec<Grant>, LedgerError> {
         let mut issued = Vec::new();
         while self.active.len() < self.max_active_grants {
-            let mut eligible = None;
-            for (position, waiter) in self.waiters.iter().copied().enumerate() {
-                if self.owner_active_count(waiter.owner) < self.max_active_per_owner
-                    && self.can_grant(waiter.resources)
-                {
-                    eligible = Some(position);
-                    break;
-                }
-            }
-            let Some(position) = eligible else {
+            let Some(waiter) = self.waiters.front().copied() else {
                 break;
             };
-            let Some(waiter) = self.waiters.remove(position) else {
+            if self.owner_active_count(waiter.owner) >= self.max_active_per_owner
+                || !self.can_grant(waiter.resources)
+            {
+                break;
+            }
+            let Some(waiter) = self.waiters.pop_front() else {
                 return Err(LedgerError::InvariantViolation);
             };
             self.waiter_bytes = self
@@ -431,9 +427,16 @@ pub struct ByteCreditLedger {
     in_use: u64,
     next_claim: u64,
     max_claims: usize,
-    active: BTreeMap<u64, (OwnerId, u64)>,
+    active: BTreeMap<u64, ByteClaim>,
     credited_total: u64,
     position: DurabilityPosition,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ByteClaim {
+    owner: OwnerId,
+    bytes: u64,
+    consumed: u64,
 }
 
 impl ByteCreditLedger {
@@ -478,7 +481,14 @@ impl ByteCreditLedger {
             .next_claim
             .checked_add(1)
             .ok_or(CreditError::IdExhausted)?;
-        self.active.insert(id, (owner, bytes));
+        self.active.insert(
+            id,
+            ByteClaim {
+                owner,
+                bytes,
+                consumed: 0,
+            },
+        );
         self.in_use = combined;
         self.credited_total = credited_total;
         Ok(id)
@@ -490,13 +500,13 @@ impl ByteCreditLedger {
     ///
     /// Returns an error for an unknown, released, or differently owned claim.
     pub fn transfer(&mut self, id: u64, from: OwnerId, to: OwnerId) -> Result<(), CreditError> {
-        let Some((owner, bytes)) = self.active.get(&id).copied() else {
+        let Some(claim) = self.active.get(&id).copied() else {
             return self.missing_claim(id);
         };
-        if owner != from {
+        if claim.owner != from {
             return Err(CreditError::ClaimOwnerMismatch);
         }
-        self.active.insert(id, (to, bytes));
+        self.active.insert(id, ByteClaim { owner: to, ..claim });
         Ok(())
     }
 
@@ -506,15 +516,23 @@ impl ByteCreditLedger {
     ///
     /// Returns an error for an unknown, duplicate, or differently owned claim.
     pub fn release(&mut self, id: u64, owner: OwnerId) -> Result<(), CreditError> {
-        let Some((expected, bytes)) = self.active.get(&id).copied() else {
+        let Some(claim) = self.active.get(&id).copied() else {
             return self.missing_claim(id);
         };
-        if owner != expected {
+        if owner != claim.owner {
             return Err(CreditError::ClaimOwnerMismatch);
         }
         self.in_use = self
             .in_use
-            .checked_sub(bytes)
+            .checked_sub(claim.bytes)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        let unused = claim
+            .bytes
+            .checked_sub(claim.consumed)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        self.credited_total = self
+            .credited_total
+            .checked_sub(unused)
             .ok_or(CreditError::ArithmeticOverflow)?;
         self.active.remove(&id);
         Ok(())
@@ -544,6 +562,44 @@ impl ByteCreditLedger {
                 credited: self.credited_total,
             });
         }
+        let newly_received = next
+            .received_bytes
+            .checked_sub(self.position.received_bytes)
+            .ok_or(CreditError::PositionRegressed)?;
+        let available = self.active.values().try_fold(0_u64, |sum, claim| {
+            let remaining = claim.bytes.checked_sub(claim.consumed)?;
+            sum.checked_add(remaining)
+        });
+        if available.is_none_or(|available| newly_received > available) {
+            let credited = available
+                .and_then(|available| self.position.received_bytes.checked_add(available))
+                .unwrap_or(self.position.received_bytes);
+            return Err(CreditError::UncreditedBytes {
+                received: next.received_bytes,
+                credited,
+            });
+        }
+        let mut remaining = newly_received;
+        for claim in self.active.values_mut() {
+            if remaining == 0 {
+                break;
+            }
+            let available = claim
+                .bytes
+                .checked_sub(claim.consumed)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            let consumed = available.min(remaining);
+            claim.consumed = claim
+                .consumed
+                .checked_add(consumed)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            remaining = remaining
+                .checked_sub(consumed)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+        }
+        if remaining != 0 {
+            return Err(CreditError::ArithmeticOverflow);
+        }
         self.position = next;
         Ok(())
     }
@@ -567,13 +623,19 @@ impl ByteCreditLedger {
         let total = self
             .active
             .values()
-            .try_fold(0_u64, |sum, (_, bytes)| sum.checked_add(*bytes));
+            .try_fold(0_u64, |sum, claim| sum.checked_add(claim.bytes));
+        let available = self.active.values().try_fold(0_u64, |sum, claim| {
+            let remaining = claim.bytes.checked_sub(claim.consumed)?;
+            sum.checked_add(remaining)
+        });
         if total != Some(self.in_use)
             || self.in_use > self.capacity
             || self.active.len() > self.max_claims
             || self.position.validated_bytes > self.position.received_bytes
             || self.position.durable_bytes > self.position.validated_bytes
             || self.position.received_bytes > self.credited_total
+            || available.and_then(|available| self.position.received_bytes.checked_add(available))
+                != Some(self.credited_total)
         {
             return Err(CreditError::ArithmeticOverflow);
         }
@@ -785,6 +847,62 @@ mod tests {
     }
 
     #[test]
+    fn released_unused_credit_cannot_authorize_receive() {
+        let mut credits = ByteCreditLedger::new(10, 1);
+        let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
+        assert!(credits.release(claim, OwnerId(1)).is_ok());
+        assert!(matches!(
+            credits.advance(DurabilityPosition {
+                received_bytes: 1,
+                validated_bytes: 0,
+                durable_bytes: 0,
+            }),
+            Err(CreditError::UncreditedBytes {
+                received: 1,
+                credited: 0
+            })
+        ));
+        assert!(credits.verify().is_ok());
+    }
+
+    #[test]
+    fn consumed_credit_survives_release_but_unused_remainder_does_not() {
+        let mut credits = ByteCreditLedger::new(10, 1);
+        let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
+        assert!(
+            credits
+                .advance(DurabilityPosition {
+                    received_bytes: 4,
+                    validated_bytes: 4,
+                    durable_bytes: 4,
+                })
+                .is_ok()
+        );
+        assert!(credits.release(claim, OwnerId(1)).is_ok());
+        assert!(
+            credits
+                .advance(DurabilityPosition {
+                    received_bytes: 4,
+                    validated_bytes: 4,
+                    durable_bytes: 4,
+                })
+                .is_ok()
+        );
+        assert!(matches!(
+            credits.advance(DurabilityPosition {
+                received_bytes: 5,
+                validated_bytes: 4,
+                durable_bytes: 4,
+            }),
+            Err(CreditError::UncreditedBytes {
+                received: 5,
+                credited: 4
+            })
+        ));
+        assert!(credits.verify().is_ok());
+    }
+
+    #[test]
     fn release_is_atomic_when_a_waiter_cannot_fit_at_integer_boundary() -> Result<(), String> {
         let mut ledger = ResourceLedger::new(vector(u64::MAX, 0, 0), 3, 2, u64::MAX);
         let first = ledger.request(OwnerId(1), vector(u64::MAX - 10, 0, 0));
@@ -849,6 +967,45 @@ mod tests {
             Ok(grants) if grants.first().map(|grant| grant.owner) == Some(OwnerId(2))
         ));
         assert_eq!(ledger.waiter_occupancy(), (1, 1));
+        Ok(())
+    }
+
+    #[test]
+    fn fifo_head_reservation_prevents_large_request_starvation() -> Result<(), String> {
+        let mut ledger = ResourceLedger::new(vector(10, 0, 0), 3, 4, 40);
+        let six = ledger.request(OwnerId(1), vector(6, 0, 0));
+        let Ok(Admission::Granted(six)) = six else {
+            return Err("six-unit grant required".to_owned());
+        };
+        let four = ledger.request(OwnerId(2), vector(4, 0, 0));
+        let Ok(Admission::Granted(four)) = four else {
+            return Err("four-unit grant required".to_owned());
+        };
+        assert!(matches!(
+            ledger.request(OwnerId(3), vector(10, 0, 0)),
+            Ok(Admission::Queued(_))
+        ));
+        assert!(matches!(
+            ledger.request(OwnerId(4), vector(6, 0, 0)),
+            Ok(Admission::Queued(_))
+        ));
+
+        let first_release = ledger
+            .release(six.id, six.owner)
+            .map_err(|error| format!("first release failed: {error:?}"))?;
+        assert!(
+            first_release.is_empty(),
+            "later small work may not bypass FIFO head"
+        );
+        assert_eq!(ledger.in_use(), vector(4, 0, 0));
+
+        let second_release = ledger
+            .release(four.id, four.owner)
+            .map_err(|error| format!("second release failed: {error:?}"))?;
+        assert_eq!(second_release.len(), 1);
+        assert_eq!(second_release[0].owner, OwnerId(3));
+        assert_eq!(ledger.waiter_occupancy(), (1, 6));
+        assert!(ledger.verify().is_ok());
         Ok(())
     }
 

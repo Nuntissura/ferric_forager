@@ -182,6 +182,7 @@ entrypoints:
   project_codex: .GOV/codex.yaml
   build_rules: .GOV/rules/build-rules.yaml
   build_verification_contracts: .GOV/rules/build-rules.yaml#verification_gates
+  runtime_truth_gate: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard
   task_state: .GOV/taskboard/taskboard.yaml
   work_packet_template: .GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json
   work_packet_requirements: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml

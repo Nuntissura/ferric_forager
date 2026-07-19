@@ -49,6 +49,7 @@
   },
   "scope": {
     "summary": "{{SCOPE_SUMMARY}}",
+    "product_impact": "{{PRODUCT_IMPACT_NONE_OR_RUNTIME}}",
     "in_scope": [],
     "non_goals": [],
     "allowed_paths": [],
@@ -58,6 +59,7 @@
     {
       "id": "{{ACCEPTANCE_ID}}",
       "requirement": "{{REQUIREMENT}}",
+      "proof_class": "{{PROOF_CLASS}}",
       "status": "PENDING",
       "evidence": []
     }

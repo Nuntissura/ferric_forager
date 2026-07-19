@@ -17,6 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const ARCH_GATE: &str = "FF-GATE-ARCH-001";
 const PR_GATE: &str = "FF-GATE-PR-001";
+const RUNTIME_GATE: &str = "FF-GATE-RUNTIME-001";
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
 const GATE_COMMAND_TIMEOUT: Duration = Duration::from_mins(15);
@@ -152,6 +153,100 @@ struct FixtureCase {
     expected_diagnostic: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeProof {
+    schema_id: String,
+    completion_claim: String,
+    artifact: RuntimeArtifact,
+    forbidden_substitutes: Vec<String>,
+    scenarios: Vec<RuntimeScenario>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeArtifact {
+    package: String,
+    binary: String,
+    profile: String,
+    features: Vec<String>,
+    package_mode: String,
+    execution_mode: String,
+    compilation_mode: String,
+    dependency_mode: String,
+    testkit_mode: String,
+    adapter_mode: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeScenario {
+    id: String,
+    kind: String,
+    capability_ids: Vec<String>,
+    args: Vec<String>,
+    timeout_seconds: u64,
+    inputs: Vec<RuntimeInput>,
+    production_boundaries: Vec<String>,
+    expected: RuntimeExpected,
+    counterfactual: Option<RuntimeCounterfactual>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeInput {
+    source: String,
+    destination: String,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeExpected {
+    exit_code: i32,
+    stdout_contains: Vec<String>,
+    stderr_contains: Vec<String>,
+    output_files: Vec<RuntimeExpectedFile>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeExpectedFile {
+    path: String,
+    min_bytes: u64,
+    sha256: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeCounterfactual {
+    target: String,
+    value: String,
+    expected_diagnostic: String,
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeObservation {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
+    files: BTreeMap<String, RuntimeObservedFile>,
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeObservedFile {
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Debug)]
+struct RuntimeTruthResult {
+    checks: Vec<Check>,
+    proof_classes: Vec<String>,
+    limitations: Vec<String>,
+    artifacts: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct GateReport {
     schema_id: &'static str,
@@ -254,6 +349,11 @@ fn run() -> Result<(), String> {
             run_verify_pr(&root, &args)
         }
         [gate, evidence]
+            if gate == "runtime-truth-check" && evidence == "--evidence-from-taskboard" =>
+        {
+            run_runtime_truth_gate(&root, &args)
+        }
+        [gate, evidence]
             if gate == "verify-deep" && evidence == "--evidence-from-taskboard" =>
         {
             Err("verify-deep is NOT_IMPLEMENTED and trigger-gated after Phase 0; it cannot report PASS".to_owned())
@@ -261,7 +361,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|verify-pr --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-deep|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-deep|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -1310,12 +1410,18 @@ fn required_architecture_rules(path: &Path) -> Result<BTreeSet<String>, String> 
         let id = yaml_string(row, "id")?;
         let category = yaml_string(row, "category")?;
         let enforcement = yaml_string(row, "enforcement")?;
-        if category == "architecture" && enforcement == "REQUIRED" && !rules.insert(id.to_owned()) {
+        if matches!(category, "architecture" | "runtime_truth")
+            && enforcement == "REQUIRED"
+            && !rules.insert(id.to_owned())
+        {
             return Err(format!("duplicate REQUIRED architecture rule {id}"));
         }
     }
     if rules.is_empty() {
-        return Err("no REQUIRED architecture rules found in canonical build rules".to_owned());
+        return Err(
+            "no REQUIRED architecture or runtime-truth rules found in canonical build rules"
+                .to_owned(),
+        );
     }
     Ok(rules)
 }
@@ -1354,6 +1460,10 @@ fn yaml_string<'a>(mapping: &'a Yaml<'_>, key: &str) -> Result<&'a str, String> 
         .ok_or_else(|| format!("YAML mapping has no nonempty string {key}"))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "FF-BUILD-046 keeps the exhaustive stable rule-to-proof mapping in one auditable match"
+)]
 fn validate_rule_map(
     rule_map: &RuleMap,
     canonical: &BTreeSet<String>,
@@ -1436,13 +1546,71 @@ fn validate_rule_map(
                 &["three-root-boundary"],
                 &["wrong-root-build-file", "duplicate-toolchain-selector"],
             ),
+            "FF-BUILD-078" => (
+                &["policy", "runtime_observable", "negative_fixture"],
+                &["runtime-proof-contract"],
+                &["runtime-scaffold-completion", "runtime-noop-success"],
+            ),
+            "FF-BUILD-079" => (
+                &["policy", "scenario_contract", "negative_fixture"],
+                &["runtime-proof-contract"],
+                &["runtime-missing-artifact-identity", "runtime-noop-success"],
+            ),
+            "FF-BUILD-080" => (
+                &["artifact", "external_process", "negative_fixture"],
+                &["runtime-proof-contract", "runtime-truth-check"],
+                &[
+                    "runtime-missing-artifact-identity",
+                    "runtime-missing-clean-stage",
+                    "runtime-stage-collision",
+                ],
+            ),
+            "FF-BUILD-081" => (
+                &["policy", "external_process", "negative_fixture"],
+                &["runtime-proof-contract"],
+                &["runtime-test-only-substitute", "runtime-mock-boundary"],
+            ),
+            "FF-BUILD-082" => (
+                &["policy", "runtime_observable", "negative_fixture"],
+                &["runtime-proof-contract"],
+                &["runtime-noop-success"],
+            ),
+            "FF-BUILD-083" | "FF-BUILD-088" => (
+                &["policy", "runtime_observable", "negative_fixture"],
+                &["runtime-proof-contract"],
+                &["runtime-scaffold-completion"],
+            ),
+            "FF-BUILD-084" => (
+                &["policy", "runtime_observable", "negative_fixture"],
+                &["runtime-proof-contract", "runtime-truth-check"],
+                &["runtime-scaffold-completion", "runtime-noop-success"],
+            ),
+            "FF-BUILD-085" => (
+                &["policy", "external_process", "negative_fixture"],
+                &["runtime-proof-contract"],
+                &["runtime-test-only-substitute"],
+            ),
+            "FF-BUILD-086" => (
+                &["artifact", "runtime_observable", "negative_fixture"],
+                &["runtime-proof-contract", "runtime-truth-check"],
+                &[
+                    "runtime-missing-artifact-identity",
+                    "runtime-missing-clean-stage",
+                    "runtime-stage-collision",
+                ],
+            ),
+            "FF-BUILD-087" => (
+                &["counterfactual", "negative_fixture"],
+                &["runtime-proof-contract", "runtime-truth-check"],
+                &["runtime-missing-counterfactual"],
+            ),
             other => return Err(format!("FF-ARCH-E-UNKNOWN-RULE: {other}")),
         };
         require_exact_strings(&rule.rule_id, "proof_classes", &rule.proof_classes, proof)?;
         require_exact_strings(&rule.rule_id, "validators", &rule.validators, validators)?;
         require_exact_strings(&rule.rule_id, "fixture_ids", &rule.fixture_ids, fixtures)?;
     }
-    checks.push(pass("rule-map-completeness", "every canonical REQUIRED architecture rule has validators, proof classes, and negative fixtures"));
+    checks.push(pass("rule-map-completeness", "every canonical REQUIRED architecture and runtime-truth rule has validators, proof classes, and negative fixtures"));
     Ok(())
 }
 
@@ -1595,9 +1763,1048 @@ fn diagnostic_from_production_validator(mutation: &str) -> Result<&'static str, 
             .ok_or("production three-root validator accepted wrong-root mutation")?,
         "add_duplicate_toolchain_selector" => root_state_diagnostic(0, 2)
             .ok_or("production selector validator accepted duplicate mutation")?,
+        "runtime_test_only_substitute"
+        | "runtime_mock_boundary"
+        | "runtime_scaffold_completion"
+        | "runtime_noop_success"
+        | "runtime_missing_artifact_identity"
+        | "runtime_missing_clean_stage"
+        | "runtime_missing_counterfactual"
+        | "runtime_stage_collision" => runtime_fixture_diagnostic(mutation)?,
         other => return Err(format!("unknown fixture mutation {other}")),
     };
     Ok(diagnostic)
+}
+
+fn run_runtime_truth_gate(root: &Path, gate_args: &[String]) -> Result<(), String> {
+    match run_runtime_truth_gate_inner(root, gate_args) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            fail_with_report(root, RUNTIME_GATE, "runtime-truth-check", gate_args, &error)
+        }
+    }
+}
+
+fn run_runtime_truth_gate_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
+    let result = runtime_truth_check(root)?;
+    let report = GateReport {
+        schema_id: "ff.gate-report@1",
+        schema_version: "1.0.0",
+        gate_id: RUNTIME_GATE.to_owned(),
+        gate_version: 1,
+        status: "PASS",
+        exit_code: 0,
+        source: source_state(root)?,
+        invocation: invocation(gate_args),
+        inputs: collect_inputs(root)?,
+        checks: result.checks,
+        rules: (78..=88)
+            .map(|number| format!("FF-BUILD-{number:03}"))
+            .collect(),
+        fixtures: Vec::new(),
+        proof_classes: result.proof_classes,
+        proof_limitations: result.limitations,
+        artifacts: result.artifacts,
+    };
+    let path = write_report(root, "runtime-truth-check", &report)?;
+    println!("PASS {RUNTIME_GATE}; report={}", slash(&path));
+    Ok(())
+}
+
+fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
+    let id = active_packet_id(root)?
+        .ok_or("FF-RUNTIME-E-NO-ACTIVE-PACKET: runtime truth requires an active packet")?;
+    let packet_path = root.join(".GOV/work_packets").join(&id).join("packet.json");
+    let packet: Value =
+        serde_json::from_str(&fs::read_to_string(&packet_path).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("parse active packet for runtime truth: {error}"))?;
+    if packet.pointer("/identity/wp_id").and_then(Value::as_str) != Some(&id) {
+        return Err("FF-RUNTIME-E-PACKET-IDENTITY: active packet identity mismatch".to_owned());
+    }
+    let impact = packet
+        .pointer("/scope/product_impact")
+        .and_then(Value::as_str)
+        .ok_or("FF-RUNTIME-E-IMPACT-MISSING: scope.product_impact is required")?;
+    if !matches!(impact, "NONE" | "RUNTIME") {
+        return Err(format!(
+            "FF-RUNTIME-E-IMPACT-INVALID: expected NONE or RUNTIME, observed {impact}"
+        ));
+    }
+    let base = packet
+        .pointer("/source_control/base_sha")
+        .and_then(Value::as_str)
+        .ok_or("FF-RUNTIME-E-BASE-MISSING: packet base SHA is required")?;
+    let activated_packet = validate_packet_activation_base(root, &id, base)?;
+    let changed = changed_paths_since(root, base)?;
+    let policy: ArchitecturePolicy = read_toml(&root.join("build/architecture-policy.toml"))?;
+    let current_has_shipped_member = policy.members.iter().any(|member| member.shipped);
+    let base_policy_text = command_output(
+        root,
+        "git",
+        &["show", &format!("{base}:build/architecture-policy.toml")],
+    )?;
+    let base_policy: ArchitecturePolicy = toml::from_str(&base_policy_text)
+        .map_err(|error| format!("FF-RUNTIME-E-BASE-POLICY: {error}"))?;
+    let base_has_shipped_member = base_policy.members.iter().any(|member| member.shipped);
+    let has_shipped_member = current_has_shipped_member || base_has_shipped_member;
+    let product_paths = changed
+        .iter()
+        .filter(|path| product_affecting_path(path, has_shipped_member))
+        .cloned()
+        .collect::<Vec<_>>();
+    if product_paths.is_empty() {
+        if impact != "NONE" {
+            return Err(
+                "FF-RUNTIME-E-IMPACT-MISMATCH: packet declares RUNTIME but no shipped product path changed"
+                    .to_owned(),
+            );
+        }
+        if packet.pointer("/extensions/runtime_proof").is_some()
+            || packet
+                .pointer("/acceptance_matrix")
+                .and_then(Value::as_array)
+                .is_some_and(|rows| {
+                    rows.iter().any(|row| {
+                        row.get("proof_class").and_then(Value::as_str) == Some("production_runtime")
+                    })
+                })
+        {
+            return Err(
+                "FF-RUNTIME-E-IMPACT-MISMATCH: NONE packet contains production runtime proof or acceptance"
+                    .to_owned(),
+            );
+        }
+        return Ok(RuntimeTruthResult {
+            checks: vec![
+                pass("runtime-impact", &format!("packet {id} is governance/build-only")),
+                pass(
+                    "runtime-nonproduct-ceiling",
+                    "no product capability, phase, packaging, or runtime-completion claim is permitted",
+                ),
+            ],
+            proof_classes: vec!["policy".to_owned(), "negative_fixture".to_owned()],
+            limitations: vec![
+                "No shipped product path changed; this PASS validates runtime-truth governance only and proves no Ferric runtime behavior.".to_owned(),
+            ],
+            artifacts: vec!["build/reports".to_owned()],
+        });
+    }
+    if impact != "RUNTIME" {
+        return Err(format!(
+            "FF-RUNTIME-E-IMPACT-MISMATCH: product paths changed while scope.product_impact={impact}: {product_paths:?}"
+        ));
+    }
+    let proof_value = packet
+        .pointer("/extensions/runtime_proof")
+        .ok_or("FF-RUNTIME-E-PROOF-MISSING: product change has no extensions.runtime_proof")?;
+    if !runtime_proof_predeclared(&activated_packet, proof_value) {
+        return Err(
+            "FF-RUNTIME-E-PROOF-NOT-PREDECLARED: exact runtime proof must exist in the packet activation checkpoint before product implementation"
+                .to_owned(),
+        );
+    }
+    let proof: RuntimeProof = serde_json::from_value(proof_value.clone())
+        .map_err(|error| format!("FF-RUNTIME-E-SCHEMA: {error}"))?;
+    validate_runtime_proof_contract(&proof)?;
+    execute_runtime_proof(root, &proof, &id, &product_paths)
+}
+
+fn runtime_proof_predeclared(activated_packet: &Value, current_proof: &Value) -> bool {
+    activated_packet
+        .pointer("/scope/product_impact")
+        .and_then(Value::as_str)
+        == Some("RUNTIME")
+        && activated_packet.pointer("/extensions/runtime_proof") == Some(current_proof)
+}
+
+fn changed_paths_since(root: &Path, base: &str) -> Result<BTreeSet<String>, String> {
+    if base.len() != 40 || !base.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(
+            "FF-RUNTIME-E-BASE-INVALID: base SHA must be 40 hexadecimal characters".to_owned(),
+        );
+    }
+    let status = command_status_with_timeout(
+        root,
+        "git",
+        &["merge-base", "--is-ancestor", base, "HEAD"],
+        None,
+        TOOL_COMMAND_TIMEOUT,
+    )?;
+    if !status.success() {
+        return Err(
+            "FF-RUNTIME-E-BASE-MISMATCH: packet base is not an ancestor of HEAD".to_owned(),
+        );
+    }
+    let mut paths = command_output(root, "git", &["diff", "--name-only", base, "--"])?
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<BTreeSet<_>>();
+    paths.extend(
+        command_output(root, "git", &["ls-files", "--others", "--exclude-standard"])?
+            .lines()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(ToOwned::to_owned),
+    );
+    Ok(paths)
+}
+
+fn product_runtime_path(path: &str) -> bool {
+    path.replace('\\', "/").starts_with("product/")
+        && path.replace('\\', "/") != "product/MODEL_MANUAL.md"
+}
+
+fn product_affecting_path(path: &str, has_shipped_member: bool) -> bool {
+    if product_runtime_path(path) {
+        return true;
+    }
+    has_shipped_member
+        && matches!(
+            path.replace('\\', "/").as_str(),
+            "build/Cargo.toml"
+                | "build/Cargo.lock"
+                | "build/architecture-policy.toml"
+                | "rust-toolchain.toml"
+        )
+}
+
+fn validate_packet_activation_base(
+    root: &Path,
+    packet_id: &str,
+    base: &str,
+) -> Result<Value, String> {
+    let relative = format!(".GOV/work_packets/{packet_id}/packet.json");
+    let history = command_output(
+        root,
+        "git",
+        &["log", "--diff-filter=A", "--format=%H", "--", &relative],
+    )?;
+    let activation = history
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or("FF-RUNTIME-E-BASE-UNPROVEN: packet has no committed activation checkpoint")?;
+    let object = format!("{activation}:{relative}");
+    let activated_packet = command_output(root, "git", &["show", &object])?;
+    let value: Value = serde_json::from_str(&activated_packet)
+        .map_err(|error| format!("FF-RUNTIME-E-BASE-UNPROVEN: parse activation packet: {error}"))?;
+    let activated_base = value
+        .pointer("/source_control/base_sha")
+        .and_then(Value::as_str)
+        .ok_or("FF-RUNTIME-E-BASE-UNPROVEN: activation packet omits base SHA")?;
+    if activated_base != base {
+        return Err(format!(
+            "FF-RUNTIME-E-BASE-REWRITE: activation base {activated_base} changed to {base}"
+        ));
+    }
+    Ok(value)
+}
+
+fn validate_runtime_proof_contract(proof: &RuntimeProof) -> Result<(), String> {
+    if proof.schema_id != "ff.runtime-proof@1" {
+        return Err("FF-RUNTIME-E-SCHEMA: expected ff.runtime-proof@1".to_owned());
+    }
+    if proof.completion_claim != "operator_usable_runtime" {
+        return Err(
+            "FF-RUNTIME-E-SCAFFOLD-COMPLETION: completion claim must be operator_usable_runtime"
+                .to_owned(),
+        );
+    }
+    validate_runtime_artifact(&proof.artifact)?;
+    validate_forbidden_substitutes(&proof.forbidden_substitutes)?;
+    if proof.scenarios.len() < 2 {
+        return Err(
+            "FF-RUNTIME-E-SCENARIO: at least one success and one negative scenario are required"
+                .to_owned(),
+        );
+    }
+    let mut ids = BTreeSet::new();
+    let mut kinds = BTreeSet::new();
+    for scenario in &proof.scenarios {
+        kinds.insert(validate_runtime_scenario(
+            scenario,
+            &mut ids,
+            &proof.artifact.binary,
+        )?);
+    }
+    if kinds != BTreeSet::from(["negative", "success"]) {
+        return Err(
+            "FF-RUNTIME-E-SCENARIO: at least one success and one negative scenario are required"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_runtime_artifact(artifact: &RuntimeArtifact) -> Result<(), String> {
+    if !safe_id(&artifact.package) || !safe_id(&artifact.binary) {
+        return Err(
+            "FF-RUNTIME-E-ARTIFACT-IDENTITY: package and binary require stable safe IDs".to_owned(),
+        );
+    }
+    if artifact.profile != "release"
+        || artifact.package_mode != "clean_staged"
+        || artifact.execution_mode != "external_process"
+    {
+        return Err(
+            "FF-RUNTIME-E-CLEAN-STAGE: release, clean_staged package, and external_process are mandatory"
+                .to_owned(),
+        );
+    }
+    if artifact.compilation_mode != "production"
+        || artifact.dependency_mode != "normal_only"
+        || artifact.testkit_mode != "forbidden"
+        || artifact.adapter_mode != "production"
+        || artifact.features.iter().any(|feature| {
+            let lower = feature.to_ascii_lowercase();
+            ["test", "mock", "fake", "stub"]
+                .iter()
+                .any(|word| lower.contains(word))
+        })
+    {
+        return Err(
+            "FF-RUNTIME-E-TEST-SUBSTITUTE: runtime proof must use production compilation, dependencies, and adapters"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_forbidden_substitutes(substitutes: &[String]) -> Result<(), String> {
+    let required = BTreeSet::from([
+        "mock",
+        "fake",
+        "stub",
+        "fixture-only-implementation",
+        "in-memory-substitute",
+        "hardcoded-success",
+        "test-only-adapter",
+        "direct-internal-call",
+    ]);
+    let observed = substitutes
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if observed != required {
+        return Err(
+            "FF-RUNTIME-E-MOCK-SUBSTITUTE: forbidden substitute inventory is incomplete".to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_runtime_scenario<'scenario>(
+    scenario: &'scenario RuntimeScenario,
+    ids: &mut BTreeSet<&'scenario str>,
+    binary: &str,
+) -> Result<&'scenario str, String> {
+    if !safe_id(&scenario.id) || !ids.insert(&scenario.id) {
+        return Err("FF-RUNTIME-E-SCENARIO: scenario IDs must be unique safe IDs".to_owned());
+    }
+    match scenario.kind.as_str() {
+        "success" if scenario.expected.exit_code == 0 => {}
+        "negative" if scenario.expected.exit_code != 0 => {}
+        _ => {
+            return Err(
+                "FF-RUNTIME-E-SCENARIO: success requires exit 0 and negative requires nonzero"
+                    .to_owned(),
+            );
+        }
+    }
+    if scenario.capability_ids.is_empty()
+        || scenario.capability_ids.iter().any(|id| !stable_id(id))
+        || scenario.production_boundaries.is_empty()
+        || scenario
+            .production_boundaries
+            .iter()
+            .any(|boundary| !safe_id(boundary))
+        || !(1..=900).contains(&scenario.timeout_seconds)
+    {
+        return Err(
+            "FF-RUNTIME-E-SCENARIO: capabilities, production boundaries, and bounded timeout are required"
+                .to_owned(),
+        );
+    }
+    if scenario.production_boundaries.iter().any(|boundary| {
+        let lower = boundary.to_ascii_lowercase();
+        ["mock", "fake", "stub", "test-only", "in-memory"]
+            .iter()
+            .any(|word| lower.contains(word))
+    }) {
+        return Err(
+            "FF-RUNTIME-E-MOCK-SUBSTITUTE: production boundary names a substitute".to_owned(),
+        );
+    }
+    if scenario.args.iter().any(|argument| {
+        argument.contains(".GOV")
+            || argument.contains("build/")
+            || argument.contains("build\\")
+            || Path::new(argument).is_absolute()
+            || argument.contains(":\\")
+    }) {
+        return Err(
+            "FF-RUNTIME-E-CLEAN-STAGE: runtime arguments reference governance or build roots"
+                .to_owned(),
+        );
+    }
+    for input in &scenario.inputs {
+        validate_runtime_input(input)?;
+    }
+    for output in &scenario.expected.output_files {
+        validate_runtime_output_path(output)?;
+    }
+    validate_runtime_stage_paths(scenario, binary)?;
+    if scenario.kind == "success" && scenario.inputs.is_empty() {
+        return Err(
+            "FF-RUNTIME-E-INPUT: success scenarios require at least one hash-bound representative input"
+                .to_owned(),
+        );
+    }
+    if scenario.expected.stdout_contains.is_empty()
+        && scenario.expected.stderr_contains.is_empty()
+        && scenario.expected.output_files.is_empty()
+    {
+        return Err(
+            "FF-RUNTIME-E-NO-OBSERVABLE: exit status alone cannot prove operator-usable behavior"
+                .to_owned(),
+        );
+    }
+    if scenario.kind == "success" {
+        let counterfactual = scenario.counterfactual.as_ref().ok_or(
+            "FF-RUNTIME-E-COUNTERFACTUAL: every success scenario requires a counterfactual",
+        )?;
+        validate_counterfactual_contract(counterfactual, &scenario.expected)?;
+    } else if scenario.counterfactual.is_some() {
+        return Err(
+            "FF-RUNTIME-E-COUNTERFACTUAL: negative scenarios must not self-author a counterfactual"
+                .to_owned(),
+        );
+    }
+    Ok(&scenario.kind)
+}
+
+fn validate_runtime_stage_paths(scenario: &RuntimeScenario, binary: &str) -> Result<(), String> {
+    let reserved = BTreeSet::from([
+        binary.to_owned(),
+        format!("{binary}.exe"),
+        "runtime.stdout".to_owned(),
+        "runtime.stderr".to_owned(),
+    ]);
+    let input_destinations = scenario
+        .inputs
+        .iter()
+        .map(|input| input.destination.replace('\\', "/").to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let output_paths = scenario
+        .expected
+        .output_files
+        .iter()
+        .map(|output| output.path.replace('\\', "/").to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    if input_destinations.len() != scenario.inputs.len()
+        || output_paths.len() != scenario.expected.output_files.len()
+    {
+        return Err(
+            "FF-RUNTIME-E-STAGE-COLLISION: input destinations and output paths must be unique"
+                .to_owned(),
+        );
+    }
+    if scenario
+        .inputs
+        .iter()
+        .any(|input| reserved.contains(&input.destination.replace('\\', "/").to_ascii_lowercase()))
+        || scenario.expected.output_files.iter().any(|output| {
+            let normalized = output.path.replace('\\', "/").to_ascii_lowercase();
+            reserved.contains(&normalized) || input_destinations.contains(&normalized)
+        })
+    {
+        return Err(
+            "FF-RUNTIME-E-STAGE-COLLISION: inputs and outputs cannot overlap the artifact, gate receipts, or each other"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_runtime_input(input: &RuntimeInput) -> Result<(), String> {
+    if !input
+        .source
+        .replace('\\', "/")
+        .starts_with("build/fixtures/")
+        || !safe_relative(&input.source)
+        || !safe_relative(&input.destination)
+        || !valid_sha256(&input.sha256)
+    {
+        return Err(
+            "FF-RUNTIME-E-INPUT: inputs require fixture source, safe staged destination, and SHA-256"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_runtime_output_path(output: &RuntimeExpectedFile) -> Result<(), String> {
+    if !safe_relative(&output.path)
+        || output.min_bytes == 0
+        || output
+            .sha256
+            .as_ref()
+            .is_some_and(|digest| !valid_sha256(digest))
+    {
+        return Err(
+            "FF-RUNTIME-E-OUTPUT: output requires safe path, positive size, and optional SHA-256"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_counterfactual_contract(
+    counterfactual: &RuntimeCounterfactual,
+    expected: &RuntimeExpected,
+) -> Result<(), String> {
+    if counterfactual.expected_diagnostic != "FF-RUNTIME-E-OBSERVABLE-MISSING" {
+        return Err(
+            "FF-RUNTIME-E-COUNTERFACTUAL: expected diagnostic must be FF-RUNTIME-E-OBSERVABLE-MISSING"
+                .to_owned(),
+        );
+    }
+    let exists = match counterfactual.target.as_str() {
+        "stdout_contains" => expected.stdout_contains.contains(&counterfactual.value),
+        "stderr_contains" => expected.stderr_contains.contains(&counterfactual.value),
+        "output_file" => expected
+            .output_files
+            .iter()
+            .any(|output| output.path == counterfactual.value),
+        _ => false,
+    };
+    if !exists {
+        return Err(
+            "FF-RUNTIME-E-COUNTERFACTUAL: target must name a required observable".to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn safe_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
+}
+
+fn stable_id(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn safe_relative(value: &str) -> bool {
+    let normalized = value.replace('\\', "/");
+    !normalized.is_empty()
+        && normalized.split('/').all(|segment| {
+            !segment.is_empty()
+                && !matches!(segment, "." | "..")
+                && !segment.ends_with(['.', ' '])
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        })
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn execute_runtime_proof(
+    root: &Path,
+    proof: &RuntimeProof,
+    packet_id: &str,
+    product_paths: &[String],
+) -> Result<RuntimeTruthResult, String> {
+    let policy: ArchitecturePolicy = read_toml(&root.join("build/architecture-policy.toml"))?;
+    let member = policy
+        .members
+        .iter()
+        .find(|member| member.name == proof.artifact.package && member.shipped && !member.test_only)
+        .ok_or(
+            "FF-RUNTIME-E-ARTIFACT-IDENTITY: runtime package is not a declared shipped member",
+        )?;
+    if !member
+        .source_root
+        .replace('\\', "/")
+        .starts_with("product/")
+    {
+        return Err(
+            "FF-RUNTIME-E-ARTIFACT-IDENTITY: shipped runtime package source is outside product/"
+                .to_owned(),
+        );
+    }
+    let mut build_args = vec![
+        "build".to_owned(),
+        "--manifest-path".to_owned(),
+        "build/Cargo.toml".to_owned(),
+        "--locked".to_owned(),
+        "--release".to_owned(),
+        "-p".to_owned(),
+        proof.artifact.package.clone(),
+        "--bin".to_owned(),
+        proof.artifact.binary.clone(),
+        "--target-dir".to_owned(),
+        "build/target".to_owned(),
+    ];
+    if !proof.artifact.features.is_empty() {
+        build_args.push("--features".to_owned());
+        build_args.push(proof.artifact.features.join(","));
+    }
+    let build_refs = build_args.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut checks = Vec::new();
+    run_command(
+        root,
+        "runtime-release-build",
+        "cargo",
+        &build_refs,
+        &mut checks,
+    )?;
+    let mut artifact = root
+        .join("build/target/release")
+        .join(&proof.artifact.binary);
+    if cfg!(windows) {
+        artifact.set_extension("exe");
+    }
+    validate_built_runtime_artifact(root, &artifact)?;
+    let artifact_digest = sha256_file(&artifact)?;
+    checks.push(pass(
+        "runtime-artifact-identity",
+        &format!(
+            "packet={packet_id}; package={}; binary={}; profile=release; sha256={artifact_digest}; product_paths={product_paths:?}",
+            proof.artifact.package, proof.artifact.binary
+        ),
+    ));
+    let mut artifacts = vec![slash(
+        artifact
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?,
+    )];
+    for scenario in &proof.scenarios {
+        let (check, stage) = execute_runtime_scenario(root, &artifact, scenario, &artifact_digest)?;
+        checks.push(check);
+        artifacts.push(stage);
+    }
+    Ok(RuntimeTruthResult {
+        checks,
+        proof_classes: vec![
+            "artifact".to_owned(),
+            "external_process".to_owned(),
+            "runtime_observable".to_owned(),
+            "counterfactual".to_owned(),
+        ],
+        limitations: vec![
+            "Runtime truth proves only the declared capability IDs and scenarios; unlisted product behavior remains unproven.".to_owned(),
+            "Live-site observations remain separate from deterministic runtime acceptance and cannot replace it.".to_owned(),
+        ],
+        artifacts,
+    })
+}
+
+fn validate_built_runtime_artifact(root: &Path, artifact: &Path) -> Result<(), String> {
+    if !artifact.is_file() {
+        return Err(format!(
+            "FF-RUNTIME-E-ARTIFACT-IDENTITY: built artifact is missing: {}",
+            artifact.display()
+        ));
+    }
+    let metadata = fs::symlink_metadata(artifact)
+        .map_err(|error| format!("FF-RUNTIME-E-ARTIFACT-IDENTITY: {error}"))?;
+    let release_root = root
+        .join("build/target/release")
+        .canonicalize()
+        .map_err(|error| format!("FF-RUNTIME-E-ARTIFACT-IDENTITY: {error}"))?;
+    let canonical_artifact = artifact
+        .canonicalize()
+        .map_err(|error| format!("FF-RUNTIME-E-ARTIFACT-IDENTITY: {error}"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.file_type().is_file()
+        || !canonical_artifact.starts_with(release_root)
+    {
+        return Err(
+            "FF-RUNTIME-E-ARTIFACT-IDENTITY: release artifact must be a contained regular file"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn execute_runtime_scenario(
+    root: &Path,
+    artifact: &Path,
+    scenario: &RuntimeScenario,
+    artifact_digest: &str,
+) -> Result<(Check, String), String> {
+    let (stage, staged_artifact) =
+        stage_runtime_scenario(root, artifact, scenario, artifact_digest)?;
+    let observation = run_staged_artifact(&stage, &staged_artifact, scenario)?;
+    validate_runtime_observation(&scenario.expected, &observation)?;
+    validate_runtime_counterfactual(scenario, &observation)?;
+    let stage_path = slash(&stage);
+    Ok((
+        pass(
+            &format!("runtime-scenario-{}", scenario.id),
+            &format!(
+                "kind={}; artifact_sha256={artifact_digest}; exit={}; boundaries={:?}; stage={stage_path}; counterfactual={}",
+                scenario.kind,
+                observation.exit_code,
+                scenario.production_boundaries,
+                scenario.counterfactual.is_some()
+            ),
+        ),
+        stage_path,
+    ))
+}
+
+fn stage_runtime_scenario(
+    root: &Path,
+    artifact: &Path,
+    scenario: &RuntimeScenario,
+    artifact_digest: &str,
+) -> Result<(PathBuf, PathBuf), String> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let stage = env::temp_dir()
+        .join("ferric-forager-runtime-proof")
+        .join(format!("{}-{nonce}-{}", scenario.id, std::process::id()));
+    fs::create_dir_all(&stage)
+        .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: create stage: {error}"))?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: canonicalize root: {error}"))?;
+    let canonical_stage = stage
+        .canonicalize()
+        .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: canonicalize stage: {error}"))?;
+    if canonical_stage.starts_with(&canonical_root) {
+        return Err(
+            "FF-RUNTIME-E-CLEAN-STAGE: runtime stage must be outside the repository tree"
+                .to_owned(),
+        );
+    }
+    let staged_artifact = stage.join(
+        artifact
+            .file_name()
+            .ok_or("FF-RUNTIME-E-ARTIFACT-IDENTITY: artifact has no filename")?,
+    );
+    fs::copy(artifact, &staged_artifact)
+        .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: copy artifact: {error}"))?;
+    if sha256_file(&staged_artifact)? != artifact_digest {
+        return Err("FF-RUNTIME-E-ARTIFACT-IDENTITY: staged artifact digest mismatch".to_owned());
+    }
+    for input in &scenario.inputs {
+        let source = root.join(&input.source);
+        require_relative_contained(root, &input.source, "build/fixtures")?;
+        if fs::symlink_metadata(&source)
+            .map_err(|error| format!("FF-RUNTIME-E-INPUT: inspect input: {error}"))?
+            .file_type()
+            .is_symlink()
+            || !source.is_file()
+            || sha256_file(&source)? != input.sha256.to_ascii_lowercase()
+        {
+            return Err(format!(
+                "FF-RUNTIME-E-INPUT: missing or mismatched input {}",
+                input.source
+            ));
+        }
+        let destination = stage.join(&input.destination);
+        fs::create_dir_all(
+            destination
+                .parent()
+                .ok_or("FF-RUNTIME-E-INPUT: destination has no parent")?,
+        )
+        .map_err(|error| format!("FF-RUNTIME-E-INPUT: create destination: {error}"))?;
+        fs::copy(&source, &destination)
+            .map_err(|error| format!("FF-RUNTIME-E-INPUT: stage input: {error}"))?;
+    }
+    if sha256_file(&staged_artifact)? != artifact_digest {
+        return Err(
+            "FF-RUNTIME-E-ARTIFACT-IDENTITY: staged inputs altered the production artifact"
+                .to_owned(),
+        );
+    }
+    Ok((stage, staged_artifact))
+}
+
+fn run_staged_artifact(
+    stage: &Path,
+    staged_artifact: &Path,
+    scenario: &RuntimeScenario,
+) -> Result<RuntimeObservation, String> {
+    let stdout_path = stage.join("runtime.stdout");
+    let stderr_path = stage.join("runtime.stderr");
+    let stdout_file = File::create(&stdout_path)
+        .map_err(|error| format!("FF-RUNTIME-E-EXECUTION: create stdout: {error}"))?;
+    let stderr_file = File::create(&stderr_path)
+        .map_err(|error| format!("FF-RUNTIME-E-EXECUTION: create stderr: {error}"))?;
+    let mut command = Command::new(staged_artifact);
+    command
+        .args(&scenario.args)
+        .current_dir(stage)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file));
+    for (key, _) in env::vars_os() {
+        let key_text = key.to_string_lossy();
+        if key_text.starts_with("CARGO_")
+            || key_text.starts_with("RUST_")
+            || matches!(key_text.as_ref(), "OUT_DIR" | "CARGO_MANIFEST_DIR")
+        {
+            command.env_remove(key);
+        }
+    }
+    configure_quiet_process(&mut command);
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "FF-RUNTIME-E-EXECUTION: launch staged artifact {}: {error}",
+            staged_artifact.display()
+        )
+    })?;
+    let args = scenario.args.iter().map(String::as_str).collect::<Vec<_>>();
+    let status = wait_for_child(
+        &mut child,
+        &staged_artifact.display().to_string(),
+        &args,
+        Duration::from_secs(scenario.timeout_seconds),
+    )?;
+    let stdout_bytes = read_capture(&stdout_path)?;
+    let stderr_bytes = read_capture(&stderr_path)?;
+    if stdout_bytes.len() > 1_048_576 || stderr_bytes.len() > 1_048_576 {
+        return Err("FF-RUNTIME-E-EXECUTION: runtime output exceeds 1 MiB bound".to_owned());
+    }
+    let mut observation = RuntimeObservation {
+        exit_code: status.code().unwrap_or(-1),
+        stdout: String::from_utf8(stdout_bytes)
+            .map_err(|_| "FF-RUNTIME-E-EXECUTION: stdout is not UTF-8".to_owned())?,
+        stderr: String::from_utf8(stderr_bytes)
+            .map_err(|_| "FF-RUNTIME-E-EXECUTION: stderr is not UTF-8".to_owned())?,
+        files: BTreeMap::new(),
+    };
+    for expected_file in &scenario.expected.output_files {
+        let path = stage.join(&expected_file.path);
+        if path.is_file() {
+            let metadata = fs::symlink_metadata(&path)
+                .map_err(|error| format!("FF-RUNTIME-E-OUTPUT: inspect output: {error}"))?;
+            let canonical_stage = stage
+                .canonicalize()
+                .map_err(|error| format!("FF-RUNTIME-E-OUTPUT: canonicalize stage: {error}"))?;
+            let canonical_output = path
+                .canonicalize()
+                .map_err(|error| format!("FF-RUNTIME-E-OUTPUT: canonicalize output: {error}"))?;
+            if metadata.file_type().is_symlink() || !canonical_output.starts_with(canonical_stage) {
+                return Err(
+                    "FF-RUNTIME-E-OUTPUT: output must be a contained regular file, not a link"
+                        .to_owned(),
+                );
+            }
+            observation.files.insert(
+                expected_file.path.clone(),
+                RuntimeObservedFile {
+                    bytes: metadata.len(),
+                    sha256: sha256_file(&path)?,
+                },
+            );
+        }
+    }
+    Ok(observation)
+}
+
+fn validate_runtime_counterfactual(
+    scenario: &RuntimeScenario,
+    observation: &RuntimeObservation,
+) -> Result<(), String> {
+    if let Some(counterfactual) = &scenario.counterfactual {
+        let mut mutated = observation.clone();
+        match counterfactual.target.as_str() {
+            "stdout_contains" => mutated.stdout = mutated.stdout.replace(&counterfactual.value, ""),
+            "stderr_contains" => mutated.stderr = mutated.stderr.replace(&counterfactual.value, ""),
+            "output_file" => {
+                mutated.files.remove(&counterfactual.value);
+            }
+            _ => return Err("FF-RUNTIME-E-COUNTERFACTUAL: unknown target".to_owned()),
+        }
+        let error = validate_runtime_observation(&scenario.expected, &mutated)
+            .expect_err("validated counterfactual contract must remove a required observable");
+        if !error.contains(&counterfactual.expected_diagnostic) {
+            return Err(format!(
+                "FF-RUNTIME-E-COUNTERFACTUAL: wrong diagnostic from mutation: {error}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_runtime_observation(
+    expected: &RuntimeExpected,
+    observed: &RuntimeObservation,
+) -> Result<(), String> {
+    if observed.exit_code != expected.exit_code {
+        return Err(format!(
+            "FF-RUNTIME-E-OBSERVABLE-MISSING: expected exit {}, observed {}",
+            expected.exit_code, observed.exit_code
+        ));
+    }
+    for needle in &expected.stdout_contains {
+        if !observed.stdout.contains(needle) {
+            return Err(format!(
+                "FF-RUNTIME-E-OBSERVABLE-MISSING: stdout omitted {needle:?}"
+            ));
+        }
+    }
+    for needle in &expected.stderr_contains {
+        if !observed.stderr.contains(needle) {
+            return Err(format!(
+                "FF-RUNTIME-E-OBSERVABLE-MISSING: stderr omitted {needle:?}"
+            ));
+        }
+    }
+    for file in &expected.output_files {
+        let observed_file = observed.files.get(&file.path).ok_or_else(|| {
+            format!(
+                "FF-RUNTIME-E-OBSERVABLE-MISSING: output file {} is absent",
+                file.path
+            )
+        })?;
+        if observed_file.bytes < file.min_bytes
+            || file.sha256.as_ref().is_some_and(|expected_hash| {
+                observed_file.sha256 != expected_hash.to_ascii_lowercase()
+            })
+        {
+            return Err(format!(
+                "FF-RUNTIME-E-OBSERVABLE-MISSING: output file {} failed size or digest",
+                file.path
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn runtime_fixture_diagnostic(mutation: &str) -> Result<&'static str, String> {
+    let mut proof = runtime_fixture_proof();
+    match mutation {
+        "runtime_test_only_substitute" => {
+            "cfg_test".clone_into(&mut proof.artifact.compilation_mode);
+        }
+        "runtime_mock_boundary" => {
+            proof.scenarios[0].production_boundaries = vec!["mock_transport".to_owned()];
+        }
+        "runtime_scaffold_completion" => {
+            "scaffold".clone_into(&mut proof.completion_claim);
+        }
+        "runtime_noop_success" => {
+            proof.scenarios[0].expected.stdout_contains.clear();
+            proof.scenarios[0].expected.output_files.clear();
+        }
+        "runtime_missing_artifact_identity" => proof.artifact.binary.clear(),
+        "runtime_missing_clean_stage" => {
+            "workspace".clone_into(&mut proof.artifact.package_mode);
+        }
+        "runtime_missing_counterfactual" => proof.scenarios[0].counterfactual = None,
+        "runtime_stage_collision" => {
+            "fforager.exe".clone_into(&mut proof.scenarios[0].inputs[0].destination);
+        }
+        other => return Err(format!("unknown runtime fixture mutation {other}")),
+    }
+    let error = validate_runtime_proof_contract(&proof)
+        .expect_err("runtime fixture mutation unexpectedly passed production validator");
+    for diagnostic in [
+        "FF-RUNTIME-E-TEST-SUBSTITUTE",
+        "FF-RUNTIME-E-MOCK-SUBSTITUTE",
+        "FF-RUNTIME-E-SCAFFOLD-COMPLETION",
+        "FF-RUNTIME-E-NO-OBSERVABLE",
+        "FF-RUNTIME-E-ARTIFACT-IDENTITY",
+        "FF-RUNTIME-E-CLEAN-STAGE",
+        "FF-RUNTIME-E-COUNTERFACTUAL",
+        "FF-RUNTIME-E-STAGE-COLLISION",
+    ] {
+        if error.contains(diagnostic) {
+            return Ok(diagnostic);
+        }
+    }
+    Err(format!(
+        "runtime fixture failed without stable diagnostic: {error}"
+    ))
+}
+
+fn runtime_fixture_proof() -> RuntimeProof {
+    RuntimeProof {
+        schema_id: "ff.runtime-proof@1".to_owned(),
+        completion_claim: "operator_usable_runtime".to_owned(),
+        artifact: RuntimeArtifact {
+            package: "fforager".to_owned(),
+            binary: "fforager".to_owned(),
+            profile: "release".to_owned(),
+            features: Vec::new(),
+            package_mode: "clean_staged".to_owned(),
+            execution_mode: "external_process".to_owned(),
+            compilation_mode: "production".to_owned(),
+            dependency_mode: "normal_only".to_owned(),
+            testkit_mode: "forbidden".to_owned(),
+            adapter_mode: "production".to_owned(),
+        },
+        forbidden_substitutes: vec![
+            "mock".to_owned(),
+            "fake".to_owned(),
+            "stub".to_owned(),
+            "fixture-only-implementation".to_owned(),
+            "in-memory-substitute".to_owned(),
+            "hardcoded-success".to_owned(),
+            "test-only-adapter".to_owned(),
+            "direct-internal-call".to_owned(),
+        ],
+        scenarios: vec![
+            RuntimeScenario {
+                id: "direct-success".to_owned(),
+                kind: "success".to_owned(),
+                capability_ids: vec!["FF-CAP-DIRECT".to_owned()],
+                args: vec!["--input".to_owned(), "input.bin".to_owned()],
+                timeout_seconds: 30,
+                inputs: vec![RuntimeInput {
+                    source: "build/fixtures/runtime/input.bin".to_owned(),
+                    destination: "input.bin".to_owned(),
+                    sha256: "0".repeat(64),
+                }],
+                production_boundaries: vec!["production_transport".to_owned()],
+                expected: RuntimeExpected {
+                    exit_code: 0,
+                    stdout_contains: vec!["completed".to_owned()],
+                    stderr_contains: Vec::new(),
+                    output_files: Vec::new(),
+                },
+                counterfactual: Some(RuntimeCounterfactual {
+                    target: "stdout_contains".to_owned(),
+                    value: "completed".to_owned(),
+                    expected_diagnostic: "FF-RUNTIME-E-OBSERVABLE-MISSING".to_owned(),
+                }),
+            },
+            RuntimeScenario {
+                id: "direct-negative".to_owned(),
+                kind: "negative".to_owned(),
+                capability_ids: vec!["FF-CAP-DIRECT".to_owned()],
+                args: vec!["--invalid".to_owned()],
+                timeout_seconds: 30,
+                inputs: Vec::new(),
+                production_boundaries: vec!["production_cli".to_owned()],
+                expected: RuntimeExpected {
+                    exit_code: 2,
+                    stdout_contains: Vec::new(),
+                    stderr_contains: vec!["invalid".to_owned()],
+                    output_files: Vec::new(),
+                },
+                counterfactual: None,
+            },
+        ],
+    }
 }
 
 fn run_verify_pr(root: &Path, gate_args: &[String]) -> Result<(), String> {
@@ -1649,7 +2856,8 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
     verify_advisory_databases(root, &mut checks)?;
     let architecture = architecture_check(root)?;
     checks.extend(architecture.checks);
-    checks.push(Check { id: "clean-shipped-artifact".to_owned(), status: "NOT_APPLICABLE", detail: "Authority WP-FF-003 has zero shipped=true members; activation trigger is the first shipped member.".to_owned() });
+    let runtime = runtime_truth_check(root)?;
+    checks.extend(runtime.checks);
     if root.join("product/watcher/Cargo.toml").exists() {
         return Err(
             "watcher-check is applicable because product/watcher/Cargo.toml exists, but the gate is NOT_IMPLEMENTED"
@@ -1667,6 +2875,16 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         status: "NOT_IMPLEMENTED",
         detail: "Future gate outside the Phase 0 verify-pr applicable child set.".to_owned(),
     });
+    let mut proof_classes = architecture.proof_classes;
+    proof_classes.extend(runtime.proof_classes);
+    proof_classes.sort();
+    proof_classes.dedup();
+    let mut proof_limitations = architecture.limitations;
+    proof_limitations.extend(runtime.limitations);
+    let mut artifacts = vec!["build/target".to_owned(), "build/reports".to_owned()];
+    artifacts.extend(runtime.artifacts);
+    artifacts.sort();
+    artifacts.dedup();
     let report = GateReport {
         schema_id: "ff.gate-report@1",
         schema_version: "1.0.0",
@@ -1680,9 +2898,9 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         checks,
         rules: architecture.rules,
         fixtures: architecture.fixtures,
-        proof_classes: architecture.proof_classes,
-        proof_limitations: architecture.limitations,
-        artifacts: vec!["build/target".to_owned(), "build/reports".to_owned()],
+        proof_classes,
+        proof_limitations,
+        artifacts,
     };
     let path = write_report(root, "verify-pr", &report)?;
     println!("PASS {PR_GATE}; report={}", slash(&path));
@@ -2148,27 +3366,19 @@ fn validate_scope_and_risk(evidence: &Value) -> Result<(), String> {
 }
 
 fn validate_artifact_justification(evidence: &Value) -> Result<(), String> {
-    let expected = BTreeSet::from([
-        "cargo_workspace",
-        "xtask",
-        "architecture_policy",
-        "tooling_policy",
-        "rule_to_proof",
-        "negative_fixtures",
-        "model_manual",
-    ]);
     let object = evidence
         .get("artifact_specific_justification")
         .and_then(Value::as_object)
         .ok_or("artifact_specific_justification is not an object")?;
-    let observed: BTreeSet<_> = object.keys().map(String::as_str).collect();
-    if observed != expected
+    if object.is_empty()
+        || object.keys().any(|key| !safe_id(key))
         || object
             .values()
             .any(|value| value.as_str().is_none_or(|text| text.trim().len() < 12))
     {
         return Err(
-            "artifact_specific_justification has missing, unknown, or empty rows".to_owned(),
+            "artifact_specific_justification requires safe artifact IDs and substantive reasons"
+                .to_owned(),
         );
     }
     Ok(())
@@ -2266,6 +3476,8 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
         ".GOV/rules/build-rules.yaml".to_owned(),
         ".GOV/spec/ferric_forager_technical_design_v0.3.0.md".to_owned(),
         ".GOV/taskboard/taskboard.yaml".to_owned(),
+        ".GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json".to_owned(),
+        ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml".to_owned(),
         ".GOV/topology.yaml".to_owned(),
     ];
     paths.extend(active_evidence_inputs(root)?);
@@ -3075,6 +4287,111 @@ mod tests {
         assert!(error.contains("checksum mismatch"));
         assert!(error.contains("expected="));
         assert!(error.contains("observed="));
+    }
+
+    #[test]
+    fn runtime_contract_rejects_every_named_substitute() {
+        for (mutation, diagnostic) in [
+            (
+                "runtime_test_only_substitute",
+                "FF-RUNTIME-E-TEST-SUBSTITUTE",
+            ),
+            ("runtime_mock_boundary", "FF-RUNTIME-E-MOCK-SUBSTITUTE"),
+            (
+                "runtime_scaffold_completion",
+                "FF-RUNTIME-E-SCAFFOLD-COMPLETION",
+            ),
+            ("runtime_noop_success", "FF-RUNTIME-E-NO-OBSERVABLE"),
+            (
+                "runtime_missing_artifact_identity",
+                "FF-RUNTIME-E-ARTIFACT-IDENTITY",
+            ),
+            ("runtime_missing_clean_stage", "FF-RUNTIME-E-CLEAN-STAGE"),
+            (
+                "runtime_missing_counterfactual",
+                "FF-RUNTIME-E-COUNTERFACTUAL",
+            ),
+            ("runtime_stage_collision", "FF-RUNTIME-E-STAGE-COLLISION"),
+        ] {
+            assert_eq!(runtime_fixture_diagnostic(mutation), Ok(diagnostic));
+        }
+    }
+
+    #[test]
+    fn runtime_counterfactual_uses_the_same_observable_oracle() {
+        let expected = RuntimeExpected {
+            exit_code: 0,
+            stdout_contains: vec!["completed".to_owned()],
+            stderr_contains: Vec::new(),
+            output_files: Vec::new(),
+        };
+        let accepted = RuntimeObservation {
+            exit_code: 0,
+            stdout: "completed".to_owned(),
+            stderr: String::new(),
+            files: BTreeMap::new(),
+        };
+        validate_runtime_observation(&expected, &accepted).unwrap();
+        let mut counterfactual = accepted;
+        counterfactual.stdout.clear();
+        assert!(
+            validate_runtime_observation(&expected, &counterfactual)
+                .unwrap_err()
+                .contains("FF-RUNTIME-E-OBSERVABLE-MISSING")
+        );
+    }
+
+    #[test]
+    fn product_path_classifier_excludes_manual_but_not_runtime_code() {
+        assert!(!product_runtime_path("product/MODEL_MANUAL.md"));
+        assert!(product_runtime_path("product/fforager/src/main.rs"));
+        assert!(product_runtime_path("product\\watcher\\src\\main.rs"));
+        assert!(!product_affecting_path("build/Cargo.lock", false));
+        assert!(product_affecting_path("build/Cargo.lock", true));
+        assert!(product_affecting_path("rust-toolchain.toml", true));
+    }
+
+    #[test]
+    fn runtime_proof_must_match_the_activation_checkpoint() {
+        let proof = serde_json::json!({"schema_id": "ff.runtime-proof@1"});
+        let activated = serde_json::json!({
+            "scope": {"product_impact": "RUNTIME"},
+            "extensions": {"runtime_proof": proof.clone()}
+        });
+        assert!(runtime_proof_predeclared(&activated, &proof));
+        assert!(!runtime_proof_predeclared(
+            &activated,
+            &serde_json::json!({"schema_id": "rewritten"})
+        ));
+    }
+
+    #[test]
+    fn runtime_stage_paths_reject_aliases_and_unsafe_segments() {
+        assert!(safe_relative("inputs/representative.bin"));
+        assert!(!safe_relative("inputs/../representative.bin"));
+        assert!(!safe_relative("inputs//representative.bin"));
+        assert!(!safe_relative("inputs/trailing."));
+
+        let mut proof = runtime_fixture_proof();
+        proof.scenarios[0].inputs[0].destination = "FFORAGER.EXE".to_owned();
+        assert!(
+            validate_runtime_proof_contract(&proof)
+                .unwrap_err()
+                .contains("FF-RUNTIME-E-STAGE-COLLISION")
+        );
+    }
+
+    #[test]
+    fn packet_base_is_bound_to_the_activation_commit() {
+        let root = repo_root().unwrap();
+        let packet_id = "WP-FF-012-runtime-truth-gates-v1";
+        let base = "a5a6a3a78e3aefcbd463294bbbab5e4ec2f58728";
+        validate_packet_activation_base(&root, packet_id, base).unwrap();
+        assert!(
+            validate_packet_activation_base(&root, packet_id, &"0".repeat(40))
+                .unwrap_err()
+                .contains("FF-RUNTIME-E-BASE-REWRITE")
+        );
     }
 
     #[cfg(unix)]

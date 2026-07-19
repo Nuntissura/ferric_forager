@@ -33,6 +33,12 @@ verification_gates:
     purpose: Validate diagnostic schema coverage, current-build replay, artifact pairing, lifecycle, crash survival, staleness, saturation, storage failure, and supported cross-version behavior.
     required_when: product/watcher/Cargo.toml exists or a Phase 1 watcher or release claim is proposed
     current_status: REQUIRED_NOT_YET_IMPLEMENTED
+  - id: FF-GATE-RUNTIME-001
+    command: cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard
+    working_directory: repository_root
+    purpose: Classify product impact, reject test-only or substitute proof, and for product-affecting work build, stage, execute, identify, and counterfactually validate the exact production artifact through its shipped entrypoint.
+    required_when: every TRACKED or EXPANDED product-affecting change and every product capability, product phase, packaging, release, or replacement claim
+    current_status: IMPLEMENTED_RUNTIME_PATH_UNEXERCISED_NO_SHIPPED_MEMBER
 change_evidence_contract:
   canonical_location: active_work_packet.extensions.change_evidence
   resolved_by: START_HERE.yaml -> .GOV/taskboard/taskboard.yaml -> active work packet
@@ -372,4 +378,49 @@ rules:
   - id: FF-BUILD-077
     category: architecture
     statement: "The repository MUST maintain three non-overlapping roots: .GOV/ owns governance; product/ owns shipped runtime code, assets, the watcher, and package-local product tests; build/ owns the Cargo workspace, lockfile, build policies, non-shipped tooling, shared test infrastructure, reports, and target output. rust-toolchain.toml at repository root is the sole rustup selector, and shipped product runtime MUST NOT require .GOV/ or build/ at runtime."
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-078
+    category: runtime_truth
+    statement: Product progress, capability completion, work-packet closure, and product-phase completion require operator-usable behavior executed through a shipped production entrypoint; compilation, tests, mocks, fixtures, reports, documentation, contracts, prototypes, scaffolding, and governance are supporting evidence only.
+    enforcement: REQUIRED
+  - id: FF-BUILD-079
+    category: runtime_truth
+    statement: Before product implementation begins, the active packet MUST define at least one strict black-box runtime scenario with production build identity, shipped entrypoint, representative input, actual production boundaries, expected outputs and side effects, failure oracle, timeout, and operator-visible result.
+    enforcement: REQUIRED
+  - id: FF-BUILD-080
+    category: runtime_truth
+    statement: FF-GATE-RUNTIME-001 MUST build the locked shipping profile once, record the artifact digest, stage that exact artifact into a clean package directory, and execute it without source-tree, governance, build-tool, dev-dependency, testkit, test-only feature, or cfg(test) assistance.
+    enforcement: REQUIRED
+  - id: FF-BUILD-081
+    category: runtime_truth
+    statement: Runtime acceptance MUST reject mock, fake, stub, fixture-only implementation, in-memory substitute, hardcoded-success path, test-only adapter, and direct internal-function execution as product proof while retaining them as supporting test mechanisms where justified.
+    enforcement: REQUIRED
+  - id: FF-BUILD-082
+    category: runtime_truth
+    statement: Shipped paths MUST NOT contain placeholder behavior, no-op success, dummy output, inert commands, fabricated state, or deferred implementation hidden behind success; typed unsupported outcomes MUST remain explicit capability gaps and MUST NOT advance implemented status.
+    enforcement: REQUIRED
+  - id: FF-BUILD-083
+    category: runtime_truth
+    statement: Product infrastructure, contracts, scaffolding, and test machinery MUST be delivered in the same closure unit as the first production runtime behavior that consumes them and MUST NOT independently close a product packet or phase.
+    enforcement: REQUIRED
+  - id: FF-BUILD-084
+    category: runtime_truth
+    statement: Every product phase MUST close on at least one complete runtime vertical slice through the shipped entrypoint, engine, production adapters, required external processes, persistence or output boundary, diagnostics, and operator-visible result; skeleton-only and layer-only phase completion is forbidden.
+    enforcement: REQUIRED
+  - id: FF-BUILD-085
+    category: runtime_truth
+    statement: Unit, property, mutation, fixture, replay, integration, fuzz, and mock-based tests are supporting layers and MUST NOT replace execution of the corresponding production artifact for product closure.
+    enforcement: REQUIRED
+  - id: FF-BUILD-086
+    category: runtime_truth
+    statement: Product-affecting verification MUST return BLOCKED or FAIL, never PASS or NOT_APPLICABLE, when the production artifact, required dependency, representative input, production boundary, observable, negative path, or runtime receipt is absent or mismatched.
+    enforcement: REQUIRED
+  - id: FF-BUILD-087
+    category: runtime_truth
+    statement: FF-GATE-RUNTIME-001 MUST execute a counterfactual that removes, corrupts, skips, or falsely reports a required observable and MUST prove that the same acceptance oracle rejects the mutation.
+    enforcement: REQUIRED
+  - id: FF-BUILD-088
+    category: runtime_truth
+    statement: Code unreachable from a current accepted production entrypoint is experimental rather than implemented product behavior and MUST be removed or explicitly prevented from advancing product, packet, or phase status.
     enforcement: REQUIRED

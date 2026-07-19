@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Adversarially re-evaluate and remediate the Phase 0 executable-gate bootstrap",
     "created_at_utc": "2026-07-19T10:27:04Z",
-    "updated_at_utc": "2026-07-19T10:27:04Z"
+    "updated_at_utc": "2026-07-19T11:20:57Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -41,15 +41,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
+    "closure_commit": "16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Complete independent adversarial audits, reproduce findings, remediate confirmed defects, simplify safely, and rerun the complete WP-FF-003 proof matrix.",
+    "next_action": "Commit and remotely back up the merge-pending evidence, merge the approved closure into main, then mechanically verify containment before VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -98,63 +98,91 @@
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-001",
       "requirement": "All eight WP-FF-003 v1 acceptance requirements remain preserved and are freshly re-proven against current source, policy, reports, fixtures, manual, and canonical commands.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/architecture-check-1784459980344894600-641012.json",
+        "build/reports/verify-pr-1784460029076241600-646424.json",
+        "All preserved v1 source, policy, fixture, report, manual, and canonical command surfaces passed from clean commit 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01."
+      ]
     },
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-002",
       "requirement": "Independent contract/policy, hostile-state, and Rust-quality audits each derive concrete attack surfaces and run checks beyond the v1 evidence list, including at least two counterfactuals, one producer-consumer boundary probe, and one negative-path probe overall; every material result is reproduced by the primary agent.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Independent contract/policy, hostile-state, and Rust-quality audits recorded nine confirmed findings.",
+        "Primary reproduction covered CRLF manifests, malformed YAML, noncanonical split triggers, nested selectors, feature drift, unsupported hosts, timeouts, dynamic packet inputs, and production-fixture reachability.",
+        "Counterfactuals, producer-consumer input binding, and degraded negative paths are executable in the 19-test suite."
+      ]
     },
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-003",
       "requirement": "Every confirmed finding, gap, concern, and risk is either remediated with executable regression proof or retained as explicit residual uncertainty that does not contradict Phase 0 PASS; no false-PASS route remains known.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Every confirmed finding is listed under extensions.change_evidence.independent_findings with a remediation.",
+        "All retained uncertainty is bounded under extensions.change_evidence.residual_uncertainty and does not contradict the stated Phase 0 proof ceiling.",
+        "The clean-source verify-pr report contains zero failed checks and 16 production-validator fixture results."
+      ]
     },
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-004",
       "requirement": "A reuse, deletion, dependency, and simplification review removes or improves brittle or unnecessary implementation where safe, and the full accepted scope/risk matrix passes again after cleanup.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "SyntheticScenario and SyntheticEdge were deleted in favor of production validator reuse.",
+        "Process orchestration, dependency checks, TOML/YAML parsing, and repository mutation helpers were centralized and warnings-denied Clippy passed.",
+        "Exact non-shipped saphyr and sha2 decisions, transitive build inventory, and Zlib license policy passed cargo-deny."
+      ]
     },
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-005",
       "requirement": "The pinned architecture-check and verify-pr commands, formatting, warnings-denied Clippy, tests, docs, dependency policy, governance parsing, authority mirror, allowlist, registry-target, and git diff checks pass on the final branch with truthful proof limitations.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784459980344894600-641012.json",
+        "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460029076241600-646424.json",
+        "Final aggregate source was clean at 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01; 28 checks, 19 tests, 16 fixtures, cargo-deny, advisory freshness, docs, governance parsing, authority mirror, and git diff checks passed."
+      ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T10:27:04Z",
+      "recorded_at_utc": "2026-07-19T11:20:57Z",
       "branch": "codex/wp-ff-003-adversarial-remediation",
       "base_sha": "f44e5747c59e2b42783a5ea323ac8368ad2b420c",
-      "head_sha": "f44e5747c59e2b42783a5ea323ac8368ad2b420c",
+      "head_sha": "16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
       "dirty_paths": [
-        ".GOV/taskboard/taskboard.yaml",
-        ".GOV/id-registry.yaml",
         ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json",
-        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/refinement.json"
+        ".GOV/id-registry.yaml",
+        "build/reports/architecture-check-1784459980344894600-641012.json",
+        "build/reports/verify-pr-1784460029076241600-646424.json"
       ],
       "checks_run": [
-        "git branch --show-current: codex/wp-ff-003-adversarial-remediation",
-        "git rev-parse HEAD: f44e5747c59e2b42783a5ea323ac8368ad2b420c",
-        "git merge-base main HEAD: f44e5747c59e2b42783a5ea323ac8368ad2b420c",
-        "git status --porcelain=v2 --branch was clean before activation"
+        "FF-GATE-ARCH-001 PASS with clean source at 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
+        "FF-GATE-PR-001 PASS with clean source at 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
+        "19 focused tests PASS; 13 composed repository mutation cases and 16 production-validator fixture rows PASS",
+        "Governance JSON/YAML parse, authority mirror, and git diff --check PASS"
       ],
       "blockers": [],
-      "next_action": "Complete independent audits and reproduce each material finding before editing implementation."
+      "next_action": "Commit merge-pending evidence and durable reports, push remote backup, merge to main, and verify closure containment."
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784459980344894600-641012.json",
+      "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460029076241600-646424.json",
+      "Clean-source report proof: git commit 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01, dirty=false, 28 checks, zero failures, 16 production-validator fixtures",
+      "cargo fmt, three locked check profiles, warnings-denied Clippy, 19 tests, rustdoc warnings denied, cargo-deny advisories/bans/licenses/sources: PASS",
+      "Governance JSON/YAML parsing, authority mirror equality, active v2 packet/refinement report inputs, allowlisted changed paths, registry targets, and git diff --check: PASS"
+    ],
     "not_proven": [
       "Broad Phase 1 implementation readiness",
       "yt-dlp replacement parity",
       "Shipped clean-artifact behavior before a shipped member exists",
-      "Cross-platform behavior not exercised on this Windows host"
+      "Cross-platform behavior not exercised on this Windows host",
+      "Descendant process-tree cancellation beyond the directly spawned child",
+      "Dynamic runtime path construction beyond conservative lexical scanning"
     ]
   },
   "extensions": {

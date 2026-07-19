@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Generate the pinned compatibility inventory and executable oracle corpus",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T13:41:00Z"
+    "updated_at_utc": "2026-07-19T13:44:12Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -42,18 +42,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/compatibility-inventory-corpus",
-      "head_sha": "30f33287e75167203609acaef812f85815697756",
-      "verified_at_utc": "2026-07-19T13:35:05Z"
+      "head_sha": "ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
+      "verified_at_utc": "2026-07-19T13:44:12Z"
     },
-    "closure_commit": null,
+    "closure_commit": "ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the complete WP-FF-004 change-evidence matrix, run FF-GATE-PR-001 from the clean evidence commit, then bind final reports and advance to MERGE_PENDING only if every acceptance row passes.",
+    "next_action": "Commit and push the MERGE_PENDING packet plus clean-source reports, merge the approved closure into main, then verify mechanical containment before setting VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -103,46 +103,71 @@
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-001",
       "requirement": "A generator produces a versioned machine-readable profile for yt-dlp 2026.07.04 covering options, aliases, config/default/preset interactions, extractor descriptors, and URL classes, with pinned provenance and deterministic regeneration proof.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/fixtures/compatibility/yt-dlp-2026.07.04/oracle-manifest.json",
+        "build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json",
+        "Two independent pinned-oracle generations produced byte-identical profile SHA-256 f64d65c1c24bece65a641d4e305710a9760de3367f7f7f83bbac5f67fb79f55c with 250 option rows, five presets, six source-grounded interactions, 1751 extractor/URL-class rows, and 1594 unique descriptions."
+      ]
     },
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-002",
       "requirement": "A versioned mandatory corpus manifest covers source graph, normalized observation, sanitized transcript, artifact, failure, archive, and migration planes; each case has a stable ID, oracle identity, normalization version, expected result, and deterministic/live classification.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/fixtures/compatibility/corpus-v1/manifest.json",
+        "build/reports/compatibility-replay-1784468577013338100-661108.json",
+        "The clean-source offline replay selected all seven required deterministic planes with network_access=false; stable zero-based shard assignments were separately replayed as 2/4/0/1 cases."
+      ]
     },
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-003",
       "requirement": "Executable validation rejects missing inventory rows, duplicate or unstable IDs, unsanitized secret fixtures, unpinned oracle inputs, unknown normalization versions, and deterministic cases that depend on live network state.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/fixtures/compatibility/negative/",
+        "build/reports/compatibility-validate-1784468576165129500-653984.json",
+        "The clean-source validator passed 12 exact production-linked mutations, including unpinned artifact/command, missing/duplicate/unstable inventory, sanitizer, normalization, deterministic-network, shard, candidate-digest, and accepted-divergence decision failures."
+      ]
     },
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-004",
       "requirement": "Differential reporting classifies each observed difference as Ferric defect, accepted baseline correction, nondeterministic response, accepted divergence with stable decision ID, or missing feature; no silent omission counts as pass.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/compatibility-diff-1784468577852020900-661548.json",
+        "build/reports/compatibility-inventory-diff-1784468579152468100-647020.json",
+        "The empty candidate produced exactly seven explicit missing_feature rows; accepted divergence without a stable decision ID and invalid observation digests fail closed; report output states that completeness is not Ferric parity."
+      ]
     },
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-005",
       "requirement": "The canonical architecture and PR gates pass on the pinned toolchain, and packet-specific corpus checks emit a machine-readable report linked to these acceptance IDs.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/architecture-check-1784468643263715300-637432.json",
+        "build/reports/verify-pr-1784468566986366700-641512.json",
+        "build/reports/compatibility-validate-1784468576165129500-653984.json",
+        "Both canonical gates and packet-specific validation passed from clean closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928."
+      ]
     },
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v1-AC-006",
       "requirement": "The Phase 0 model manual explains generation, offline replay, opt-in live canaries, inputs, outputs, sanitization, failure recovery, and the rule that corpus evidence is not a parity claim by itself.",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "product/MODEL_MANUAL.md#phase-0-compatibility-oracle",
+        "product/MODEL_MANUAL.md#phase-0-compatibility-comparison",
+        "The manual gives repository-relative commands, inputs, outputs, deterministic normalization, sanitization, shard behavior, classifications, explicit live opt-in, proof ceilings, and diagnostic recovery."
+      ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-        "recorded_at_utc": "2026-07-19T13:35:05Z",
+      "recorded_at_utc": "2026-07-19T13:44:12Z",
       "branch": "codex/compatibility-inventory-corpus",
       "base_sha": "91404decb77599c0491084627b7ef97c96bfb9b5",
-      "head_sha": "30f33287e75167203609acaef812f85815697756",
+      "head_sha": "ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json"
       ],
@@ -163,10 +188,14 @@
         "Deterministic profile regeneration: PASS with identical SHA-256 f64d65c1c24bece65a641d4e305710a9760de3367f7f7f83bbac5f67fb79f55c",
         "Compatibility validation: PASS with 250 options, 1751 extractors, seven planes, and 12 exact negative mutations",
         "Independent HIGH-risk audit: one sanitizer suffix bypass found, remediated, and regression-tested; exact raw alias/extractor sets and pinned source/artifact boundary independently matched",
-        "Full Rust test suite: PASS, 28 tests; warnings-denied Clippy: PASS; FF-GATE-ARCH-001: PASS"
+        "Full Rust test suite: PASS, 28 tests; warnings-denied Clippy: PASS; FF-GATE-ARCH-001: PASS",
+        "Inventory-diff provenance hardening commit: ca6f41f28870a9a3ec355840487f1bf3e3fc8928",
+        "Final clean-source FF-GATE-PR-001 PASS: build/reports/verify-pr-1784468566986366700-641512.json",
+        "Final clean-source FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784468643263715300-637432.json",
+        "Final clean-source compatibility validation/replay/diff reports all bind to closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928"
       ],
       "blockers": [],
-      "next_action": "Commit this change-evidence matrix and run FF-GATE-PR-001 from the clean evidence commit."
+      "next_action": "Commit and push MERGE_PENDING proof, merge the approved closure into main, and verify containment before VALIDATED."
     }
   },
   "validation": {
@@ -174,7 +203,10 @@
       "Activation FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784464663149698900-651004.json",
       "Current research and pinned yt-dlp 2026.07.04 source/executable identity verification recorded in refinement.json",
       "Implementation checkpoint 30f33287e75167203609acaef812f85815697756 contains the generator, profile, corpus, negative fixtures, replay/diff/live commands, and model manual",
-      "Deterministic regeneration, compatibility validation, full and sharded replay, differential completeness, independent oracle-set comparison, warnings-denied Clippy, 28 tests, and FF-GATE-ARCH-001: PASS"
+      "Deterministic regeneration, compatibility validation, full and sharded replay, differential completeness, independent oracle-set comparison, warnings-denied Clippy, and 28 tests: PASS",
+      "Final clean-source FF-GATE-ARCH-001: PASS at build/reports/architecture-check-1784468643263715300-637432.json",
+      "Final clean-source FF-GATE-PR-001: PASS at build/reports/verify-pr-1784468566986366700-641512.json",
+      "All six acceptance rows are PASS; closure commit ca6f41f28870a9a3ec355840487f1bf3e3fc8928 is not yet proven contained in main, so lifecycle is MERGE_PENDING."
     ],
     "not_proven": [
       "Any Ferric feature behavior or parity",

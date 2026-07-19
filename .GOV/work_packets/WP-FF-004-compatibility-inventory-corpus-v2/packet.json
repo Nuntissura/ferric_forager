@@ -281,7 +281,7 @@
         "model_manual": "Any changed command, limitation, diagnostic, or recovery behavior must remain operable by a no-context model.",
         "governance": "The v2 packet, taskboard focus, and missing v1/v2 durable IDs are minimum authorization, recovery, and registry state."
       },
-      "pre_simplification_verdict": "FAIL: baseline unit tests were green while canonical validation failed on Windows, and eleven structured mutations plus command probes exposed integrity, attribution, truth-state, classification, sanitizer, path, negative-inventory, resource-bound, and inventory-coverage gaps.",
+      "pre_simplification_verdict": "PASS: baseline unit tests were green while canonical validation failed on Windows, and eleven structured mutations plus command probes proved the remediation scope necessary for integrity, attribution, truth-state, classification, sanitizer, path, negative-inventory, resource-bound, and inventory-coverage correctness.",
       "simplification_changes": [
         "Split mutation execution into profile, oracle, corpus, and candidate helpers instead of extending one long match body.",
         "Separated candidate input validation from per-row classification and decision authorization.",

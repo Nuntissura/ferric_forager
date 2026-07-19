@@ -296,6 +296,9 @@ struct DifferentialRow {
 struct InventoryDiffReport {
     schema_id: &'static str,
     schema_version: &'static str,
+    status: &'static str,
+    source: CompatibilitySource,
+    inputs: BTreeMap<String, String>,
     before_profile_id: String,
     after_profile_id: String,
     added_options: Vec<String>,
@@ -304,6 +307,7 @@ struct InventoryDiffReport {
     added_extractors: Vec<String>,
     removed_extractors: Vec<String>,
     changed_extractors: Vec<String>,
+    proof_limitations: Vec<String>,
 }
 
 pub(super) fn run_generate(root: &Path, args: &[String]) -> Result<(), String> {
@@ -447,7 +451,27 @@ pub(super) fn run_inventory_diff(
     require_safe_input(after_path)?;
     let before: CompatibilityProfile = read_json(&root.join(before_path))?;
     let after: CompatibilityProfile = read_json(&root.join(after_path))?;
-    let report = inventory_diff(&before, &after);
+    let state = source_state(root)?;
+    let inputs = BTreeMap::from([
+        (
+            format!("before:{before_path}"),
+            sha256_file(&root.join(before_path))?,
+        ),
+        (
+            format!("after:{after_path}"),
+            sha256_file(&root.join(after_path))?,
+        ),
+    ]);
+    let report = inventory_diff(
+        &before,
+        &after,
+        CompatibilitySource {
+            git_commit: state.git_commit,
+            dirty: state.dirty,
+            dirty_paths: state.dirty_paths,
+        },
+        inputs,
+    );
     let path = unique_report_path(root, "compatibility-inventory-diff")?;
     atomic_json(&path, &report)?;
     println!(
@@ -1606,6 +1630,8 @@ fn differential_rows(
 fn inventory_diff(
     before: &CompatibilityProfile,
     after: &CompatibilityProfile,
+    source: CompatibilitySource,
+    inputs: BTreeMap<String, String>,
 ) -> InventoryDiffReport {
     let before_options = before
         .options
@@ -1630,6 +1656,9 @@ fn inventory_diff(
     InventoryDiffReport {
         schema_id: "ff.compatibility-inventory-diff@1",
         schema_version: "1.0.0",
+        status: "PASS",
+        source,
+        inputs,
         before_profile_id: before.profile_id.clone(),
         after_profile_id: after.profile_id.clone(),
         added_options: set_difference(
@@ -1670,6 +1699,9 @@ fn inventory_diff(
                     .map(|_| (*id).clone())
             })
             .collect(),
+        proof_limitations: vec![
+            "Inventory diffing reports stable-row additions, removals, and changes; it does not prove behavioral parity or explain the cause of upstream drift.".to_owned(),
+        ],
     }
 }
 

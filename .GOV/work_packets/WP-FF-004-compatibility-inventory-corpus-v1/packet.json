@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Generate the pinned compatibility inventory and executable oracle corpus",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T13:35:05Z"
+    "updated_at_utc": "2026-07-19T13:41:00Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -338,6 +338,7 @@
         "REMEDIATED HIGH: upstream extractor descriptions randomize search examples; the pinned source-confirmed random fragment is normalized before hashing and two independent generations are byte-identical.",
         "REMEDIATED HIGH: sanitizer assignment matching accepted a secret suffix after an allowlisted placeholder; placeholder grammar and post-placeholder boundaries are now strict and regression-tested.",
         "REMEDIATED MEDIUM: caller-selected shard totals could reassign cases and a legitimate empty shard failed; replay now requires the manifest shard_count, selects stored assignments, and accepts the valid empty partition.",
+        "REMEDIATED MEDIUM: the first inventory-diff report omitted source state, input hashes, status, and proof limitations; the report now carries the same attributable fail-closed envelope data required of other WP-004 outputs.",
         "PASS INDEPENDENT: raw oracle capture comparison found exact parity for 280 option aliases, 1751 unique extractor keys, and duplicate occurrence counts.",
         "PASS INDEPENDENT: direct Git and artifact inspection found the source checkout clean at the pinned tag commit and the executable hash exact."
       ],

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Define versioned core contracts and executable state-machine specifications",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T21:28:17Z"
+    "updated_at_utc": "2026-07-19T21:38:56Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -42,15 +42,15 @@
     "worktree_policy": "ISOLATED_PARALLEL_HIGH_RISK",
     "worktree_id": "WP-FF-005-versioned-core-contracts",
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
-    "closure_commit": null,
+    "closure_commit": "acf5465518e94984848e7d1f725575a99daebd55",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Implement the versioned contract crates, pure state models, conformance fixtures, deep validation gate, and model manual from the existing completed research basis; then run independent adversarial implementation reviews and remediate every confirmed finding.",
+    "next_action": "Merge closure commit acf5465518e94984848e7d1f725575a99daebd55 and this MERGE_PENDING evidence record to main, then mechanically verify containment before VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -168,10 +168,10 @@
       "proof_class": "governed_gate",
       "status": "PASS",
       "evidence": [
-        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1784496258540882100-143276.json.",
-        "FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1784496301061246200-214868.json preserves the exact non-product prerequisite ceiling and makes no runtime completion claim.",
-        "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1784496378383518000-661300.json; 32 contract, 29 core, 13 diagnostics, 10 testkit, and 58 xtask tests plus all-feature doctests pass.",
-        "FF-GATE-PR-001 aggregate report build/reports/verify-pr-1784496459913522500-18580.json records successful formatting, warnings-denied Clippy, tests, rustdoc, dependency policy, architecture, prerequisite-ceiling, and proof checks."
+        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1784496901614013300-642088.json; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1784496945148219800-630752.json preserves the exact non-product prerequisite ceiling and makes no runtime completion claim; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1784497031416014200-644600.json; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false; 32 contract, 29 core, 13 diagnostics, 10 testkit, and 58 xtask tests plus all-feature doctests pass.",
+        "FF-GATE-PR-001 aggregate report build/reports/verify-pr-1784497118648624100-674796.json records successful formatting, warnings-denied Clippy, tests, rustdoc, dependency policy, architecture, prerequisite-ceiling, and proof checks; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false."
       ]
     },
     {
@@ -188,17 +188,11 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T21:28:17Z",
+      "recorded_at_utc": "2026-07-19T21:38:56Z",
       "branch": "codex/versioned-core-contracts",
       "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
-      "head_sha": "5bbbd23c2116de7715af2cea9244cb69b9d599ac",
-      "dirty_paths": [
-        ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
-        "build/crates/fforager-testkit/Cargo.toml",
-        "build/tools/fforager-xtask/src/main.rs",
-        "product/MODEL_MANUAL.md",
-        "product/crates/fforager-core/Cargo.toml"
-      ],
+      "head_sha": "acf5465518e94984848e7d1f725575a99daebd55",
+      "dirty_paths": [],
       "checks_run": [
         "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, WP-005 packet, topology, build rules, work-packet requirements/template, cited design anchors, and readiness matrix",
         "Verified AGENTS.md and CLAUDE.md are byte-identical",
@@ -212,13 +206,13 @@
         "Added versioned contract/diagnostic crates, pure lifecycle/resource models, canonical fixtures/inventory, proof gates, and no-context model manual.",
         "Used independent adversarial implementation reviews and remediated all confirmed wire, lifecycle, resource, ownership, instance, restore, attribution, fixture, inventory, scanner, progress, and proof-binding findings.",
         "Final independent adversarial closure review found no blocking issue; residual risk is limited to future adapters and the lexical scanner's documented boundary.",
-        "Final FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784496258540882100-143276.json.",
-        "Final FF-GATE-RUNTIME-001 report preserves the prerequisite ceiling: build/reports/runtime-truth-check-1784496301061246200-214868.json.",
-        "Final FF-GATE-DEEP-001 PASS: build/reports/verify-deep-1784496378383518000-661300.json.",
-        "Final FF-GATE-PR-001 PASS: build/reports/verify-pr-1784496459913522500-18580.json."
+        "Clean closure FF-GATE-ARCH-001 report: build/reports/architecture-check-1784496901614013300-642088.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Clean closure FF-GATE-RUNTIME-001 prerequisite-ceiling report: build/reports/runtime-truth-check-1784496945148219800-630752.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Clean closure FF-GATE-DEEP-001 report: build/reports/verify-deep-1784497031416014200-644600.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Clean closure FF-GATE-PR-001 report: build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false."
       ],
       "blockers": [],
-      "next_action": "Commit the accepted implementation and evidence, rerun canonical gates on the clean closure commit, then record MERGE_PENDING and prove main containment."
+      "next_action": "Commit this MERGE_PENDING evidence record, merge the branch to main, and prove closure/evidence containment before setting VALIDATED."
     }
   },
   "validation": {
@@ -231,10 +225,10 @@
       "PASS: all-feature doctests for contracts, core, diagnostics-contract, and testkit",
       "PASS: cargo fmt --manifest-path build/Cargo.toml --all -- --check",
       "PASS: cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets -- -D warnings",
-      "PASS: FF-GATE-ARCH-001; build/reports/architecture-check-1784496258540882100-143276.json",
-      "VERIFIED: FF-GATE-RUNTIME-001 prerequisite-ceiling report; build/reports/runtime-truth-check-1784496301061246200-214868.json",
-      "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1784496378383518000-661300.json",
-      "PASS: FF-GATE-PR-001; build/reports/verify-pr-1784496459913522500-18580.json",
+      "PASS: FF-GATE-ARCH-001; build/reports/architecture-check-1784496901614013300-642088.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "VERIFIED: FF-GATE-RUNTIME-001 prerequisite-ceiling report; build/reports/runtime-truth-check-1784496945148219800-630752.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1784497031416014200-644600.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "PASS: FF-GATE-PR-001; build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
       "PASS: final independent adversarial implementation review across wire, core, gate, and closure surfaces",
       "PASS: JSON parse and git diff --check"
     ],

@@ -449,46 +449,7 @@ fn run_verify_deep(root: &Path, gate_args: &[String]) -> Result<(), String> {
 
 fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
-    verify_tool_identities(root, &mut checks)?;
-    run_rust_verification(root, &mut checks)?;
-    run_doctests(root, &mut checks)?;
-    validate_contract_inventory(root, &mut checks)?;
-    validate_contract_manual(root, &mut checks)?;
-    scan_data_only_product_models(root, &mut checks)?;
-    let architecture = architecture_check(root)?;
-    checks.extend(architecture.checks);
-    for (id, detail) in [
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-001",
-            "versioned data-only product and diagnostic contracts, bounded limits/errors, and inventory rows were compiled and tested",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-002",
-            "typed identity, relationship, provenance, collision, canonicalization, and archive-eligibility tests passed",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-003",
-            "all twelve finite lifecycle models passed success, failure, cancellation, restart, replay, and invalid-transition tests",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-004",
-            "checked atomic resource-vector and byte-credit boundary, saturation, fairness, cancellation, and release tests passed",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-005",
-            "shared conformance tests passed prior/current, incompatible-major, partial, oversized, unknown-kind, duplicate, and malformed paths",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-006",
-            "architecture and deep proof surfaces passed on the pinned workspace",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-007",
-            "the no-context model manual is a recorded gate input and documents the contract workflow",
-        ),
-    ] {
-        checks.push(pass(id, detail));
-    }
+    let architecture = run_verify_deep_checks(root, &mut checks)?;
     let report = GateReport {
         schema_id: "ff.gate-report@1",
         schema_version: "1.0.0",
@@ -524,6 +485,53 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
     let path = write_report(root, "verify-deep", &report)?;
     println!("PASS {DEEP_GATE}; report={}", slash(&path));
     Ok(())
+}
+
+fn run_verify_deep_checks(
+    root: &Path,
+    checks: &mut Vec<Check>,
+) -> Result<ArchitectureResult, String> {
+    verify_tool_identities(root, checks)?;
+    run_rust_verification(root, checks)?;
+    run_doctests(root, checks)?;
+    validate_contract_inventory(root, checks)?;
+    validate_contract_manual(root, checks)?;
+    scan_data_only_product_models(root, checks)?;
+    let mut architecture = architecture_check(root)?;
+    checks.append(&mut architecture.checks);
+    for (id, detail) in [
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-001",
+            "versioned data-only product and diagnostic contracts, bounded limits/errors, and inventory rows were compiled and tested",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-002",
+            "typed identity, relationship, provenance, collision, canonicalization, and archive-eligibility tests passed",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-003",
+            "all twelve finite lifecycle models passed success, failure, cancellation, restart, replay, and invalid-transition tests",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-004",
+            "checked atomic resource-vector and byte-credit boundary, saturation, fairness, cancellation, and release tests passed",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-005",
+            "shared conformance tests passed prior/current, incompatible-major, partial, oversized, unknown-kind, duplicate, and malformed paths",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-006",
+            "architecture and deep proof surfaces passed on the pinned workspace",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-007",
+            "the no-context model manual is a recorded gate input and documents the contract workflow",
+        ),
+    ] {
+        checks.push(pass(id, detail));
+    }
+    Ok(architecture)
 }
 
 fn validate_contract_inventory(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
@@ -581,7 +589,6 @@ fn validate_contract_inventory_rows(
     states: &[Value],
 ) -> Result<(), String> {
     let fixture_root = root.join("build/fixtures/contracts");
-    let test_symbols = collect_inventory_test_symbols(root)?;
     let mut ids = BTreeSet::new();
     let mut contract_ids = BTreeSet::new();
     let mut state_ids = BTreeSet::new();
@@ -590,7 +597,7 @@ fn validate_contract_inventory_rows(
         .map(|row| (row, false))
         .chain(states.iter().map(|row| (row, true)))
     {
-        let id = validate_contract_inventory_row(row, is_state, &fixture_root, &test_symbols)?;
+        let id = validate_contract_inventory_row(row, is_state, &fixture_root)?;
         if !ids.insert(id) {
             return Err(format!("duplicate contract inventory ID {id}"));
         }
@@ -614,7 +621,6 @@ fn validate_contract_inventory_row<'a>(
     row: &'a Value,
     is_state: bool,
     fixture_root: &Path,
-    test_symbols: &BTreeSet<String>,
 ) -> Result<&'a str, String> {
     validate_contract_inventory_row_shape(row, is_state)?;
     let id = row
@@ -634,9 +640,9 @@ fn validate_contract_inventory_row<'a>(
         .get("proof_id")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if !test_symbols.contains(proof_id) {
+    if expected_inventory_proof(id) != Some(proof_id) {
         return Err(format!(
-            "contract inventory row {id} does not cite an existing exact executable test: {proof_id}"
+            "contract inventory row {id} does not cite its exact canonical executable proof: {proof_id}"
         ));
     }
     let (expected_owner, expected_gate) = expected_inventory_semantics(id)
@@ -728,55 +734,6 @@ fn validate_contract_inventory_required_fields(
     Ok(())
 }
 
-fn collect_inventory_test_symbols(root: &Path) -> Result<BTreeSet<String>, String> {
-    let mut symbols = BTreeSet::new();
-    for (directory, crate_prefix) in [
-        ("product/crates/fforager-contracts/src", "contracts"),
-        ("product/crates/fforager-core/src", "core"),
-        (
-            "product/crates/fforager-diagnostics-contract/src",
-            "diagnostics",
-        ),
-        ("build/crates/fforager-testkit/src", "testkit"),
-    ] {
-        let directory_path = root.join(directory);
-        for path in walk_files(&directory_path)? {
-            if path.extension() != Some(OsStr::new("rs")) {
-                continue;
-            }
-            let source = fs::read_to_string(&path)
-                .map_err(|error| format!("read test-symbol source {}: {error}", path.display()))?;
-            let stem = path
-                .file_stem()
-                .and_then(OsStr::to_str)
-                .ok_or_else(|| format!("invalid Rust source path {}", path.display()))?;
-            let module = if stem == "lib" {
-                crate_prefix.to_owned()
-            } else {
-                format!("{crate_prefix}::{stem}")
-            };
-            let mut test_attribute = false;
-            for line in source.lines().map(str::trim) {
-                if line == "#[test]" {
-                    test_attribute = true;
-                    continue;
-                }
-                if !test_attribute || line.is_empty() || line.starts_with("#[") {
-                    continue;
-                }
-                if let Some(name) = line
-                    .strip_prefix("fn ")
-                    .and_then(|remainder| remainder.split_once('(').map(|(name, _)| name))
-                {
-                    symbols.insert(format!("{module}::tests::{name}"));
-                }
-                test_attribute = false;
-            }
-        }
-    }
-    Ok(symbols)
-}
-
 fn expected_inventory_semantics(id: &str) -> Option<(&'static str, &'static str)> {
     const AC_001: &str = "WP-FF-005-versioned-core-contracts-v1-AC-001";
     const AC_002: &str = "WP-FF-005-versioned-core-contracts-v1-AC-002";
@@ -826,6 +783,79 @@ fn expected_inventory_semantics(id: &str) -> Option<(&'static str, &'static str)
         | "FF-STATE-WATCHER-001" => Some(("fforager-core::lifecycle", AC_003)),
         _ => None,
     }
+}
+
+fn expected_inventory_proof(id: &str) -> Option<&'static str> {
+    match id {
+        "FF-CONTRACT-IDENTITY-001" => {
+            Some("contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase")
+        }
+        "FF-CONTRACT-SOURCE-GRAPH-001"
+        | "FF-CONTRACT-PLUGIN-IPC-001"
+        | "FF-CONTRACT-JS-WORKER-001"
+        | "FF-CONTRACT-DURABILITY-001"
+        | "FF-CONTRACT-DIAGNOSTIC-ENVELOPE-001"
+        | "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001"
+        | "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001" => Some(
+            "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+        ),
+        "FF-CONTRACT-ACQUISITION-001"
+        | "FF-CONTRACT-OUTPUT-SINK-001"
+        | "FF-CONTRACT-CONFIG-001"
+        | "FF-CONTRACT-EVENT-001"
+        | "FF-CONTRACT-ERROR-001"
+        | "FF-CONTRACT-CANCELLATION-001" => {
+            Some("testkit::tests::canonical_public_contract_fixtures_decode_and_validate")
+        }
+        "FF-CONTRACT-TRISTATE-001" => {
+            Some("contracts::graph::tests::round_trip_preserves_tri_state")
+        }
+        "FF-CONTRACT-EXTENSION-001" => {
+            Some("contracts::identity::tests::extensions_require_namespace_and_budget")
+        }
+        "FF-CONTRACT-PROCESS-001" | "FF-CONTRACT-FRAMING-001" => {
+            Some("testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind")
+        }
+        "FF-CONTRACT-FILESYSTEM-001" => {
+            Some("contracts::storage::tests::unsupported_path_confinement_fails_closed")
+        }
+        "FF-STATE-ADMISSION-001" => {
+            Some("core::resource::tests::atomic_zero_exact_one_over_and_release_identity")
+        }
+        "FF-CONTRACT-RESOURCE-VECTOR-001" | "FF-STATE-FRAGMENT-DURABILITY-001" => Some(
+            "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution",
+        ),
+        "FF-STATE-JOB-CANCEL-001" => Some(
+            "core::lifecycle::tests::success_and_durable_prefixes_require_effect_acknowledgements",
+        ),
+        "FF-STATE-COMMIT-ARCHIVE-001" => Some(
+            "core::lifecycle::tests::transient_restore_and_stale_or_wrong_acknowledgements_are_rejected",
+        ),
+        "FF-STATE-SOURCE-REDIRECT-001" | "FF-STATE-LIVE-001" => {
+            Some("core::lifecycle::tests::every_named_lifecycle_has_a_success_path")
+        }
+        "FF-STATE-SINK-001" => Some(
+            "core::lifecycle::tests::failure_and_restart_preserve_diagnostics_and_reset_safely",
+        ),
+        "FF-STATE-FFMPEG-001" | "FF-STATE-PLUGIN-IPC-001" | "FF-STATE-WATCHER-001" => {
+            Some("core::lifecycle::tests::cancellation_paths_are_explicit_and_release_or_drain")
+        }
+        "FF-STATE-JS-WORKER-001" => {
+            Some("core::lifecycle::tests::illegal_transitions_are_typed_and_do_not_mutate_or_trace")
+        }
+        "FF-STATE-FILESYSTEM-CAPABILITY-001" => {
+            Some("core::lifecycle::tests::degraded_filesystem_never_claims_confinement")
+        }
+        _ => None,
+    }
+}
+
+fn canonical_inventory_proof_ids() -> BTreeSet<&'static str> {
+    expected_contract_inventory_ids()
+        .into_iter()
+        .chain(expected_state_inventory_ids())
+        .filter_map(expected_inventory_proof)
+        .collect()
 }
 
 fn expected_contract_inventory_ids() -> BTreeSet<&'static str> {
@@ -1034,6 +1064,7 @@ fn forbidden_data_model_token(source: &str) -> Option<&'static str> {
     }
     [
         "tokio::",
+        "interprocess::",
         "std::net",
         "std::process",
         "std::fs",
@@ -1089,33 +1120,78 @@ fn forbidden_std_io_handle_token(compact: &str) -> Option<&'static str> {
     if live_names
         .iter()
         .any(|name| compact.contains(&format!("std::io::{name}")))
+        || compact.contains("usestd::io::*")
     {
         return Some(LIVE_HANDLE);
     }
     for statement in compact.split(';') {
-        if statement.contains("usestd::ioas") || statement.ends_with("usestd::io") {
+        if statement.ends_with("usestd::io") {
+            return Some(LIVE_HANDLE);
+        }
+        if let Some(alias) = statement
+            .split_once("usestd::ioas")
+            .map(|(_, alias)| identifier_prefix(alias))
+            && !alias.is_empty()
+            && live_names
+                .iter()
+                .any(|name| compact.contains(&format!("{alias}::{name}")))
+        {
+            return Some(LIVE_HANDLE);
+        }
+        if let Some(alias) = statement
+            .split_once("usestdas")
+            .map(|(_, alias)| identifier_prefix(alias))
+            && !alias.is_empty()
+            && (live_names
+                .iter()
+                .any(|name| compact.contains(&format!("{alias}::io::{name}")))
+                || compact.contains(&format!("use{alias}::io::*")))
+        {
             return Some(LIVE_HANDLE);
         }
         if let Some((_, group)) = statement.split_once("usestd::io::{") {
             let group = group.split_once('}').map_or(group, |(items, _)| items);
-            if group.split(',').any(|item| {
-                let imported = item.split_once("as").map_or(item, |(name, _)| name);
-                live_names.contains(&imported)
-            }) {
+            if group == "*"
+                || live_names.iter().any(|name| group.contains(name))
+                || imported_io_module_alias_is_used(group, compact, &live_names)
+            {
                 return Some(LIVE_HANDLE);
             }
         }
         if let Some((_, group)) = statement.split_once("usestd::{") {
             let group = group.split_once('}').map_or(group, |(items, _)| items);
-            if group.split(',').any(|item| {
-                let imported = item.split_once("as").map_or(item, |(name, _)| name);
-                imported == "io"
-            }) {
+            if group.contains("io::{")
+                && (group.contains('*') || live_names.iter().any(|name| group.contains(name)))
+            {
+                return Some(LIVE_HANDLE);
+            }
+            if imported_io_module_alias_is_used(group, compact, &live_names) {
                 return Some(LIVE_HANDLE);
             }
         }
     }
     None
+}
+
+fn identifier_prefix(value: &str) -> &str {
+    value
+        .find(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+        .map_or(value, |end| &value[..end])
+}
+
+fn imported_io_module_alias_is_used(group: &str, compact: &str, live_names: &[&str]) -> bool {
+    group.split(',').any(|item| {
+        let alias = item
+            .split_once("selfas")
+            .or_else(|| item.split_once("ioas"))
+            .map(|(_, alias)| identifier_prefix(alias));
+        alias.is_some_and(|alias| {
+            !alias.is_empty()
+                && live_names
+                    .iter()
+                    .any(|name| compact.contains(&format!("{alias}::{name}")))
+        })
+    })
 }
 
 fn validate_contract_manual(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
@@ -2862,20 +2938,28 @@ fn validate_prerequisite_zero_claim_surface(packet: &Value) -> Result<(), String
 }
 
 fn reject_progress_claims(value: &Value) -> Result<(), String> {
+    reject_progress_claims_at(value, &mut Vec::new())
+}
+
+fn reject_progress_claims_at(value: &Value, path: &mut Vec<String>) -> Result<(), String> {
     match value {
         Value::Object(object) => {
             for (key, child) in object {
-                if is_prerequisite_progress_key(key) && affirmative_progress_value(child) {
+                if (is_prerequisite_progress_key(key) || nested_progress_key(path, key))
+                    && affirmative_progress_value(child)
+                {
                     return Err(format!(
                         "FF-RUNTIME-E-PREREQUISITE-PROGRESS-CLAIM: {key}={child}"
                     ));
                 }
-                reject_progress_claims(child)?;
+                path.push(normalize_claim_key(key));
+                reject_progress_claims_at(child, path)?;
+                path.pop();
             }
         }
         Value::Array(values) => {
             for child in values {
-                reject_progress_claims(child)?;
+                reject_progress_claims_at(child, path)?;
             }
         }
         Value::String(text) if asserts_forbidden_prerequisite_completion(text) => {
@@ -2888,8 +2972,27 @@ fn reject_progress_claims(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn normalize_claim_key(key: &str) -> String {
+    key.to_ascii_lowercase().replace('-', "_")
+}
+
+fn nested_progress_key(path: &[String], key: &str) -> bool {
+    let key = normalize_claim_key(key);
+    let scoped = path.iter().any(|segment| {
+        matches!(
+            segment.as_str(),
+            "product" | "capability" | "runtime" | "packaging" | "release" | "phase"
+        )
+    });
+    scoped
+        && matches!(
+            key.as_str(),
+            "status" | "state" | "progress" | "completion" | "result" | "verdict"
+        )
+}
+
 fn is_prerequisite_progress_key(key: &str) -> bool {
-    let normalized = key.to_ascii_lowercase().replace('-', "_");
+    let normalized = normalize_claim_key(key);
     [
         "product_progress",
         "product_status",
@@ -2924,6 +3027,12 @@ fn affirmative_progress_value(value: &Value) -> bool {
                 | "SHIPPED"
                 | "READY"
                 | "IMPLEMENTED"
+                | "SUCCESS"
+                | "SUCCEEDED"
+                | "PASSED"
+                | "FINISHED"
+                | "PRODUCTION_READY"
+                | "OPERATIONAL"
         )
     })
 }
@@ -2934,50 +3043,125 @@ fn asserts_forbidden_prerequisite_completion(text: &str) -> bool {
         .replace(" however ", ";")
         .replace(" but ", ";")
         .replace(" although ", ";");
-    normalized
+    let mut prior_subject = false;
+    for clause in normalized
         .split(['.', ';', '\n'])
         .map(str::trim)
         .filter(|clause| !clause.is_empty())
-        .any(clause_asserts_forbidden_prerequisite_completion)
+    {
+        let tokens = claim_tokens(clause);
+        let has_subject = contains_forbidden_claim_subject(&tokens);
+        if clause_asserts_forbidden_prerequisite_completion(clause)
+            || (!has_subject && prior_subject && pronoun_asserts_completion(&tokens))
+        {
+            return true;
+        }
+        if has_subject {
+            prior_subject = true;
+        }
+    }
+    false
 }
 
 fn clause_asserts_forbidden_prerequisite_completion(clause: &str) -> bool {
     let tokens = claim_tokens(clause);
-    let subjects = [
-        ["product", "capability"],
-        ["product", "progress"],
-        ["phase", "0"],
-        ["phase", "progress"],
-        ["runtime", "completion"],
-        ["runtime", "status"],
-        ["packaging", "progress"],
-        ["release", "progress"],
+    let subjects: [&[&str]; 9] = [
+        &["product", "capability"],
+        &["product", "progress"],
+        &["phase", "0"],
+        &["phase", "zero"],
+        &["phase", "progress"],
+        &["runtime", "completion"],
+        &["runtime", "status"],
+        &["packaging", "progress"],
+        &["release", "progress"],
     ];
     for subject in subjects {
-        for start in token_sequence_positions(&tokens, &subject) {
+        for start in token_sequence_positions(&tokens, subject) {
             let end = start + subject.len();
-            for (status, _) in tokens.iter().enumerate().filter(|(_, token)| {
-                matches!(
-                    token.as_str(),
-                    "true"
-                        | "pass"
-                        | "complete"
-                        | "completed"
-                        | "validated"
-                        | "delivered"
-                        | "done"
-                        | "shipped"
-                        | "ready"
-                        | "implemented"
-                )
-            }) {
+            for (status, _) in tokens
+                .iter()
+                .enumerate()
+                .filter(|(_, token)| is_completion_status(token))
+            {
                 if !claim_subject_is_negated(&tokens, start, end, status) {
                     return true;
                 }
             }
         }
     }
+    single_subject_asserts_completion(&tokens)
+}
+
+fn contains_forbidden_claim_subject(tokens: &[String]) -> bool {
+    [
+        &["product", "capability"][..],
+        &["product", "progress"][..],
+        &["phase", "0"][..],
+        &["phase", "zero"][..],
+        &["phase", "progress"][..],
+        &["runtime", "completion"][..],
+        &["runtime", "status"][..],
+        &["packaging", "progress"][..],
+        &["release", "progress"][..],
+    ]
+    .iter()
+    .any(|subject| !token_sequence_positions(tokens, subject).is_empty())
+        || ["product", "runtime", "packaging", "release", "phase"]
+            .iter()
+            .any(|subject| tokens.iter().any(|token| token == subject))
+}
+
+fn is_completion_status(token: &str) -> bool {
+    matches!(
+        token,
+        "true"
+            | "pass"
+            | "passed"
+            | "success"
+            | "succeeded"
+            | "complete"
+            | "completed"
+            | "validated"
+            | "delivered"
+            | "done"
+            | "shipped"
+            | "ready"
+            | "implemented"
+            | "finished"
+            | "operational"
+    )
+}
+
+fn single_subject_asserts_completion(tokens: &[String]) -> bool {
+    for (subject, _) in tokens.iter().enumerate().filter(|(_, token)| {
+        matches!(
+            token.as_str(),
+            "product" | "runtime" | "packaging" | "release" | "phase"
+        )
+    }) {
+        for (status, _) in tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| is_completion_status(token))
+        {
+            if subject.abs_diff(status) <= 5
+                && !claim_subject_is_negated(tokens, subject, subject + 1, status)
+            {
+                return true;
+            }
+        }
+    }
     false
+}
+
+fn pronoun_asserts_completion(tokens: &[String]) -> bool {
+    tokens.first().is_some_and(|token| {
+        matches!(token.as_str(), "it" | "this" | "that")
+            && tokens.iter().enumerate().any(|(status, token)| {
+                is_completion_status(token) && !claim_subject_is_negated(tokens, 0, 1, status)
+            })
+    })
 }
 
 fn claim_tokens(text: &str) -> Vec<String> {
@@ -3009,14 +3193,19 @@ fn claim_subject_is_negated(
     status: usize,
 ) -> bool {
     let negations = ["no", "not", "zero", "never", "cannot"];
-    if subject_start > 0 && negations.contains(&tokens[subject_start - 1].as_str()) {
+    let is_effective_negation = |index: usize| {
+        negations.contains(&tokens[index].as_str())
+            && !(tokens[index] == "not" && tokens.get(index + 1).is_some_and(|next| next == "only"))
+    };
+    if subject_start > 0 && is_effective_negation(subject_start - 1) {
         return true;
     }
     let between_start = subject_end.min(status);
     let between_end = subject_start.max(status);
     if tokens[between_start..between_end]
         .iter()
-        .any(|token| negations.contains(&token.as_str()))
+        .enumerate()
+        .any(|(offset, _)| is_effective_negation(between_start + offset))
     {
         return true;
     }
@@ -3028,7 +3217,8 @@ fn claim_subject_is_negated(
             .map_or(0, |index| index + 1);
         return prior[scope_start..]
             .iter()
-            .any(|token| negations.contains(&token.as_str()));
+            .enumerate()
+            .any(|(offset, _)| is_effective_negation(scope_start + offset));
     }
     false
 }
@@ -4022,10 +4212,8 @@ fn run_verify_pr(root: &Path, gate_args: &[String]) -> Result<(), String> {
 
 fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
-    verify_tool_identities(root, &mut checks)?;
     validate_change_evidence(root, &mut checks)?;
-    run_rust_verification(root, &mut checks)?;
-    run_doctests(root, &mut checks)?;
+    let architecture = run_verify_deep_checks(root, &mut checks)?;
     run_command_with_env(
         root,
         "docs",
@@ -4060,8 +4248,6 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         &mut checks,
     )?;
     verify_advisory_databases(root, &mut checks)?;
-    let architecture = architecture_check(root)?;
-    checks.extend(architecture.checks);
     let runtime = runtime_truth_check(root)?;
     checks.extend(runtime.checks);
     if root.join("product/watcher/Cargo.toml").exists() {
@@ -4071,13 +4257,6 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         );
     }
     checks.push(Check { id: "watcher-check".to_owned(), status: "NOT_APPLICABLE", detail: "product/watcher/Cargo.toml is absent; activation trigger is the watcher package or a watcher/release claim.".to_owned() });
-    validate_contract_inventory(root, &mut checks)?;
-    validate_contract_manual(root, &mut checks)?;
-    scan_data_only_product_models(root, &mut checks)?;
-    checks.push(pass(
-        "verify-deep",
-        "WP-005 activates FF-GATE-DEEP-001; its contract inventory, data-only scan, and workspace model/conformance tests passed inside verify-pr and the standalone command emits the dedicated report",
-    ));
     checks.push(Check {
         id: "verify-release".to_owned(),
         status: "NOT_IMPLEMENTED",
@@ -4244,6 +4423,7 @@ fn run_doctests(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
             "build/Cargo.toml",
             "--workspace",
             "--doc",
+            "--all-features",
             "--locked",
             "--target-dir",
             "build/target",
@@ -4553,7 +4733,6 @@ fn validate_adversarial_review_evidence(evidence: &Value) -> Result<(), String> 
         ("COUNTERFACTUAL_CHECKS", 4),
         ("BOUNDARY_PROBES", 4),
         ("NEGATIVE_PATH_CHECKS", 4),
-        ("INDEPENDENT_FINDINGS", 1),
         ("RESIDUAL_UNCERTAINTY", 1),
     ] {
         let rows = substantive_review_rows(&Value::Object(review.clone()), field)?;
@@ -4581,20 +4760,81 @@ fn validate_adversarial_review_evidence(evidence: &Value) -> Result<(), String> 
             ));
         }
     }
-    let findings = substantive_review_rows(&Value::Object(review.clone()), "INDEPENDENT_FINDINGS")?;
-    if findings.iter().any(|finding| {
-        !finding.starts_with("REMEDIATED:") && !finding.starts_with("NO_BLOCKING_FINDING:")
-    }) {
-        return Err(
-            "every independent finding must start with REMEDIATED: or NO_BLOCKING_FINDING:"
-                .to_owned(),
-        );
-    }
+    validate_finding_dispositions(
+        review
+            .get("INDEPENDENT_FINDINGS")
+            .ok_or("adversarial_review omits INDEPENDENT_FINDINGS")?,
+    )?;
     validate_manual_review_evidence(
         review
             .get("MANUAL_REVIEW")
             .ok_or("adversarial_review omits MANUAL_REVIEW")?,
     )
+}
+
+fn validate_finding_dispositions(value: &Value) -> Result<(), String> {
+    let rows = value
+        .as_array()
+        .filter(|rows| !rows.is_empty())
+        .ok_or("INDEPENDENT_FINDINGS must be a nonempty array")?;
+    let allowed_proofs = canonical_inventory_proof_ids();
+    let expected = BTreeSet::from(["finding", "proof_id", "status"]);
+    for row in rows {
+        let disposition = row
+            .as_object()
+            .ok_or("every independent finding must be a structured disposition object")?;
+        let observed = disposition
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        if observed != expected {
+            return Err(format!(
+                "independent finding field mismatch: expected={expected:?}; observed={observed:?}"
+            ));
+        }
+        let finding = disposition
+            .get("finding")
+            .and_then(Value::as_str)
+            .filter(|text| text.trim().len() >= 24)
+            .ok_or("independent finding text is not substantive")?;
+        let status = disposition
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or("independent finding status is not a string")?;
+        if !matches!(status, "REMEDIATED" | "NO_BLOCKING_FINDING") {
+            return Err(format!("invalid independent finding status {status}"));
+        }
+        let proof = disposition
+            .get("proof_id")
+            .and_then(Value::as_str)
+            .ok_or("independent finding proof_id is not a string")?;
+        if !allowed_proofs.contains(proof) {
+            return Err(format!(
+                "independent finding proof_id is not a canonical executable proof: {proof}"
+            ));
+        }
+        let normalized = finding.to_ascii_lowercase();
+        if [
+            "unresolved",
+            "unremediated",
+            "remains open",
+            "still open",
+            "not remediated",
+            "no remediation",
+            "remediation missing",
+            "proof missing",
+            "still fails",
+            "continues to fail",
+        ]
+        .iter()
+        .any(|contradiction| normalized.contains(contradiction))
+        {
+            return Err(format!(
+                "independent finding contradicts its resolved status: {finding}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn substantive_review_rows(object: &Value, field: &str) -> Result<Vec<String>, String> {
@@ -5315,6 +5555,10 @@ mod tests {
             "use std::io::{Read, Stdin as Opaque}; pub struct Leak(pub Opaque);",
             "use std::io as streams; pub struct Leak(pub streams::Stdout);",
             "use std::{fmt, io as streams}; pub struct Leak(pub streams::Stderr);",
+            "use std::io::*; pub struct Leak(pub Stdin);",
+            "use std as platform; use platform::io::Stdin; pub struct Leak(pub Stdin);",
+            "use std::io::{self as streams}; pub struct Leak(pub streams::Stdout);",
+            "use std::{io::{Stdin as Input}}; pub struct Leak(pub Input);",
         ] {
             assert_eq!(
                 forbidden_data_model_token(source),
@@ -5325,18 +5569,30 @@ mod tests {
             forbidden_data_model_token("pub enum StreamDescriptor { Stdin, Stdout, Stderr }"),
             None
         );
+        assert_eq!(
+            forbidden_data_model_token(
+                "pub struct Leak(pub interprocess::os::windows::named_pipe::DuplexPipeStream);"
+            ),
+            Some("interprocess::")
+        );
     }
 
     #[test]
     fn contract_inventory_rejects_required_field_and_stable_id_mutations() {
         let root = repo_root().unwrap();
         let fixture_root = root.join("build/fixtures/contracts");
-        let test_symbols = collect_inventory_test_symbols(&root).unwrap();
         let inventory: Value =
             serde_json::from_str(include_str!("../../../fixtures/contracts/inventory.json"))
                 .unwrap();
         validate_contract_inventory_shape(&inventory).unwrap();
         let entries = inventory["entries"].as_array().unwrap();
+        let states = inventory["state_machines"].as_array().unwrap();
+        for row in entries {
+            validate_contract_inventory_row(row, false, &fixture_root).unwrap();
+        }
+        for row in states {
+            validate_contract_inventory_row(row, true, &fixture_root).unwrap();
+        }
         let observed = entries
             .iter()
             .map(|row| row["id"].as_str().unwrap())
@@ -5368,31 +5624,30 @@ mod tests {
         assert_ne!(mutated, expected_contract_inventory_ids());
 
         let row = &entries[0];
-        validate_contract_inventory_row(row, false, &fixture_root, &test_symbols).unwrap();
+        validate_contract_inventory_row(row, false, &fixture_root).unwrap();
         let mut nonexistent_proof = row.clone();
         nonexistent_proof["proof_id"] = Value::String("fabricated::tests::does_not_exist".into());
         assert!(
-            validate_contract_inventory_row(
-                &nonexistent_proof,
-                false,
-                &fixture_root,
-                &test_symbols
-            )
-            .unwrap_err()
-            .contains("existing exact executable test")
+            validate_contract_inventory_row(&nonexistent_proof, false, &fixture_root)
+                .unwrap_err()
+                .contains("exact canonical executable proof")
+        );
+        let mut cross_owner_proof = row.clone();
+        cross_owner_proof["proof_id"] = Value::String(
+            "core::resource::tests::atomic_zero_exact_one_over_and_release_identity".into(),
+        );
+        assert!(
+            validate_contract_inventory_row(&cross_owner_proof, false, &fixture_root)
+                .unwrap_err()
+                .contains("exact canonical executable proof")
         );
         for field in ["owner", "readiness_gate"] {
             let mut wrong_semantics = row.clone();
             wrong_semantics[field] = Value::String("fabricated".into());
             assert!(
-                validate_contract_inventory_row(
-                    &wrong_semantics,
-                    false,
-                    &fixture_root,
-                    &test_symbols
-                )
-                .unwrap_err()
-                .contains("invalid owner or readiness gate")
+                validate_contract_inventory_row(&wrong_semantics, false, &fixture_root)
+                    .unwrap_err()
+                    .contains("invalid owner or readiness gate")
             );
         }
     }
@@ -5442,11 +5697,24 @@ mod tests {
     fn deep_verification_composes_doctest_gate() {
         let source = include_str!("main.rs");
         let deep = source
-            .split_once("fn run_verify_deep_inner")
+            .split_once("fn run_verify_deep_checks")
             .and_then(|(_, remainder)| remainder.split_once("fn validate_contract_inventory"))
             .map(|(function, _)| function)
             .unwrap();
-        assert!(deep.contains("run_doctests(root, &mut checks)?;"));
+        assert!(deep.contains("run_doctests(root, checks)?;"));
+        let doctests = source
+            .split_once("fn run_doctests")
+            .and_then(|(_, remainder)| remainder.split_once("fn verify_tool_identities"))
+            .map(|(function, _)| function)
+            .unwrap();
+        assert!(doctests.contains("\"--all-features\""));
+        let pr = source
+            .split_once("fn run_verify_pr_inner")
+            .and_then(|(_, remainder)| remainder.split_once("fn fail_with_report"))
+            .map(|(function, _)| function)
+            .unwrap();
+        assert!(pr.contains("run_verify_deep_checks(root, &mut checks)?;"));
+        assert!(!pr.contains("checks.push(pass(\n        \"verify-deep\""));
     }
 
     #[test]
@@ -5993,17 +6261,47 @@ mod tests {
         assert!(!asserts_forbidden_prerequisite_completion(
             "Product capability is not complete"
         ));
-        for status in ["VALIDATED", "DONE", "SHIPPED", "READY", "IMPLEMENTED"] {
+        for claim in [
+            "Phase zero is complete",
+            "The runtime has been completed",
+            "Product capability is not only complete but validated",
+            "Product capability is not incomplete; it is complete",
+            "Release is ready",
+        ] {
+            assert!(
+                asserts_forbidden_prerequisite_completion(claim),
+                "forbidden claim bypassed: {claim}"
+            );
+        }
+        for status in [
+            "VALIDATED",
+            "DONE",
+            "SHIPPED",
+            "READY",
+            "IMPLEMENTED",
+            "SUCCESS",
+            "SUCCEEDED",
+            "PASSED",
+            "FINISHED",
+            "PRODUCTION_READY",
+            "OPERATIONAL",
+        ] {
             assert!(affirmative_progress_value(&Value::String(
                 status.to_owned()
             )));
         }
-        let status_claim = serde_json::json!({"runtime_status": "DONE"});
-        assert!(
-            reject_progress_claims(&status_claim)
-                .unwrap_err()
-                .contains("PROGRESS-CLAIM")
-        );
+        for status_claim in [
+            serde_json::json!({"runtime_status": "DONE"}),
+            serde_json::json!({"runtime_status": "SUCCESS"}),
+            serde_json::json!({"runtime": {"status": "DONE"}}),
+            serde_json::json!({"runtime": {"details": {"verdict": "PASSED"}}}),
+        ] {
+            assert!(
+                reject_progress_claims(&status_claim)
+                    .unwrap_err()
+                    .contains("PROGRESS-CLAIM")
+            );
+        }
         assert!(is_prerequisite_progress_key("runtime-status"));
     }
 
@@ -6028,7 +6326,11 @@ mod tests {
                 "BOUNDARY_PROBES": rows,
                 "NEGATIVE_PATH_CHECKS": rows,
                 "INDEPENDENT_FINDINGS": [
-                    "REMEDIATED: HIGH mutation bypass now fails through the production oracle"
+                    {
+                        "finding": "HIGH mutation bypass now fails through the production oracle",
+                        "status": "REMEDIATED",
+                        "proof_id": "core::resource::tests::atomic_zero_exact_one_over_and_release_identity"
+                    }
                 ],
                 "RESIDUAL_UNCERTAINTY": [
                     "Concurrency adapter behavior remains future runtime-slice proof"
@@ -6048,15 +6350,18 @@ mod tests {
         });
         validate_adversarial_review_evidence(&evidence).unwrap();
         for unresolved in [
-            "UNREMEDIATED HIGH: mutation bypass remains open in the production oracle",
-            "NO_BLOCKING_FINDING is false because the negative-path check was skipped",
+            "HIGH mutation bypass remains open in the production oracle",
+            "HIGH mutation bypass is unresolved in the production oracle",
         ] {
-            evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] =
-                serde_json::json!([unresolved]);
+            evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
+                "finding": unresolved,
+                "status": "REMEDIATED",
+                "proof_id": "core::resource::tests::atomic_zero_exact_one_over_and_release_identity"
+            }]);
             assert!(
                 validate_adversarial_review_evidence(&evidence)
                     .unwrap_err()
-                    .contains("must start with")
+                    .contains("contradicts its resolved status")
             );
         }
         evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] =
@@ -6064,7 +6369,17 @@ mod tests {
         assert!(
             validate_adversarial_review_evidence(&evidence)
                 .unwrap_err()
-                .contains("placeholder")
+                .contains("structured disposition object")
+        );
+        evidence["adversarial_review"]["INDEPENDENT_FINDINGS"] = serde_json::json!([{
+            "finding": "HIGH mutation bypass now fails through the production oracle",
+            "status": "REMEDIATED",
+            "proof_id": "fabricated::tests::does_not_exist"
+        }]);
+        assert!(
+            validate_adversarial_review_evidence(&evidence)
+                .unwrap_err()
+                .contains("canonical executable proof")
         );
     }
 

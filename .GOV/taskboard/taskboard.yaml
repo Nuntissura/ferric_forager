@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: The Operator authorized runtime-truth rules and executable gates that forbid mock, scaffold, prototype, and test-only substitutes from satisfying product or phase completion.
-  active_wp_id: WP-FF-012-runtime-truth-gates-v1
+  statement: WP-FF-012-runtime-truth-gates-v1 is VALIDATED; no later stub is active without Operator selection.
+  active_wp_id: null
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

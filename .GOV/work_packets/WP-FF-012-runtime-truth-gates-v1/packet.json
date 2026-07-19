@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Require production-runtime truth for product and phase completion",
     "created_at_utc": "2026-07-19T15:00:31Z",
-    "updated_at_utc": "2026-07-19T15:57:58Z"
+    "updated_at_utc": "2026-07-19T16:02:42Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -40,14 +40,14 @@
       "verified_at_utc": null
     },
     "closure_commit": "75dbeb495694955f6a0ff786f7bcb47b73d5bbeb",
-    "main_containment_status": "MERGE_PENDING",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "142d0aad625713231f91381deb709e174b2865f7"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Merge closure commit 75dbeb495694955f6a0ff786f7bcb47b73d5bbeb to main, prove ancestry, then mark the packet VALIDATED.",
+    "next_action": "Await Operator selection before activating any later work-packet stub.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -133,10 +133,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T15:57:58Z",
+      "recorded_at_utc": "2026-07-19T16:02:42Z",
       "branch": "codex/wp-ff-012-runtime-truth",
       "base_sha": "a5a6a3a78e3aefcbd463294bbbab5e4ec2f58728",
-      "head_sha": "75dbeb495694955f6a0ff786f7bcb47b73d5bbeb",
+      "head_sha": "142d0aad625713231f91381deb709e174b2865f7",
       "dirty_paths": [],
       "checks_run": [
         "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, active WP-FF-004 packet, topology, build rules, work-packet requirements/template, design phase anchors, readiness matrix, verifier implementation, and ID registry",
@@ -155,7 +155,7 @@
         "Parsed changed JSON, checked allowed paths, registry ranges, authority mirror, and git diff whitespace"
       ],
       "blockers": [],
-      "next_action": "Commit this MERGE_PENDING evidence update, merge the work branch to main, and prove closure ancestry."
+      "next_action": "Commit the validated containment record and clear canonical active focus."
     }
   },
   "validation": {
@@ -166,7 +166,9 @@
       "PASS: FF-GATE-ARCH-001 with eight runtime negative fixtures",
       "PASS: FF-GATE-RUNTIME-001 governance-only path with policy and negative-fixture proof classes",
       "PASS: FF-GATE-PR-001 canonical aggregate validation; clean report build/reports/verify-pr-1784476660642163000-656176.json is bound to commit 75dbeb495694955f6a0ff786f7bcb47b73d5bbeb with dirty=false and 29 checks",
-      "PASS: changed JSON parse, allowed-path diff, ID registry, AGENTS/CLAUDE mirror, and git diff --check"
+      "PASS: changed JSON parse, allowed-path diff, ID registry, AGENTS/CLAUDE mirror, and git diff --check",
+      "PASS: closure commit 75dbeb495694955f6a0ff786f7bcb47b73d5bbeb and MERGE_PENDING evidence commit 4b7fec613a2d5de0d1136ed847cc0021a90a8b52 are ancestors of main merge 142d0aad625713231f91381deb709e174b2865f7",
+      "PASS: post-merge formatting, warnings-denied Clippy, all 49 integrated tests, FF-GATE-ARCH-001, and FF-GATE-RUNTIME-001"
     ],
     "not_proven": [
       "Any Ferric product runtime capability",

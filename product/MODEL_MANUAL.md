@@ -21,6 +21,73 @@ Shipped product runtime must not read or require `.GOV/` or `build/`. Build tool
 
 </topic>
 
+<topic id="phase-0-compatibility-oracle" status="active" version="1" wp="WP-FF-004-compatibility-inventory-corpus-v1" ingestable="true" updated_at="2026-07-19">
+
+## Generate and validate the compatibility oracle
+
+WP-FF-004 pins the external oracle to the official `yt-dlp 2026.07.04` Windows executable and matching source tag. The executable and source checkout are research inputs outside shipped product code; Ferric Forager has no production Python or yt-dlp dependency.
+
+Set repository-relative paths to the separately acquired, hash-matching oracle inputs, then run:
+
+```powershell
+$oracleExe = "build/target/wp4-research/oracle/yt-dlp.exe"
+$sourceRoot = "build/target/wp4-research/yt-dlp-2026.07.04"
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-generate --oracle-exe $oracleExe --source-root $sourceRoot
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-validate
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-replay
+```
+
+Generation verifies the immutable release identity, executable SHA-256, source Git commit, and selected source-file hashes before writing `build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json` atomically. The generated profile contains stable option, alias, preset, interaction, extractor, description, and URL-class rows. Line endings, CP-1252 executable output, identical extractor duplicates, and upstream-randomized search examples have explicit deterministic normalization rules.
+
+Validation reads the committed oracle manifest, generated profile, seven-plane corpus, opt-in live manifest, and every negative fixture. It checks stable IDs, counts, hashes, coverage, shard assignments, normalization versions, offline/network separation, secret placeholders, and pinned provenance. A successful run emits a unique `ff.compatibility-report@1` JSON report under `build/reports/`.
+
+Offline replay never opens the network. Run all cases or a zero-based deterministic shard; a valid shard may contain zero cases:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-replay --shard 0/4
+```
+
+The mandatory planes are source graph, normalized observation, sanitized network transcript, filesystem/process artifact, failure/timeout, archive duplicate handling, and configuration migration. Fixtures replace authorization, cookies, query tokens, clocks, random seeds, and machine-local state with allowlisted placeholders before commit.
+
+</topic>
+
+<topic id="phase-0-compatibility-comparison" status="active" version="1" wp="WP-FF-004-compatibility-inventory-corpus-v1" ingestable="true" updated_at="2026-07-19">
+
+## Compare candidates, inspect drift, and run live canaries
+
+A candidate results JSON file uses `ff.compatibility-candidate-results@1`, names the exact corpus and profile IDs, and supplies stable case IDs plus SHA-256 observation digests. Compare it with:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-diff --candidate build/fixtures/compatibility/candidate-empty-v1.json
+```
+
+Every corpus case receives a row. Equal digests are `equivalent`; omitted cases are `missing_feature`; unequal observations must be `ferric_defect`, `accepted_baseline_correction`, `nondeterministic_response`, or `accepted_divergence`. An accepted divergence requires a stable decision ID. Report completeness proves that nothing was silently omitted; it does not prove Ferric parity.
+
+Compare two generated inventories by stable ID:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-inventory-diff --before build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json --after build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json
+```
+
+Live canaries are a mechanically separate, credential-free, nondeterministic observation suite. The command refuses to run unless the operator supplies both the pinned executable and the explicit opt-in flag:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-live-canaries --enable-live --oracle-exe $oracleExe
+```
+
+The live report records `OBSERVED` success or failure for every configured URL and always states `deterministic_proof=false`. Live results never replace offline acceptance evidence and anti-bot, site drift, rate limits, or network failures are observations rather than deterministic regressions.
+
+Recovery follows the stable diagnostic:
+
+- `FF-COMP-E-UNPINNED-ORACLE`: reacquire the exact official artifact/source inputs; never edit hashes to fit an unverified local file.
+- `FF-COMP-E-PARSE` or deterministic regeneration mismatch: preserve both outputs, inspect the pinned source and normalization rule, then fix and rerun the generator twice.
+- `FF-COMP-E-UNSANITIZED-SECRET`: replace the named secret or machine-local value with an allowlisted `{{PLACEHOLDER}}`, recompute the fixture hash, and rerun validation.
+- `FF-COMP-E-COVERAGE`, `FF-COMP-E-SHARD`, or `FF-COMP-E-NORMALIZATION`: repair the canonical manifest/case mapping rather than bypassing the validator.
+- Candidate identity, digest, classification, or decision errors: repair the candidate file; do not remove missing rows from the emitted report.
+- Report-write failure: verify `build/reports/` is writable. Atomic writes do not accept a partial final JSON report.
+
+</topic>
+
 <topic id="phase-0-commands" status="active" version="2" wp="WP-FF-003-executable-gate-bootstrap-v2" ingestable="true" updated_at="2026-07-19">
 
 ## Start and run

@@ -1,3 +1,5 @@
+mod compatibility;
+
 use cargo_metadata::{DependencyKind, Metadata, PackageId};
 use saphyr::{LoadableYamlNode, Yaml};
 use serde::{Deserialize, Serialize};
@@ -230,6 +232,24 @@ fn run() -> Result<(), String> {
     require_repository_root_cwd(&root)?;
     match args.as_slice() {
         [gate] if gate == "architecture-check" => run_architecture_gate(&root, &args),
+        [command, rest @ ..] if command == "compatibility-generate" => {
+            compatibility::run_generate(&root, rest)
+        }
+        [command] if command == "compatibility-validate" => {
+            compatibility::run_validate(&root, &args)
+        }
+        [command, rest @ ..] if command == "compatibility-replay" => {
+            compatibility::run_replay(&root, &args, rest)
+        }
+        [command, rest @ ..] if command == "compatibility-diff" => {
+            compatibility::run_diff(&root, &args, rest)
+        }
+        [command, rest @ ..] if command == "compatibility-inventory-diff" => {
+            compatibility::run_inventory_diff(&root, &args, rest)
+        }
+        [command, rest @ ..] if command == "compatibility-live-canaries" => {
+            compatibility::run_live_canaries(&root, &args, rest)
+        }
         [gate, evidence] if gate == "verify-pr" && evidence == "--evidence-from-taskboard" => {
             run_verify_pr(&root, &args)
         }
@@ -241,7 +261,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|verify-pr --evidence-from-taskboard|verify-deep|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|verify-pr --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-deep|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -2338,6 +2358,17 @@ fn command_output_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Result<String, String> {
+    let stdout = command_output_bytes_with_timeout(root, program, args, timeout)?;
+    String::from_utf8(stdout)
+        .map_err(|error| format!("{program} {args:?} emitted non-UTF-8 stdout: {error}"))
+}
+
+fn command_output_bytes_with_timeout(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
     let capture_root = root.join("build/target/command-capture");
     fs::create_dir_all(&capture_root)
         .map_err(|error| format!("create command capture directory: {error}"))?;
@@ -2394,8 +2425,7 @@ fn command_output_with_timeout(
             bounded_diagnostic(&stderr)
         ));
     }
-    String::from_utf8(stdout)
-        .map_err(|error| format!("{program} {args:?} emitted non-UTF-8 stdout: {error}"))
+    Ok(stdout)
 }
 
 fn wait_for_child(

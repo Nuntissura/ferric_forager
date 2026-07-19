@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Define versioned core contracts and executable state-machine specifications",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T18:22:59Z"
+    "updated_at_utc": "2026-07-19T18:31:04Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -159,10 +159,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T18:22:59Z",
+      "recorded_at_utc": "2026-07-19T18:31:04Z",
       "branch": "codex/versioned-core-contracts",
       "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
-      "head_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
+      "head_sha": "4bef052f86f1e58b2be5220232d5a5dba1e930e4",
       "dirty_paths": [],
       "checks_run": [
         "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, WP-005 packet, topology, build rules, work-packet requirements/template, cited design anchors, and readiness matrix",
@@ -172,7 +172,8 @@
         "Reused the completed project research basis; no additional research is authorized or required for activation",
         "cargo fmt --manifest-path build/Cargo.toml --all -- --check: PASS",
         "cargo test --manifest-path build/Cargo.toml --locked -p fforager-xtask -- --nocapture: PASS, 52 tests",
-        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS, build/reports/architecture-check-1784485817153018900-669612.json"
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS, build/reports/architecture-check-1784485817153018900-669612.json",
+        "Activation checkpoint committed as 4bef052f86f1e58b2be5220232d5a5dba1e930e4"
       ],
       "blockers": [],
       "next_action": "Commit the activation checkpoint, then implement contracts, state models, conformance fixtures, and gates in parallel lanes."

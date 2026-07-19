@@ -85,7 +85,8 @@ rules:
     revision: 2
   - id: FF-CODEX-023
     category: work_packet
-    statement: Make every acceptance criterion executable or tie it to a named artifact and review method; qualitative completion prose is not closure proof.
+    statement: Make every acceptance criterion executable or tie non-runtime evidence to a named artifact and review method; every product capability and product-phase closure MUST additionally have black-box proof through the shipped production entrypoint, and qualitative prose, tests, or reviewed artifacts alone are not closure proof.
+    revision: 2
   - id: FF-CODEX-024
     category: work_packet
     statement: Preserve the two-step closure distinction in which validator acceptance is MERGE_PENDING and only a verified commit contained in main is VALIDATED.
@@ -107,7 +108,8 @@ rules:
     statement: Validate medium- and high-risk work adversarially with independent checks, counterfactuals, boundary probes, negative paths, findings, and residual uncertainty.
   - id: FF-CODEX-030
     category: research_and_validation
-    statement: Do not claim implementation readiness, parity, safety, speed, durability, or completion without the proof surface named by the active contract.
+    statement: Do not claim implementation readiness, parity, safety, speed, durability, product progress, phase completion, or capability completion without the proof surface named by the active contract; for product behavior that proof MUST execute the exact staged production artifact through its shipped entrypoint and verify operator-visible results.
+    revision: 2
   - id: FF-CODEX-031
     category: research_and_validation
     statement: Keep unresolved uncertainty explicit and do not replace missing evidence with model memory or confidence.
@@ -138,7 +140,8 @@ rules:
 
   - id: FF-CODEX-040
     category: product_first_governance
-    statement: Product delivery is the goal; governance is supporting infrastructure and MUST be limited to the minimum state, recovery, scope, and proof required to deliver the current product closure unit safely.
+    statement: Product delivery is the goal and is measured only by operator-usable behavior executed through a shipped production entrypoint; governance, build infrastructure, contracts, tests, reports, prototypes, and scaffolding are supporting infrastructure and MUST be limited to the minimum required to deliver and prove the current runtime closure unit safely.
+    revision: 2
   - id: FF-CODEX-041
     category: product_first_governance
     statement: Use DIRECT, TRACKED, or EXPANDED exactly as classified by START_HERE.yaml; never require empty sections, repeated not-applicable prose, refinements, microtasks, research, red-team material, performance evidence, or handoff paperwork outside their declared triggers.
@@ -164,4 +167,38 @@ rules:
   - id: FF-CODEX-048
     category: repository_boundary
     statement: Keep the Cargo workspace manifest and lockfile, architecture/tooling/proof policies, non-shipped xtask and testkit packages, shared fixtures, cross-package test harnesses, fuzzing, benchmarks, generated reports, and Cargo target output under build/; keep rust-toolchain.toml at repository root as the sole rustup selector for canonical repository-root commands.
+
+  - id: FF-CODEX-049
+    category: runtime_truth
+    statement: Product progress, capability completion, work-packet closure, and product-phase completion MUST be measured by operator-usable behavior executed through a shipped production entrypoint; compilation, tests, mocks, fixtures, reports, documentation, contracts, prototypes, scaffolding, and governance are supporting evidence only and MUST NOT independently constitute product progress or completion.
+  - id: FF-CODEX-050
+    category: runtime_truth
+    statement: Before product implementation begins, every product work packet MUST define at least one black-box runtime scenario containing the production build identity, shipped entrypoint, representative input, actual production boundaries, expected outputs and side effects, failure oracle, timeout, and operator-visible result.
+  - id: FF-CODEX-051
+    category: runtime_truth
+    statement: Product closure proof MUST build the shipping profile once, record the artifact digest, stage that exact artifact into a clean package directory, and execute it without source-tree, .GOV/, build/, dev-dependency, testkit, test-only feature, or cfg(test) assistance.
+  - id: FF-CODEX-052
+    category: runtime_truth
+    statement: A mock, fake, stub, fixture-only implementation, in-memory substitute, hardcoded-success path, test-only adapter, or direct internal-function invocation MUST NOT satisfy runtime acceptance, product progress, phase completion, compatibility, durability, integration, or release proof; such mechanisms remain allowed only as supporting tests.
+  - id: FF-CODEX-053
+    category: runtime_truth
+    statement: Shipped paths MUST NOT contain placeholder behavior, no-op success, dummy output, inert commands, fabricated state, or deferred implementation hidden behind a successful result; a typed unsupported result is legal only for an explicitly unsupported capability row and MUST NOT count as implemented behavior.
+  - id: FF-CODEX-054
+    category: runtime_truth
+    statement: Infrastructure, contracts, scaffolding, and test machinery required by product work MUST be created in the same closure unit as the first production runtime behavior that consumes them and MUST NOT form a standalone completed product phase or product-delivery claim.
+  - id: FF-CODEX-055
+    category: runtime_truth
+    statement: Every product phase MUST finish with at least one complete vertical runtime slice through the real shipped entrypoint, engine, production adapters, required external processes, persistence or output boundary, diagnostics, and operator-visible result; skeleton-only and layer-only completed product phases are forbidden.
+  - id: FF-CODEX-056
+    category: runtime_truth
+    statement: Unit, property, mutation, fixture, replay, integration, fuzz, and mock-based tests remain required where applicable but are insufficient for product closure unless the corresponding production artifact also passes its black-box runtime scenario.
+  - id: FF-CODEX-057
+    category: runtime_truth
+    statement: Product-affecting verification MUST fail BLOCKED rather than report PASS or NOT_APPLICABLE when production-artifact execution, a required production dependency, representative input, expected observable, negative path, or runtime evidence is absent.
+  - id: FF-CODEX-058
+    category: runtime_truth
+    statement: Runtime acceptance MUST include an executable counterfactual proving the gate fails when a required operator-visible output or side effect is removed, corrupted, skipped, or falsely reported successful.
+  - id: FF-CODEX-059
+    category: runtime_truth
+    statement: Code unreachable from a current accepted production entrypoint is not implemented product behavior and MUST be removed or retained only as explicitly non-product experimental work that cannot advance product, packet, or phase status.
 

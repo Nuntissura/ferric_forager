@@ -8,7 +8,7 @@ updated_at: "2026-07-19"
 
 # Ferric Forager model manual
 
-Ferric Forager is planned as a Rust-native video-acquisition and archival product. Phase 0 contains no shipped product crate. Its implemented deliverable is the executable build-and-proof skeleton that future product work must pass.
+Ferric Forager is planned as a Rust-native video-acquisition and archival product. The current repository contains no shipped product crate and therefore no implemented Ferric runtime capability. Its existing executable build-and-proof tooling is a non-product prerequisite for future product work and MUST NOT be counted as product progress, a completed product phase, or a runtime deliverable.
 
 Repository ownership is deterministic:
 
@@ -96,12 +96,98 @@ Run commands from the repository root. Do not infer state from chat history; beg
 
 ```powershell
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard
 ```
 
 `architecture-check` consumes `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, locked Cargo metadata, parsed canonical YAML authority, governed source paths, and `build/fixtures/architecture/`. Its negative fixtures call production validator primitives, while focused tests apply representative mutations to isolated repository copies and invoke the composed production gate. It emits a unique versioned JSON report under `build/reports/` and exits nonzero on mismatch.
 
-`verify-pr` also validates the active packet change-evidence fields and runs tool preflight, formatting, compile profiles, Clippy, tests, docs, dependency policy, and the architecture checker. Doctests, clean shipped-artifact proof, and watcher proof are reported `NOT_APPLICABLE` until their trigger exists. Deep and release gates are `NOT_IMPLEMENTED`; neither state may be reported as PASS.
+`runtime-truth-check` compares the active packet base SHA with current changed paths. A governance/build-only packet must declare `scope.product_impact` as `NONE`; its PASS proves only that no product claim is legal. A product-affecting packet must declare `RUNTIME`, supply strict `ff.runtime-proof@1` evidence, and have a declared shipped member. The gate then builds the locked release profile, hashes and stages the exact binary, copies hash-bound inputs into a clean package directory, launches the staged binary as an external process, verifies success and negative scenarios, and removes a required observable to prove the same oracle rejects the counterfactual. Missing runtime proof is `FAIL`/`BLOCKED`, never `PASS` or `NOT_APPLICABLE`.
+
+Supporting unit, fixture, replay, fuzz, property, and mock-based tests remain useful, but `cfg(test)`, dev-dependencies, testkit, mock/fake/stub adapters, in-memory substitutes, hardcoded success, and direct internal calls cannot satisfy `ff.runtime-proof@1`. A product packet requires at least one success and one negative scenario. Exit status alone is not an observable; require stdout, stderr, or a bounded output file with optional SHA-256.
+
+`verify-pr` also validates active packet change evidence and runs tool preflight, formatting, compile profiles, Clippy, tests, docs, dependency policy, architecture validation, and `FF-GATE-RUNTIME-001`. Governance-only runtime validation carries an explicit no-product proof ceiling. Product-affecting missing proof cannot be skipped. Doctests remain trigger-gated until a library exists, watcher proof activates with the watcher package, and deep/release gates remain `NOT_IMPLEMENTED`; none of those states may be converted into product PASS.
+
+</topic>
+
+<topic id="runtime-proof-contract" status="active" version="1" wp="WP-FF-012-runtime-truth-gates-v1" ingestable="true" updated_at="2026-07-19">
+
+## Declare production runtime proof
+
+For a product-affecting packet, set `scope.product_impact` to `RUNTIME`, give each product acceptance row `proof_class: production_runtime`, and place an `ff.runtime-proof@1` object at `extensions.runtime_proof`. Define the scenarios before implementation. This shape is strict: unknown keys, omitted keys, substitute modes, unsafe paths, and mismatched artifact or fixture hashes fail the gate.
+
+```json
+{
+  "schema_id": "ff.runtime-proof@1",
+  "completion_claim": "operator_usable_runtime",
+  "artifact": {
+    "package": "fforager",
+    "binary": "fforager",
+    "profile": "release",
+    "features": [],
+    "package_mode": "clean_staged",
+    "execution_mode": "external_process",
+    "compilation_mode": "production",
+    "dependency_mode": "normal_only",
+    "testkit_mode": "forbidden",
+    "adapter_mode": "production"
+  },
+  "forbidden_substitutes": [
+    "mock",
+    "fake",
+    "stub",
+    "fixture-only-implementation",
+    "in-memory-substitute",
+    "hardcoded-success",
+    "test-only-adapter",
+    "direct-internal-call"
+  ],
+  "scenarios": [
+    {
+      "id": "capability-success",
+      "kind": "success",
+      "capability_ids": ["replace-with-stable-capability-id"],
+      "args": ["replace-with-production-cli-arguments"],
+      "timeout_seconds": 30,
+      "inputs": [{
+        "source": "build/fixtures/replace-with-committed-input",
+        "destination": "inputs/representative-input",
+        "sha256": "replace-with-64-lowercase-hex-digest"
+      }],
+      "production_boundaries": ["replace-with-real-boundary-name"],
+      "expected": {
+        "exit_code": 0,
+        "stdout_contains": ["replace-with-required-output"],
+        "stderr_contains": [],
+        "output_files": []
+      },
+      "counterfactual": {
+        "target": "stdout_contains",
+        "value": "replace-with-required-output",
+        "expected_diagnostic": "FF-RUNTIME-E-OBSERVABLE-MISSING"
+      }
+    },
+    {
+      "id": "capability-negative",
+      "kind": "negative",
+      "capability_ids": ["replace-with-stable-capability-id"],
+      "args": ["replace-with-invalid-production-cli-arguments"],
+      "timeout_seconds": 30,
+      "inputs": [],
+      "production_boundaries": ["replace-with-real-boundary-name"],
+      "expected": {
+        "exit_code": 2,
+        "stdout_contains": [],
+        "stderr_contains": ["replace-with-stable-error"],
+        "output_files": []
+      },
+      "counterfactual": null
+    }
+  ]
+}
+```
+
+Replace every `replace-with-*` value with the packet's real capability, production CLI arguments, boundary, observables, and committed input digest. The success scenario requires a hash-bound representative input. The negative scenario must exercise the shipped binary and return nonzero. Output files, when used, require a safe stage-relative path, positive `min_bytes`, and optional SHA-256. Inputs and outputs cannot overwrite the binary, gate receipts, or one another.
 
 </topic>
 
@@ -125,6 +211,6 @@ Common failures and recovery:
 - Stale build output: remove only the verified repository-local `build/target/` directory or run `cargo clean --manifest-path build/Cargo.toml`; never target the repository root.
 - Failed report write: verify `build/reports/` is writable. Temporary report files are removed on failure and an incomplete final report is never accepted.
 
-An architecture report proves the declared Phase 0 graph, policy, source scan, and assigned negative cases. It does not prove future product runtime behavior, packaging, watcher independence, compatibility, durability, or performance.
+An architecture report proves the declared prerequisite graph, policy, source scan, and assigned negative cases. It does not prove product runtime behavior, packaging, watcher independence, compatibility, durability, or performance. Product proof begins only when FF-GATE-RUNTIME-001 builds, hashes, stages, and externally executes the exact production artifact through a shipped entrypoint and verifies operator-visible results plus a failing counterfactual.
 
 </topic>

@@ -84,4 +84,81 @@ rule_id = "FF-BUILD-077"
 proof_classes = ["graph", "source", "artifact"]
 validators = ["three-root-boundary"]
 fixture_ids = ["wrong-root-build-file", "duplicate-toolchain-selector"]
-limitations = ["Zero shipped members makes clean shipped-artifact proof NOT_APPLICABLE."]
+limitations = ["With zero shipped members this proves repository ownership only; FF-GATE-RUNTIME-001 separately forbids any product-runtime claim."]
+
+[[rules]]
+rule_id = "FF-BUILD-078"
+proof_classes = ["policy", "runtime_observable", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-scaffold-completion", "runtime-noop-success"]
+limitations = ["No shipped member exists yet; current proof attacks the completion contract without claiming Ferric runtime behavior."]
+
+[[rules]]
+rule_id = "FF-BUILD-079"
+proof_classes = ["policy", "scenario_contract", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-missing-artifact-identity", "runtime-noop-success"]
+limitations = ["Scenario execution activates with the first shipped product member."]
+
+[[rules]]
+rule_id = "FF-BUILD-080"
+proof_classes = ["artifact", "external_process", "negative_fixture"]
+validators = ["runtime-proof-contract", "runtime-truth-check"]
+fixture_ids = ["runtime-missing-artifact-identity", "runtime-missing-clean-stage", "runtime-stage-collision"]
+limitations = ["Exact staged-artifact execution activates with a product-affecting packet."]
+
+[[rules]]
+rule_id = "FF-BUILD-081"
+proof_classes = ["policy", "external_process", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-test-only-substitute", "runtime-mock-boundary"]
+limitations = ["Supporting tests remain legal but cannot populate production runtime proof."]
+
+[[rules]]
+rule_id = "FF-BUILD-082"
+proof_classes = ["policy", "runtime_observable", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-noop-success"]
+limitations = ["Semantic placeholder detection also requires review until shipped paths exist."]
+
+[[rules]]
+rule_id = "FF-BUILD-083"
+proof_classes = ["policy", "runtime_observable", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-scaffold-completion"]
+limitations = ["Packet scope and runtime scenarios jointly enforce co-delivery."]
+
+[[rules]]
+rule_id = "FF-BUILD-084"
+proof_classes = ["policy", "runtime_observable", "negative_fixture"]
+validators = ["runtime-proof-contract", "runtime-truth-check"]
+fixture_ids = ["runtime-scaffold-completion", "runtime-noop-success"]
+limitations = ["The current repository has no product phase eligible for runtime closure."]
+
+[[rules]]
+rule_id = "FF-BUILD-085"
+proof_classes = ["policy", "external_process", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-test-only-substitute"]
+limitations = ["Test quality remains separately reviewed; this row prevents tests from replacing artifact execution."]
+
+[[rules]]
+rule_id = "FF-BUILD-086"
+proof_classes = ["artifact", "runtime_observable", "negative_fixture"]
+validators = ["runtime-proof-contract", "runtime-truth-check"]
+fixture_ids = ["runtime-missing-artifact-identity", "runtime-missing-clean-stage", "runtime-stage-collision"]
+limitations = ["Governance-only changes may PASS only with an explicit no-product-change ceiling."]
+
+[[rules]]
+rule_id = "FF-BUILD-087"
+proof_classes = ["counterfactual", "negative_fixture"]
+validators = ["runtime-proof-contract", "runtime-truth-check"]
+fixture_ids = ["runtime-missing-counterfactual"]
+limitations = ["Counterfactual execution mutates observed evidence through the same acceptance oracle."]
+
+[[rules]]
+rule_id = "FF-BUILD-088"
+proof_classes = ["policy", "runtime_observable", "negative_fixture"]
+validators = ["runtime-proof-contract"]
+fixture_ids = ["runtime-scaffold-completion"]
+limitations = ["Reachability review remains necessary for dynamic dispatch paths not observable from source structure."]

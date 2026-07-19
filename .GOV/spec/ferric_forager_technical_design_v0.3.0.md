@@ -5,7 +5,7 @@ file_id: "FF-DOC-DESIGN-001"
 file_kind: "technical-design"
 updated_at: "2026-07-19"
 version: "0.3.0"
-status: "Phase 0 architecture and executable-contract charter"
+status: "Architecture and executable-contract prerequisite charter"
 date: "2026-07-18"
 timezone: "Europe/Brussels"
 baseline_project: "yt-dlp"
@@ -22,13 +22,13 @@ supersedes_design: "0.2.0"
 license_intent: "To be selected after dependency and redistribution review"
 ---
 
-<topic id="ferric-forager-technical-design" status="phase-0-charter" version="0.3.0" wp="WP-FF-002-architecture-review-merge-v1" summary="Preservation-first Ferric Forager architecture, contracts, gates, and complete-product scope" updated_at="2026-07-19" ingestable="true">
+<topic id="ferric-forager-technical-design" status="prerequisite-charter" version="0.3.0" wp="WP-FF-002-architecture-review-merge-v1" summary="Preservation-first Ferric Forager architecture, contracts, gates, and complete-product scope" updated_at="2026-07-19" ingestable="true">
 
 # Ferric Forager — Technical Design
 
 > **Ferric Forager — a Rust-native media extraction and acquisition engine**
 > **Canonical CLI command:** `fforager`
-> **Authority status:** Phase 0 architecture and executable-contract charter
+> **Authority status:** Architecture and executable-contract prerequisite charter; it is not a product phase or product-progress claim
 > **Baseline:** yt-dlp `2026.07.04`
 > **Deployment model:** Standalone project with a first-class Handshake adapter
 > **Primary objective:** Complete Rust rewrite with executable behavioral compatibility, bounded and recoverable execution, and equivalent-work performance proof.
@@ -488,7 +488,7 @@ The production dependency boundary is normative:
 - the archive backend remains undecided pending a pure-Rust store spike;
 - a pure-Rust JavaScript engine and a pure-Rust fingerprint-capable transport are Phase 0 candidates, not proven selections.
 
-The complete product is not implementation-ready. The minimal Phase 0 bootstrap workspace, inventory, corpus generation, contract definition, benchmark design, and bounded risk prototypes are authorized. Broad feature implementation remains blocked by the executable gates in Section 31; creating the validator and prototype skeleton that makes those gates executable is not broad implementation.
+The complete product is not implementation-ready. The Prerequisite 0 workspace, inventory, corpus generation, contract definition, benchmark design, and bounded risk prototypes are authorized as non-product evidence only. Broad feature implementation remains blocked by the executable gates in Section 31; creating validators or prototypes does not implement Ferric behavior, advance product progress, or complete a product phase.
 
 ---
 
@@ -2566,13 +2566,13 @@ Required benchmark profiles:
 
 # 28. Implementation Sequence
 
-No phase is considered complete without tests, benchmarks, documentation, and a compatibility report.
+Product phases are runtime capability milestones, not construction milestones. No product phase is complete until at least one operator-usable vertical slice runs through the exact staged production artifact and its shipped entrypoint, real engine, production adapters, required external processes, persistence or output boundary, diagnostics, and operator-visible result. Tests, benchmarks, documentation, compatibility reports, contracts, prototypes, and scaffolding support that proof but never replace it. Every runtime acceptance oracle must also reject a counterfactual with a required observable removed or corrupted.
 
-## Phase 0 Bootstrap — Executable gate skeleton
+## Prerequisite 0 — Executable build and proof gates, not product progress
 
-Before any compiled risk spike, atomically create the repository-root `rust-toolchain.toml` as the sole toolchain selector and the minimal `build/Cargo.toml`, `build/Cargo.lock`, `build/tools/fforager-xtask`, `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, shared negative fixtures, reports path, and CI invocation. The bootstrap architecture and applicable PR gates must pass before any shipped product crate is added; watcher validation activates when the Phase 1 watcher package appears. Prototype-only packages are policy-marked non-shipped under `build/`. `product/MODEL_MANUAL.md` explains repository-root commands, current inputs/outputs, safety constraints, unimplemented gates, and recovery; it becomes the runnable product manual as real commands appear.
+Before compiled product work, atomically create the repository-root `rust-toolchain.toml` as the sole toolchain selector and the minimal `build/Cargo.toml`, `build/Cargo.lock`, `build/tools/fforager-xtask`, `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, shared negative fixtures, reports path, and CI invocation. The bootstrap architecture and applicable PR gates must pass before any shipped product crate is added; watcher validation activates when the Phase 1 watcher package appears. Prototype-only packages are policy-marked non-shipped under `build/`. `product/MODEL_MANUAL.md` explains repository-root commands, current inputs/outputs, safety constraints, unimplemented gates, and recovery. This prerequisite may be validated as governance/build tooling, but it is not an implemented Ferric capability, product phase, product progress, or product-delivery claim.
 
-## Phase 0A — Compatibility inventory and executable oracle
+## Prerequisite 0A — Compatibility inventory and executable oracle
 
 - generate the yt-dlp `2026.07.04` option/config/default/interaction manifest;
 - generate extractor and URL-class inventory;
@@ -2581,22 +2581,23 @@ Before any compiled risk spike, atomically create the repository-root `rust-tool
 - version every normalization and intentional divergence;
 - create representative mandatory deterministic corpora and an opt-in live-canary policy.
 
-## Phase 0B — Contracts and state machines
+## Prerequisite 0B — Contracts and state machines
 
 - freeze versioned graph, identity, event/error, cancellation, process, plugin IPC, JS-worker IPC, diagnostic, and public JSON contracts;
 - define atomic resource-vector and byte-credit models;
 - define job, redirect, live, sink, FFmpeg, JS, plugin, commit/archive, filesystem-capability, and watcher state machines;
 - give every gate a command, corpus version, artifact, threshold, timeout, failure oracle, and report schema.
 
-## Phase 0C — Dependency and risk spikes
+## Prerequisite 0C — Dependency and risk spikes
 
 - bounded Rust-only EJS/YouTube challenge worker corpus;
 - pure-Rust fingerprint-capable transport corpus;
 - pure-Rust archive-store crash/concurrency/migration/performance corpus;
 - FFmpeg process-containment and cross-platform path/durability prototypes;
-- failed spikes produce Operator-ready evidence and never silently add a dependency.
+- failed spikes produce Operator-ready evidence and never silently add a dependency;
+- passing or failing spikes remain non-product evidence and cannot advance implemented capability or product-phase status.
 
-## Phase 0D — Equivalent-work benchmark design
+## Prerequisite 0D — Equivalent-work benchmark design
 
 - pin baseline artifact variants and process topology;
 - establish replay hardware/state profiles;
@@ -2604,25 +2605,29 @@ Before any compiled risk spike, atomically create the repository-root `rust-tool
 - measure variance and replace provisional hypotheses with statistical thresholds;
 - version machine-readable benchmark manifests and reports.
 
-## Phase 1 — Coarse workspace and lifecycle skeleton
+References elsewhere in this design to Phase 0, Phase 0A, Phase 0B, Phase 0C, or Phase 0D identify these non-product prerequisites. They authorize evidence needed to choose safe product mechanisms but never authorize a product-progress or runtime-completion claim.
 
-- extend the passing Phase 0 bootstrap into the complete Section 9 coarse workspace;
-- contracts, core engine, library facade, launcher, CLI/worker, Handshake adapter, and generated registry skeleton;
-- job/resource/cancellation state machines and typed events/errors;
-- update activation/rollback skeleton;
-- minimum independent watcher with handshake, canary, bounded store, crash retention, and replay coverage;
-- no broad implementation until all nine consensus blockers have executable closure evidence.
+## Phase 1 — First runnable production slice
 
-## Phase 2 — Cross-boundary proof slice
+- create only the Section 9 workspace members, contracts, engine paths, library facade, launcher, CLI/worker, Handshake path, and generated routing needed by the first running slice;
+- accept one direct HTTP/HTTPS media input through the shipped `fforager` entrypoint, resolve it into the serializable source graph, select the representation, acquire bytes through the production transport adapter, and produce a validated durable output;
+- exercise real job, resource, cancellation, typed event/error, staged commit, resume, startup reconciliation, archive insertion, and diagnostics paths for that slice;
+- start the minimum independent watcher through governed startup and prove bounded degraded behavior, crash retention, and inability to control Ferric;
+- build the locked shipping profile once, stage and hash the exact artifact, run it outside the repository source/build/governance roots, and verify the output plus failure and cancellation outcomes;
+- mutate at least one required observable and prove FF-GATE-RUNTIME-001 rejects the counterfactual;
+- create update activation/rollback behavior only when the slice executes and proves it through the production entrypoint;
+- keep broad implementation blocked until all consensus blockers applicable to this slice have executable closure evidence.
 
-- direct HTTP plus representative HLS acquisition;
-- serializable source graph and selection;
-- atomic resource grant and end-to-end byte credits;
-- FFmpeg stream-copy discovery, progress, cancellation, reaping, and ffprobe validation;
-- same-filesystem staged commit, resume, crash reconciliation, and archive insertion;
-- watcher crash evidence and alive-but-stalled detection;
-- equivalent-work benchmark against the pinned oracle;
-- thin YouTube/challenge canary only after Phase 0C selects an authorized passing path.
+## Phase 2 — HLS, FFmpeg, durability, and benchmark runtime expansion
+
+- extend the already-running Phase 1 artifact with representative HLS acquisition through the production transport and fragment pipeline;
+- prove serializable source-graph selection, atomic resource grants, and end-to-end byte credits in the running HLS path;
+- execute FFmpeg stream-copy discovery, progress, cancellation, descendant reaping, and ffprobe validation through supervised production process boundaries;
+- prove same-filesystem staged commit, resume, crash reconciliation, and archive insertion for direct and HLS outputs;
+- prove watcher crash evidence and alive-but-stalled detection while Ferric behavior remains independent;
+- run an equivalent-work benchmark against the pinned oracle only after output, metadata, archive, and process topology equivalence pass;
+- run a thin YouTube/challenge production-path canary only after Prerequisite 0C selects an authorized passing path;
+- rebuild, stage, hash, and execute the exact shipping artifact in a clean package directory and prove a required-observable counterfactual fails.
 
 ## Phase 3 — Complete network and protocol foundation
 
@@ -2692,7 +2697,7 @@ Do not port alphabetically.
 
 - build on the already-versioned Rust process protocol;
 - capability enforcement;
-- SDK and scaffolding;
+- SDK plus a starter-package generator whose output is built, installed, and executed as a reference plugin through the production plugin host before the capability is accepted;
 - package manifests;
 - signed release artifacts;
 - cross-platform packaging;
@@ -2823,7 +2828,7 @@ Each scenario records whether Ferric Forager provides equivalent capability, an 
 
 **Risk:** Existing Python plugins cannot run natively.
 
-**Mitigation:** Publish a small stable Rust plugin SDK, automated scaffolding, clear porting guide, and versioned process-protocol compatibility tests. A production Python legacy bridge is not an allowed mitigation.
+**Mitigation:** Publish a small stable Rust plugin SDK, a starter-package generator whose generated output is built, installed, and executed through the production plugin host, a clear porting guide, and versioned process-protocol compatibility tests. A production Python legacy bridge is not an allowed mitigation.
 
 ## 30.9 Feature parity delays architectural validation
 
@@ -2924,7 +2929,7 @@ The first production release is accepted only when all mandatory criteria pass. 
 
 ## 31.7 Broad-feature implementation readiness gates
 
-The Phase 0 bootstrap and bounded proof spikes are authorized specifically to make these gates executable. Broad feature implementation beyond the skeleton remains blocked until all are proven:
+Prerequisite 0 build gates and bounded proof spikes are authorized specifically to make these gates executable, but they are not product progress. Broad feature implementation beyond the Phase 1 running slice remains blocked until all are proven:
 
 1. generated versioned yt-dlp compatibility profile and mandatory corpus;
 2. accepted public behavior, dependency, security, identity, durability, and performance decisions;
@@ -2937,7 +2942,7 @@ The Phase 0 bootstrap and bounded proof spikes are authorized specifically to ma
 9. FFmpeg supervision failure and descendant-process tests on Windows and Unix;
 10. equivalent-work benchmark manifests with correctness gates and confidence bounds;
 11. executable phase gates with machine-readable reports;
-12. Phase 0 no-context manual stub plus runnable instructions for every implemented command, structured diagnostics, stable identifiers, health checks, reproduction data, and parallel-agent-safe receipts; full-product manual completeness is a release gate, not a prerequisite for creating its own commands.
+12. Prerequisite no-context repository manual plus runnable instructions for every actually implemented production command, structured diagnostics, stable identifiers, health checks, reproduction data, and parallel-agent-safe receipts; the manual MUST NOT describe a skeleton or planned command as implemented product behavior.
 
 ## 31.8 Simplicity and coding-quality acceptance
 
@@ -3404,7 +3409,7 @@ The peer-review corpus did not review the independent watcher. Sections 25.6-25.
 
 ## F.1 Machine-readable product policy
 
-`build/architecture-policy.toml` is created with the Phase 0 bootstrap Cargo workspace and contains:
+`build/architecture-policy.toml` is created with the Prerequisite 0 Cargo workspace and contains:
 
 - schema/version and accepted design decision IDs;
 - every workspace member, layer, shipped/test-only status, and split trigger;
@@ -3424,7 +3429,8 @@ The policy is build/test configuration, not product runtime input or governance 
 | Gate | Required result |
 |---|---|
 | `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check` | Graph, source/build-script policy, three-root ownership, sole toolchain selector, rule-to-proof map, and assigned negative fixtures pass without overclaiming runtime or artifact proof. |
-| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard` | Tool preflight, active change evidence, format, compile, selected feature profiles, Clippy, tests/doctests, docs, architecture, dependency policy, clean-artifact smoke, and phase-applicable watcher gates pass. |
+| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard` | Changed paths and declared product impact agree; product work builds, hashes, stages, and externally executes the exact release artifact with production boundaries, success and negative scenarios, operator-visible observables, and a gate-detected counterfactual. Governance-only PASS carries an explicit no-product ceiling. |
+| `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard` | Tool preflight, active change evidence, format, compile, selected feature profiles, Clippy, tests/doctests, docs, architecture, dependency policy, runtime truth, and phase-applicable watcher gates pass. |
 | `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard` | Deterministically triggered model, fuzz, mutation, unsafe, feature-combination, fault, replay, benchmark, cross-version watcher, and packaging gates pass. |
 | `cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-release` | Hashed mandatory per-target CI reports for one source/lock/toolchain/artifact manifest aggregate without missing-platform skips. |
 

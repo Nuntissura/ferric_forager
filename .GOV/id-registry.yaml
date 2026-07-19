@@ -7,13 +7,13 @@ namespaces:
     next_numeric_id: 2
   FF-CODEX:
     entity_kind: project_rule
-    next_numeric_id: 49
+    next_numeric_id: 60
   FF-BOOT:
     entity_kind: bootstrap_rule
     next_numeric_id: 3
   FF-BUILD:
     entity_kind: build_rule
-    next_numeric_id: 78
+    next_numeric_id: 89
   FF-GATE:
     entity_kind: validation_gate
     next_numeric_id: 2
@@ -38,7 +38,7 @@ namespaces:
     next_numeric_id: 9
   FF-WPR:
     entity_kind: work_packet_requirement
-    next_numeric_id: 41
+    next_numeric_id: 50
   FF-START-BOUNDARY:
     entity_kind: model_entrypoint_boundary
     next_numeric_id: 7
@@ -129,6 +129,8 @@ registered_files:
     path: .GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/packet.json
   - id: WP-FF-012-runtime-truth-gates-v1-REFINEMENT-001
     path: .GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/refinement.json
+  - id: WP-FF-012-runtime-truth-gates-v1-CEILING-001
+    path: .GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
@@ -138,13 +140,13 @@ registered_rule_ranges:
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX
     first: FF-CODEX-001
-    last: FF-CODEX-048
-    count: 48
+    last: FF-CODEX-059
+    count: 59
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001
-    last: FF-BUILD-077
-    count: 77
+    last: FF-BUILD-088
+    count: 88
     path: .GOV/rules/build-rules.yaml
   - namespace: FF-TASKBOARD-RULE
     first: FF-TASKBOARD-RULE-001
@@ -153,8 +155,8 @@ registered_rule_ranges:
     path: .GOV/taskboard/taskboard.yaml
   - namespace: FF-WPR
     first: FF-WPR-001
-    last: FF-WPR-040
-    count: 40
+    last: FF-WPR-049
+    count: 49
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
   - namespace: FF-START-BOUNDARY
     first: FF-START-BOUNDARY-001
@@ -208,3 +210,4 @@ registered_validation_gate_ids:
   - FF-GATE-DEEP-001
   - FF-GATE-RELEASE-001
   - FF-GATE-WATCHER-001
+  - FF-GATE-RUNTIME-001

@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Adversarially re-evaluate and remediate the Phase 0 executable-gate bootstrap",
     "created_at_utc": "2026-07-19T10:27:04Z",
-    "updated_at_utc": "2026-07-19T11:28:02Z"
+    "updated_at_utc": "2026-07-19T11:28:41Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -37,19 +37,19 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/wp-ff-003-adversarial-remediation",
+      "head_sha": "ccccf23f26de6c8e96a405ae7cda24e8597d7bcf",
+      "verified_at_utc": "2026-07-19T11:28:41Z"
     },
     "closure_commit": "27887cea0026a9db218b623ce8e69fc0cf191fb0",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "fb588bfae7ff23a8e76dc48a146c0775e171d05e"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit and remotely back up the refreshed merge-pending evidence, merge the accepted closure into main, then mechanically verify containment before VALIDATED.",
+    "next_action": "Await Operator activation of a later work packet; WP-FF-004 through WP-FF-011 remain non-authorizing stubs.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -174,7 +174,9 @@
       "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460426565043200-644864.json",
       "Clean-source report proof: git commit 27887cea0026a9db218b623ce8e69fc0cf191fb0, dirty=false, 28 checks, zero failures, 16 production-validator fixtures",
       "cargo fmt, three locked check profiles, warnings-denied Clippy, 19 tests, rustdoc warnings denied, cargo-deny advisories/bans/licenses/sources: PASS",
-      "Governance JSON/YAML parsing, authority mirror equality, active v2 packet/refinement report inputs, allowlisted changed paths, registry targets, and git diff --check: PASS"
+      "Governance JSON/YAML parsing, authority mirror equality, active v2 packet/refinement report inputs, allowlisted changed paths, registry targets, and git diff --check: PASS",
+      "Main containment PASS: closure 27887cea0026a9db218b623ce8e69fc0cf191fb0 and evidence ccccf23f26de6c8e96a405ae7cda24e8597d7bcf are ancestors of merge fb588bfae7ff23a8e76dc48a146c0775e171d05e",
+      "Post-closure state PASS: formatting, warnings-denied Clippy, all 19 tests, and architecture-check pass with active_wp_id null; verify-pr rejects the closed state with expected one active work-packet ID instead of emitting PASS"
     ],
     "not_proven": [
       "Broad Phase 1 implementation readiness",

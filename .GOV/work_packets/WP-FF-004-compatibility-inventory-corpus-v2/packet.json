@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Adversarially re-evaluate and remediate the compatibility inventory and corpus",
     "created_at_utc": "2026-07-19T14:34:48Z",
-    "updated_at_utc": "2026-07-19T15:09:00Z"
+    "updated_at_utc": "2026-07-19T15:18:00Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -48,10 +48,10 @@
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the completed adversarial evidence, run FF-GATE-PR-001 from the clean closure commit, then record MERGE_PENDING proof.",
+    "next_action": "Push the work branch, merge the closure to main, and mechanically verify containment before VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -132,7 +132,7 @@
     {
       "id": "WP-FF-004-compatibility-inventory-corpus-v2-AC-005",
       "requirement": "Formatting, warnings-denied Clippy, the full Rust test suite, deterministic compatibility validation/replay/diff/inventory-diff probes, FF-GATE-ARCH-001, FF-GATE-PR-001, governance parsing, authority mirror, allowlist, registry-target, and git diff checks pass on the final clean branch with truthful proof limitations.",
-      "status": "PENDING",
+      "status": "PASS",
       "evidence": [
         "PASS before final aggregate rerun: build/reports/compatibility-validate-1784473586662161900-662216.json",
         "PASS full replay: build/reports/compatibility-replay-1784473587540703300-659432.json",
@@ -140,16 +140,16 @@
         "PASS candidate-attributed diff: build/reports/compatibility-diff-1784473593374506600-649852.json",
         "PASS inventory diff v2: build/reports/compatibility-inventory-diff-1784473595216892900-652248.json",
         "PASS architecture gate: build/reports/architecture-check-1784473609459449000-615092.json",
-        "FF-GATE-PR-001 is the remaining final clean aggregate proof."
+        "PASS clean aggregate gate: build/reports/verify-pr-1784474179254131400-638204.json"
       ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T15:09:00Z",
+      "recorded_at_utc": "2026-07-19T15:18:00Z",
       "branch": "codex/wp-ff-004-adversarial-remediation",
       "base_sha": "f94c17854213fff4dbd82e754314f37a011db3a3",
-      "head_sha": "9a39cc597da1fc646c628e64910dbfcf2a0f947e",
+      "head_sha": "cd07c4c9cc31dc990c50abf3ba30d7ce628ae4ae",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v2/packet.json"
       ],
@@ -163,10 +163,11 @@
         "After remediation: formatting PASS; warnings-denied Clippy PASS; 43 tests PASS",
         "Clean compatibility validate/replay/shards/diff/inventory-diff and FF-GATE-ARCH-001 PASS at 9a39cc597da1fc646c628e64910dbfcf2a0f947e",
         "Canonical containment junction probe and corrupted-corpus differential probe rejected for the exact intended diagnostics",
-        "Initial FF-GATE-PR-001 correctly rejected pending packet evidence; failure report build/reports/verify-pr-1784473626788804400-630820.json"
+        "Initial FF-GATE-PR-001 correctly rejected pending packet evidence; failure report build/reports/verify-pr-1784473626788804400-630820.json",
+        "Final clean FF-GATE-PR-001 PASS at cd07c4c9cc31dc990c50abf3ba30d7ce628ae4ae; report build/reports/verify-pr-1784474179254131400-638204.json"
       ],
       "blockers": [],
-      "next_action": "Commit completed evidence and rerun FF-GATE-PR-001 from the clean closure commit."
+      "next_action": "Push the work branch, merge to main, and prove closure containment."
     }
   },
   "validation": {
@@ -178,13 +179,15 @@
       "Candidate-attributed differential report PASS for completeness with seven explicit missing_feature rows",
       "Inventory-diff v2 PASS across options, presets, interactions, extractors, and extractor descriptions",
       "FF-GATE-ARCH-001 PASS at build/reports/architecture-check-1784473609459449000-615092.json",
-      "Canonical containment and corrupted-corpus command probes PASS by exact rejection"
+      "Canonical containment and corrupted-corpus command probes PASS by exact rejection",
+      "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784474179254131400-638204.json"
     ],
     "not_proven": [
       "Any Ferric feature behavior or replacement parity",
       "Exhaustive behavioral coverage for every inventory row or extractor",
       "Cross-host oracle generation or live-site stability",
-      "Adversarial closure until all v2 acceptance rows pass"
+      "DNS resolution or redirect-target safety inside the external live-probe backend",
+      "Protection against a hostile local actor changing a canonicalized path after containment validation"
     ]
   },
   "extensions": {

@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: The Operator selected WP-FF-004-compatibility-inventory-corpus-v1 as the current focus after WP-FF-003 v2 validation.
-  active_wp_id: WP-FF-004-compatibility-inventory-corpus-v1
+  statement: The Operator requested fresh multi-lens adversarial evaluation and remediation of the validated WP-FF-004 implementation.
+  active_wp_id: WP-FF-004-compatibility-inventory-corpus-v2
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
@@ -48,6 +48,8 @@ work_packets:
     packet: .GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json
   - wp_id: WP-FF-004-compatibility-inventory-corpus-v1
     packet: .GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json
+  - wp_id: WP-FF-004-compatibility-inventory-corpus-v2
+    packet: .GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v2/packet.json
   - wp_id: WP-FF-005-versioned-core-contracts-v1
     packet: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json
   - wp_id: WP-FF-006-rust-youtube-challenge-spike-v1

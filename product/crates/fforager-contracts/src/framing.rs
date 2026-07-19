@@ -3,7 +3,9 @@
 //! The declared length is checked before payload allocation. A decoder retains at
 //! most four header bytes plus one configured maximum frame.
 
-use crate::{CompatibilityRange, ProcessEnvelope, ProtocolLimits};
+use crate::{
+    CompatibilityRange, JavaScriptWorkerEnvelope, PluginEnvelope, ProcessEnvelope, ProtocolLimits,
+};
 use serde::de::DeserializeOwned;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -225,6 +227,83 @@ impl FrameDecoder {
         Ok(envelope)
     }
 
+    /// Decodes and validates a bounded plugin IPC envelope.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed framing errors for malformed, unknown, oversized, or invalid fields.
+    pub fn decode_plugin(
+        payload: &[u8],
+        limits: FrameLimits,
+    ) -> Result<PluginEnvelope, FrameError> {
+        Self::decode_plugin_with_limits(payload, limits, ProtocolLimits::default())
+    }
+
+    /// Decodes and validates a bounded plugin IPC envelope with caller-selected policy limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed framing errors for malformed, unknown, oversized, or invalid fields.
+    pub fn decode_plugin_with_limits(
+        payload: &[u8],
+        limits: FrameLimits,
+        protocol_limits: ProtocolLimits,
+    ) -> Result<PluginEnvelope, FrameError> {
+        let value = Self::decode_bounded_value(payload, limits)?;
+        reject_unknown_nested_kind(&value, &["describe", "invoke", "result", "failed"])?;
+        let envelope: PluginEnvelope =
+            serde_json::from_value(value).map_err(|error| invalid_json(&error))?;
+        envelope
+            .validate(protocol_limits)
+            .map_err(|error| invalid_protocol(&error))?;
+        Ok(envelope)
+    }
+
+    /// Decodes and validates a bounded JavaScript-worker IPC envelope.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed framing errors for malformed, unknown, oversized, or invalid fields.
+    pub fn decode_javascript_worker(
+        payload: &[u8],
+        limits: FrameLimits,
+    ) -> Result<JavaScriptWorkerEnvelope, FrameError> {
+        Self::decode_javascript_worker_with_limits(payload, limits, ProtocolLimits::default())
+    }
+
+    /// Decodes and validates a bounded JavaScript-worker envelope with caller-selected policy limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed framing errors for malformed, unknown, oversized, or invalid fields.
+    pub fn decode_javascript_worker_with_limits(
+        payload: &[u8],
+        limits: FrameLimits,
+        protocol_limits: ProtocolLimits,
+    ) -> Result<JavaScriptWorkerEnvelope, FrameError> {
+        let value = Self::decode_bounded_value(payload, limits)?;
+        reject_unknown_nested_kind(&value, &["evaluate", "result", "failed", "cancelled"])?;
+        let envelope: JavaScriptWorkerEnvelope =
+            serde_json::from_value(value).map_err(|error| invalid_json(&error))?;
+        envelope
+            .validate(protocol_limits)
+            .map_err(|error| invalid_protocol(&error))?;
+        Ok(envelope)
+    }
+
+    fn decode_bounded_value(
+        payload: &[u8],
+        limits: FrameLimits,
+    ) -> Result<serde_json::Value, FrameError> {
+        if payload.len() > limits.maximum_frame_bytes {
+            return Err(FrameError::Oversized {
+                declared: payload.len(),
+                maximum: limits.maximum_frame_bytes,
+            });
+        }
+        Self::decode_json(payload, limits)
+    }
+
     fn reset(&mut self) {
         self.header = [0; HEADER_BYTES];
         self.header_len = 0;
@@ -237,6 +316,7 @@ impl FrameDecoder {
 #[derive(Clone, Debug)]
 pub struct ProcessConformance {
     compatibility: CompatibilityRange,
+    protocol_limits: ProtocolLimits,
     maximum_seen_requests: usize,
     seen_requests: BTreeSet<String>,
 }
@@ -244,8 +324,13 @@ pub struct ProcessConformance {
 impl ProcessConformance {
     #[must_use]
     pub fn new(compatibility: CompatibilityRange, maximum_seen_requests: usize) -> Self {
+        let protocol_limits = ProtocolLimits {
+            accepted_version: compatibility,
+            ..ProtocolLimits::default()
+        };
         Self {
             compatibility,
+            protocol_limits,
             maximum_seen_requests,
             seen_requests: BTreeSet::new(),
         }
@@ -257,6 +342,9 @@ impl ProcessConformance {
     ///
     /// Returns [`FrameError`] for an incompatible version, duplicate request, or full registry.
     pub fn validate(&mut self, envelope: &ProcessEnvelope) -> Result<(), FrameError> {
+        envelope
+            .validate(self.protocol_limits)
+            .map_err(|error| invalid_protocol(&error))?;
         let header = match envelope {
             ProcessEnvelope::Hello(value) => &value.header,
             ProcessEnvelope::Request(value) => &value.header,
@@ -290,6 +378,32 @@ impl ProcessConformance {
         self.seen_requests.insert(request);
         Ok(())
     }
+}
+
+fn invalid_json(error: &serde_json::Error) -> FrameError {
+    FrameError::InvalidJson {
+        message: error.to_string(),
+    }
+}
+
+fn invalid_protocol(error: &crate::ProtocolError) -> FrameError {
+    FrameError::InvalidJson {
+        message: format!("protocol validation failed: {error:?}"),
+    }
+}
+
+fn reject_unknown_nested_kind(value: &serde_json::Value, known: &[&str]) -> Result<(), FrameError> {
+    if let Some(kind) = value
+        .get("message")
+        .and_then(|message| message.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        && !known.contains(&kind)
+    {
+        return Err(FrameError::UnknownMandatoryKind {
+            kind: kind.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -371,6 +485,13 @@ mod tests {
             ),
             Err(FrameError::InvalidJson { .. })
         ));
+        assert!(matches!(
+            FrameDecoder::decode_process(
+                &request_json("", "ff.event@1", "op"),
+                FrameLimits::default()
+            ),
+            Err(FrameError::InvalidJson { .. })
+        ));
     }
 
     #[test]
@@ -381,7 +502,7 @@ mod tests {
         )
         .expect("request must decode");
         let event: ProcessEnvelope = serde_json::from_str(
-            r#"{"kind":"event","body":{"header":{"schema_id":"ff.process@1","version":{"major":1,"minor":0},"request_id":"request_1","producer_id":"producer_1","job_id":null,"sequence":2},"kind":"progress","criticality":"operational","sensitivity":"operational","payload":{}}}"#,
+            r#"{"kind":"event","body":{"header":{"schema_id":"ff.event@1","version":{"major":1,"minor":0},"request_id":"request_1","producer_id":"producer_1","job_id":null,"sequence":2},"kind":"progress","criticality":"operational","sensitivity":"operational","payload":{}}}"#,
         )
         .expect("event must decode");
         let mut conformance = ProcessConformance::new(
@@ -397,6 +518,54 @@ mod tests {
         assert!(matches!(
             conformance.validate(&request),
             Err(FrameError::DuplicateRequestId { .. })
+        ));
+    }
+
+    #[test]
+    fn framed_plugin_and_javascript_paths_validate_recursively() {
+        let hash = "a".repeat(64);
+        let plugin = format!(
+            r#"{{"header":{{"schema_id":"ff.plugin@1","version":{{"major":1,"minor":0}},"request_id":"request_plugin","producer_id":"producer_plugin","job_id":"job_plugin","sequence":1}},"compatibility":{{"major":1,"minimum_minor":0,"maximum_minor":1}},"provenance":{{"artifact_id":"artifact-1","schema_hash":"{hash}","capability_grant_id":"grant-1"}},"message":{{"kind":"describe"}}}}"#
+        );
+        assert!(FrameDecoder::decode_plugin(plugin.as_bytes(), FrameLimits::default()).is_ok());
+        let unknown = plugin.replace("\"describe\"", "\"future_required\"");
+        assert!(matches!(
+            FrameDecoder::decode_plugin(unknown.as_bytes(), FrameLimits::default()),
+            Err(FrameError::UnknownMandatoryKind { .. })
+        ));
+        let javascript = format!(
+            r#"{{"header":{{"schema_id":"ff.javascript-worker@1","version":{{"major":1,"minor":0}},"request_id":"request_js","producer_id":"producer_js","job_id":"job_js","sequence":1}},"compatibility":{{"major":1,"minimum_minor":0,"maximum_minor":1}},"provenance":{{"artifact_id":"artifact-1","schema_hash":"{hash}","capability_grant_id":"grant-1"}},"message":{{"kind":"evaluate","body":{{"program_reference":"program-1","input":{{}},"deadline_millis":18446744073709551615,"memory_limit_bytes":18446744073709551615}}}}}}"#
+        );
+        assert!(matches!(
+            FrameDecoder::decode_javascript_worker(javascript.as_bytes(), FrameLimits::default()),
+            Err(FrameError::InvalidJson { .. })
+        ));
+    }
+
+    #[test]
+    fn conformance_recursively_rejects_invalid_envelopes() {
+        let invalid = ProcessEnvelope::Goodbye(crate::Goodbye {
+            header: crate::EnvelopeHeader {
+                schema_id: "ff.process@1".into(),
+                version: crate::SchemaVersion { major: 1, minor: 0 },
+                request_id: crate::RequestId::new("request_invalid").expect("valid fixture ID"),
+                producer_id: crate::ProducerId::new("producer_invalid").expect("valid fixture ID"),
+                job_id: None,
+                sequence: 0,
+            },
+            completed: false,
+        });
+        let mut conformance = ProcessConformance::new(
+            CompatibilityRange {
+                major: 1,
+                minimum_minor: 0,
+                maximum_minor: 1,
+            },
+            1,
+        );
+        assert!(matches!(
+            conformance.validate(&invalid),
+            Err(FrameError::InvalidJson { .. })
         ));
     }
 }

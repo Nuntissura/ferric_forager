@@ -333,11 +333,16 @@ impl ExtensionMap {
 }
 
 fn valid_namespace(key: &str) -> bool {
-    let Some((namespace, name)) = key.split_once('.') else {
+    let mut segments = key.split('.');
+    let Some(namespace) = segments.next() else {
+        return false;
+    };
+    let Some(name) = segments.next() else {
         return false;
     };
     !namespace.is_empty()
         && !name.is_empty()
+        && segments.all(|segment| !segment.is_empty())
         && key.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-' | b'.')
         })
@@ -388,7 +393,13 @@ mod tests {
     fn extension_deserialization_cannot_bypass_validation() {
         let invalid = serde_json::from_str::<ExtensionMap>(r#"{"plain":null}"#);
         assert!(invalid.is_err());
+        let empty_segment = serde_json::from_str::<ExtensionMap>(r#"{"plugin..value":null}"#);
+        assert!(empty_segment.is_err());
+        let trailing_segment = serde_json::from_str::<ExtensionMap>(r#"{"plugin.value.":null}"#);
+        assert!(trailing_segment.is_err());
         let valid = serde_json::from_str::<ExtensionMap>(r#"{"plugin.value":null}"#);
         assert!(valid.is_ok());
+        let nested = serde_json::from_str::<ExtensionMap>(r#"{"plugin.group.value":null}"#);
+        assert!(nested.is_ok());
     }
 }

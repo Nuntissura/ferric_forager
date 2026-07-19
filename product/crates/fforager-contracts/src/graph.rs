@@ -1,8 +1,8 @@
 //! Canonical source graph, provenance, acquisition, and output sink descriptors.
 
 use crate::{
-    AssetId, ContinuationId, DerivedOutputId, EdgeId, ExtensionLimits, ExtensionMap, ItemId,
-    NodeId, RepresentationId, SchemaVersion, TrackId, TriState,
+    AssetId, CompatibilityRange, ContinuationId, DerivedOutputId, EdgeId, ExtensionLimits,
+    ExtensionMap, ItemId, NodeId, RepresentationId, SchemaVersion, TrackId, TriState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -12,24 +12,34 @@ use std::path::Path;
 /// Limits applied before a graph enters the domain core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GraphLimits {
+    pub accepted_schema: CompatibilityRange,
     pub maximum_roots: usize,
     pub maximum_nodes: usize,
     pub maximum_edges: usize,
     pub maximum_continuations: usize,
+    pub maximum_identity_values_per_node: usize,
     pub maximum_string_bytes: usize,
     pub maximum_redirect_depth: usize,
+    pub maximum_provenance_depth: usize,
     pub extensions: ExtensionLimits,
 }
 
 impl Default for GraphLimits {
     fn default() -> Self {
         Self {
+            accepted_schema: CompatibilityRange {
+                major: 1,
+                minimum_minor: 0,
+                maximum_minor: 1,
+            },
             maximum_roots: 64,
             maximum_nodes: 10_000,
             maximum_edges: 40_000,
             maximum_continuations: 1_000,
+            maximum_identity_values_per_node: 4_096,
             maximum_string_bytes: 16 * 1024,
             maximum_redirect_depth: 16,
+            maximum_provenance_depth: 64,
             extensions: ExtensionLimits::default(),
         }
     }
@@ -191,6 +201,10 @@ pub struct ContinuationDescriptor {
 /// Precise graph-validation failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GraphError {
+    InvalidSchema {
+        received: SchemaVersion,
+        accepted: CompatibilityRange,
+    },
     LimitExceeded {
         field: &'static str,
         actual: usize,
@@ -215,6 +229,13 @@ pub enum GraphError {
         node: NodeId,
         parent: NodeId,
     },
+    ProvenanceCycle {
+        node: NodeId,
+    },
+    ProvenanceBudgetExceeded {
+        node: NodeId,
+        maximum: usize,
+    },
     DuplicateEntityId {
         kind: &'static str,
         id: String,
@@ -224,6 +245,10 @@ pub enum GraphError {
         node: NodeId,
         actual: usize,
         maximum: usize,
+    },
+    InvalidString {
+        field: &'static str,
+        node: NodeId,
     },
     InvalidExtensions {
         owner: String,
@@ -260,102 +285,158 @@ impl SourceGraph {
     /// Returns [`GraphError`] for a duplicate, dangling relationship, ambiguous
     /// canonical source, cycle, or exceeded configured bound.
     pub fn validate(&self, limits: GraphLimits) -> Result<(), GraphError> {
-        check_limit("roots", self.roots.len(), limits.maximum_roots)?;
-        check_limit("nodes", self.nodes.len(), limits.maximum_nodes)?;
-        check_limit("edges", self.edges.len(), limits.maximum_edges)?;
-        check_limit(
-            "continuations",
-            self.continuations.len(),
-            limits.maximum_continuations,
-        )?;
-        let mut nodes = BTreeMap::new();
-        let mut entity_ids = BTreeSet::new();
-        let mut canonical = BTreeSet::new();
-        for node in &self.nodes {
-            if nodes.insert(node.id.clone(), node).is_some() {
-                return Err(GraphError::DuplicateId {
-                    kind: "node",
-                    id: node.id.to_string(),
-                });
-            }
-            validate_node(node, limits, &mut entity_ids)?;
-            let key = (
-                node.provenance.canonical_url.clone(),
-                node.provenance.source_identity.clone(),
-            );
-            if !canonical.insert(key.clone()) {
-                return Err(GraphError::AmbiguousCanonicalSource {
-                    canonical_url: key.0,
-                    source_identity: key.1,
-                });
-            }
-        }
-        for root in &self.roots {
-            if !nodes.contains_key(root) {
-                return Err(GraphError::DanglingRoot { id: root.clone() });
-            }
-        }
-        for node in &self.nodes {
-            if let Some(parent) = &node.provenance.parent_node
-                && !nodes.contains_key(parent)
-            {
-                return Err(GraphError::DanglingProvenanceParent {
-                    node: node.id.clone(),
-                    parent: parent.clone(),
-                });
-            }
-        }
-        let mut edge_ids = BTreeSet::new();
-        for edge in &self.edges {
-            if !edge_ids.insert(edge.id.clone()) {
-                return Err(GraphError::DuplicateId {
-                    kind: "edge",
-                    id: edge.id.to_string(),
-                });
-            }
-            if !nodes.contains_key(&edge.from) {
-                return Err(GraphError::DanglingEdge {
-                    edge: edge.id.clone(),
-                    node: edge.from.clone(),
-                });
-            }
-            if !nodes.contains_key(&edge.to) {
-                return Err(GraphError::DanglingEdge {
-                    edge: edge.id.clone(),
-                    node: edge.to.clone(),
-                });
-            }
-        }
-        let mut continuation_ids = BTreeSet::new();
-        for continuation in &self.continuations {
-            if !continuation_ids.insert(continuation.id.clone()) {
-                return Err(GraphError::DuplicateId {
-                    kind: "continuation",
-                    id: continuation.id.to_string(),
-                });
-            }
-            if !nodes.contains_key(&continuation.owner) {
-                return Err(GraphError::DanglingContinuation {
-                    id: continuation.id.clone(),
-                    node: continuation.owner.clone(),
-                });
-            }
-            if continuation.opaque_token.len() > limits.maximum_string_bytes {
-                return Err(GraphError::LimitExceeded {
-                    field: "continuation_token",
-                    actual: continuation.opaque_token.len(),
-                    maximum: limits.maximum_string_bytes,
-                });
-            }
-            continuation
-                .extensions
-                .validate(limits.extensions)
-                .map_err(|_| GraphError::InvalidExtensions {
-                    owner: continuation.id.to_string(),
-                })?;
-        }
+        validate_graph_schema_and_limits(self, limits)?;
+        let nodes = collect_validated_nodes(self, limits)?;
+        validate_roots_and_parents(self, &nodes, limits.maximum_provenance_depth)?;
+        validate_edges(self, &nodes)?;
+        validate_continuations(self, &nodes, limits)?;
         validate_redirects(self, &nodes, limits.maximum_redirect_depth)
     }
+}
+
+fn validate_graph_schema_and_limits(
+    graph: &SourceGraph,
+    limits: GraphLimits,
+) -> Result<(), GraphError> {
+    if limits.accepted_schema.minimum_minor > limits.accepted_schema.maximum_minor
+        || limits.accepted_schema.check(graph.schema).is_err()
+    {
+        return Err(GraphError::InvalidSchema {
+            received: graph.schema,
+            accepted: limits.accepted_schema,
+        });
+    }
+    check_limit("roots", graph.roots.len(), limits.maximum_roots)?;
+    check_limit("nodes", graph.nodes.len(), limits.maximum_nodes)?;
+    check_limit("edges", graph.edges.len(), limits.maximum_edges)?;
+    check_limit(
+        "continuations",
+        graph.continuations.len(),
+        limits.maximum_continuations,
+    )
+}
+
+fn collect_validated_nodes(
+    graph: &SourceGraph,
+    limits: GraphLimits,
+) -> Result<BTreeMap<NodeId, &SourceNode>, GraphError> {
+    let mut nodes = BTreeMap::new();
+    let mut entity_ids = BTreeSet::new();
+    let mut canonical = BTreeSet::new();
+    for node in &graph.nodes {
+        if nodes.insert(node.id.clone(), node).is_some() {
+            return Err(GraphError::DuplicateId {
+                kind: "node",
+                id: node.id.to_string(),
+            });
+        }
+        validate_node(node, limits, &mut entity_ids)?;
+        let key = (
+            node.provenance.canonical_url.clone(),
+            node.provenance.source_identity.clone(),
+        );
+        if !canonical.insert(key.clone()) {
+            return Err(GraphError::AmbiguousCanonicalSource {
+                canonical_url: key.0,
+                source_identity: key.1,
+            });
+        }
+    }
+    Ok(nodes)
+}
+
+fn validate_roots_and_parents(
+    graph: &SourceGraph,
+    nodes: &BTreeMap<NodeId, &SourceNode>,
+    maximum_provenance_depth: usize,
+) -> Result<(), GraphError> {
+    let mut roots = BTreeSet::new();
+    for root in &graph.roots {
+        if !roots.insert(root.clone()) {
+            return Err(GraphError::DuplicateId {
+                kind: "root",
+                id: root.to_string(),
+            });
+        }
+        if !nodes.contains_key(root) {
+            return Err(GraphError::DanglingRoot { id: root.clone() });
+        }
+    }
+    for node in &graph.nodes {
+        if let Some(parent) = &node.provenance.parent_node
+            && !nodes.contains_key(parent)
+        {
+            return Err(GraphError::DanglingProvenanceParent {
+                node: node.id.clone(),
+                parent: parent.clone(),
+            });
+        }
+    }
+    validate_provenance_chains(nodes, maximum_provenance_depth)
+}
+
+fn validate_edges(
+    graph: &SourceGraph,
+    nodes: &BTreeMap<NodeId, &SourceNode>,
+) -> Result<(), GraphError> {
+    let mut edge_ids = BTreeSet::new();
+    for edge in &graph.edges {
+        if !edge_ids.insert(edge.id.clone()) {
+            return Err(GraphError::DuplicateId {
+                kind: "edge",
+                id: edge.id.to_string(),
+            });
+        }
+        if !nodes.contains_key(&edge.from) {
+            return Err(GraphError::DanglingEdge {
+                edge: edge.id.clone(),
+                node: edge.from.clone(),
+            });
+        }
+        if !nodes.contains_key(&edge.to) {
+            return Err(GraphError::DanglingEdge {
+                edge: edge.id.clone(),
+                node: edge.to.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_continuations(
+    graph: &SourceGraph,
+    nodes: &BTreeMap<NodeId, &SourceNode>,
+    limits: GraphLimits,
+) -> Result<(), GraphError> {
+    let mut continuation_ids = BTreeSet::new();
+    for continuation in &graph.continuations {
+        if !continuation_ids.insert(continuation.id.clone()) {
+            return Err(GraphError::DuplicateId {
+                kind: "continuation",
+                id: continuation.id.to_string(),
+            });
+        }
+        if !nodes.contains_key(&continuation.owner) {
+            return Err(GraphError::DanglingContinuation {
+                id: continuation.id.clone(),
+                node: continuation.owner.clone(),
+            });
+        }
+        if continuation.opaque_token.len() > limits.maximum_string_bytes {
+            return Err(GraphError::LimitExceeded {
+                field: "continuation_token",
+                actual: continuation.opaque_token.len(),
+                maximum: limits.maximum_string_bytes,
+            });
+        }
+        continuation
+            .extensions
+            .validate(limits.extensions)
+            .map_err(|_| GraphError::InvalidExtensions {
+                owner: continuation.id.to_string(),
+            })?;
+    }
+    Ok(())
 }
 
 fn check_limit(field: &'static str, actual: usize, maximum: usize) -> Result<(), GraphError> {
@@ -380,6 +461,12 @@ fn validate_node(
         ("source_identity", &node.provenance.source_identity),
         ("canonical_url", &node.provenance.canonical_url),
     ] {
+        if value.is_empty() || value.bytes().any(|byte| byte.is_ascii_control()) {
+            return Err(GraphError::InvalidString {
+                field,
+                node: node.id.clone(),
+            });
+        }
         if value.len() > limits.maximum_string_bytes {
             return Err(GraphError::StringTooLong {
                 field,
@@ -389,52 +476,58 @@ fn validate_node(
             });
         }
     }
-    for (kind, values) in [
-        (
-            "item",
-            node.identities
-                .item
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-        ),
-        (
-            "representation",
+    check_limit(
+        "representations_per_node",
+        node.identities.representations.len(),
+        limits.maximum_identity_values_per_node,
+    )?;
+    check_limit(
+        "tracks_per_node",
+        node.identities.tracks.len(),
+        limits.maximum_identity_values_per_node,
+    )?;
+    check_limit(
+        "assets_per_node",
+        node.identities.assets.len(),
+        limits.maximum_identity_values_per_node,
+    )?;
+    check_limit(
+        "derived_outputs_per_node",
+        node.identities.derived_outputs.len(),
+        limits.maximum_identity_values_per_node,
+    )?;
+    for (kind, value) in node
+        .identities
+        .item
+        .iter()
+        .map(|value| ("item", value.to_string()))
+        .chain(
             node.identities
                 .representations
                 .iter()
-                .map(ToString::to_string)
-                .collect(),
-        ),
-        (
-            "track",
+                .map(|value| ("representation", value.to_string())),
+        )
+        .chain(
             node.identities
                 .tracks
                 .iter()
-                .map(ToString::to_string)
-                .collect(),
-        ),
-        (
-            "asset",
+                .map(|value| ("track", value.to_string())),
+        )
+        .chain(
             node.identities
                 .assets
                 .iter()
-                .map(ToString::to_string)
-                .collect(),
-        ),
-        (
-            "derived_output",
+                .map(|value| ("asset", value.to_string())),
+        )
+        .chain(
             node.identities
                 .derived_outputs
                 .iter()
-                .map(ToString::to_string)
-                .collect(),
-        ),
-    ] {
-        for value in values {
-            if !entity_ids.insert(value.clone()) {
-                return Err(GraphError::DuplicateEntityId { kind, id: value });
-            }
+                .map(|value| ("derived_output", value.to_string())),
+        )
+    {
+        if !entity_ids.insert(value.clone()) {
+            return Err(GraphError::DuplicateEntityId { kind, id: value });
         }
     }
     for (field, value) in [("title", &node.title), ("description", &node.description)] {
@@ -510,9 +603,43 @@ fn validate_redirects(
     Ok(())
 }
 
+fn validate_provenance_chains(
+    nodes: &BTreeMap<NodeId, &SourceNode>,
+    maximum: usize,
+) -> Result<(), GraphError> {
+    for &node in nodes.values() {
+        let mut seen = BTreeSet::new();
+        let mut current = node;
+        for depth in 0..=maximum {
+            if !seen.insert(current.id.clone()) {
+                return Err(GraphError::ProvenanceCycle {
+                    node: current.id.clone(),
+                });
+            }
+            let Some(parent) = &current.provenance.parent_node else {
+                break;
+            };
+            if depth == maximum {
+                return Err(GraphError::ProvenanceBudgetExceeded {
+                    node: node.id.clone(),
+                    maximum,
+                });
+            }
+            let Some(parent_node) = nodes.get(parent).copied() else {
+                return Err(GraphError::DanglingProvenanceParent {
+                    node: current.id.clone(),
+                    parent: parent.clone(),
+                });
+            };
+            current = parent_node;
+        }
+    }
+    Ok(())
+}
+
 /// Serializable acquisition source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AcquisitionSource {
     DirectUrl {
         url: String,
@@ -538,7 +665,7 @@ pub struct FragmentDescriptor {
 
 /// Data-only destination descriptor. Paths and addresses are strings and require adapter validation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OutputSinkSpec {
     AtomicFile {
         rooted_path: String,
@@ -581,7 +708,7 @@ pub struct SinkSemantics {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum BackpressureMode {
     BlockProducer,
     BoundedBuffer {
@@ -945,6 +1072,94 @@ mod tests {
         assert_eq!(
             semantics.validate(DataContractLimits::default()),
             Err(DataContractError::InvalidBoundedBuffer)
+        );
+    }
+
+    #[test]
+    fn graph_rejects_schema_duplicate_roots_and_provenance_cycles() -> Result<(), crate::IdError> {
+        let mut source = node("cycle")?;
+        source.provenance.parent_node = Some(source.id.clone());
+        let mut graph = SourceGraph {
+            schema: SchemaVersion { major: 0, minor: 0 },
+            roots: vec![source.id.clone()],
+            nodes: vec![source.clone()],
+            edges: vec![],
+            continuations: vec![],
+        };
+        assert!(matches!(
+            graph.validate(GraphLimits::default()),
+            Err(GraphError::InvalidSchema { .. })
+        ));
+        graph.schema = SchemaVersion { major: 1, minor: 0 };
+        assert_eq!(
+            graph.validate(GraphLimits::default()),
+            Err(GraphError::ProvenanceCycle {
+                node: source.id.clone()
+            })
+        );
+        graph.nodes[0].provenance.parent_node = None;
+        graph.roots.push(source.id.clone());
+        assert_eq!(
+            graph.validate(GraphLimits::default()),
+            Err(GraphError::DuplicateId {
+                kind: "root",
+                id: source.id.to_string()
+            })
+        );
+        graph.roots.pop();
+        graph.nodes[0].provenance.extractor_key.clear();
+        assert_eq!(
+            graph.validate(GraphLimits::default()),
+            Err(GraphError::InvalidString {
+                field: "extractor_key",
+                node: source.id
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn graph_bounds_identity_collections_without_clone_amplification() -> Result<(), crate::IdError>
+    {
+        let mut source = node("identities")?;
+        source.identities.representations = vec![
+            RepresentationId::new("repr_one")?,
+            RepresentationId::new("repr_two")?,
+        ];
+        let graph = SourceGraph {
+            schema: SchemaVersion { major: 1, minor: 0 },
+            roots: vec![source.id.clone()],
+            nodes: vec![source],
+            edges: vec![],
+            continuations: vec![],
+        };
+        assert_eq!(
+            graph.validate(GraphLimits {
+                maximum_identity_values_per_node: 1,
+                ..GraphLimits::default()
+            }),
+            Err(GraphError::LimitExceeded {
+                field: "representations_per_node",
+                actual: 2,
+                maximum: 1,
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn public_tagged_enums_reject_unknown_fields() {
+        assert!(
+            serde_json::from_str::<AcquisitionSource>(
+                r#"{"kind":"direct_url","url":"https://example.test/a","smuggled":true}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<OutputSinkSpec>(
+                r#"{"kind":"atomic_file","rooted_path":"safe.bin","smuggled":true}"#
+            )
+            .is_err()
         );
     }
 }

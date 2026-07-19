@@ -5,6 +5,14 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+const CONFIG_SCHEMA: &str = "ff.config";
+const EVENT_SCHEMA: &str = "ff.event";
+const ERROR_SCHEMA: &str = "ff.error";
+const CANCELLATION_SCHEMA: &str = "ff.cancel";
+const PROCESS_SCHEMA: &str = "ff.process";
+const PLUGIN_SCHEMA: &str = "ff.plugin";
+const JAVASCRIPT_WORKER_SCHEMA: &str = "ff.javascript-worker";
+
 /// Common envelope metadata used at every framed process boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -153,7 +161,12 @@ pub struct Goodbye {
 
 /// Plugin-specific wire request, nested inside a process request when applicable.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "body", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "body",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum PluginMessage {
     Describe,
     Invoke {
@@ -172,7 +185,12 @@ pub enum PluginMessage {
 
 /// JavaScript worker wire request. Source code and secrets are referenced, not embedded.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "body", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "body",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum JavaScriptWorkerMessage {
     Evaluate {
         program_reference: String,
@@ -195,17 +213,29 @@ pub enum JavaScriptWorkerMessage {
 /// Validation limits applied after bounded framing and before dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProtocolLimits {
+    pub accepted_version: CompatibilityRange,
     pub maximum_schema_id_bytes: usize,
     pub maximum_kind_bytes: usize,
     pub maximum_message_bytes: usize,
+    pub maximum_reference_bytes: usize,
+    pub maximum_javascript_deadline_millis: u64,
+    pub maximum_javascript_memory_bytes: u64,
 }
 
 impl Default for ProtocolLimits {
     fn default() -> Self {
         Self {
+            accepted_version: CompatibilityRange {
+                major: 1,
+                minimum_minor: 0,
+                maximum_minor: 1,
+            },
             maximum_schema_id_bytes: 128,
             maximum_kind_bytes: 128,
             maximum_message_bytes: 8 * 1024,
+            maximum_reference_bytes: 4 * 1024,
+            maximum_javascript_deadline_millis: 5 * 60 * 1_000,
+            maximum_javascript_memory_bytes: 512 * 1024 * 1024,
         }
     }
 }
@@ -226,11 +256,23 @@ pub enum ProtocolError {
     },
     InvalidSequence,
     InvalidVersion,
+    UnexpectedSchema {
+        expected: &'static str,
+        received: String,
+    },
     IncompatibleVersion {
         received: SchemaVersion,
         accepted: CompatibilityRange,
     },
     InvalidExtensions,
+    InvalidField {
+        field: &'static str,
+    },
+    NumericLimitExceeded {
+        field: &'static str,
+        actual: u64,
+        maximum: u64,
+    },
     CorrelationMismatch {
         field: &'static str,
     },
@@ -247,14 +289,11 @@ impl EnvelopeHeader {
         if self.sequence == 0 {
             return Err(ProtocolError::InvalidSequence);
         }
-        let major = self
-            .schema_id
-            .rsplit_once('@')
-            .and_then(|(_, value)| value.parse::<u16>().ok());
+        let major = parse_schema_id(&self.schema_id);
         if major != Some(self.version.major) || self.version.major == 0 {
             return Err(ProtocolError::InvalidVersion);
         }
-        Ok(())
+        validate_compatibility(self.version, limits.accepted_version)
     }
 }
 
@@ -265,7 +304,7 @@ impl ConfigEnvelope {
     ///
     /// Returns a typed protocol error when any direct public-boundary field is invalid.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, CONFIG_SCHEMA, limits)?;
         validate_compatibility(self.header.version, self.compatibility)?;
         self.values
             .validate(ExtensionLimits::default())
@@ -280,7 +319,7 @@ impl EventEnvelope {
     ///
     /// Returns a typed error for invalid headers, kinds, or payload bounds.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, EVENT_SCHEMA, limits)?;
         validate_text("event_kind", &self.kind, limits.maximum_kind_bytes)?;
         validate_json("event_payload", &self.payload, limits.maximum_message_bytes)
     }
@@ -293,7 +332,7 @@ impl ErrorEnvelope {
     ///
     /// Returns a typed error for invalid headers, messages, or details.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, ERROR_SCHEMA, limits)?;
         validate_text("error_message", &self.message, limits.maximum_message_bytes)?;
         self.details
             .validate(ExtensionLimits::default())
@@ -308,7 +347,7 @@ impl CancellationRequest {
     ///
     /// Returns a typed error for invalid headers, generations, or reasons.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, CANCELLATION_SCHEMA, limits)?;
         if self.generation == 0 {
             return Err(ProtocolError::InvalidSequence);
         }
@@ -323,7 +362,7 @@ impl CancellationAcknowledgement {
     ///
     /// Returns a typed error for invalid headers or generations.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, CANCELLATION_SCHEMA, limits)?;
         if self.generation == 0 {
             return Err(ProtocolError::InvalidSequence);
         }
@@ -339,6 +378,7 @@ impl CancellationAcknowledgement {
 pub fn validate_cancellation_correlation(
     request: &CancellationRequest,
     acknowledgement: &CancellationAcknowledgement,
+    expected_acknowledgement_producer: &ProducerId,
     limits: ProtocolLimits,
 ) -> Result<(), ProtocolError> {
     request.validate(limits)?;
@@ -359,6 +399,10 @@ pub fn validate_cancellation_correlation(
         (
             request.header.job_id == acknowledgement.header.job_id,
             "header.job_id",
+        ),
+        (
+            acknowledgement.header.producer_id == *expected_acknowledgement_producer,
+            "header.producer_id",
         ),
         (
             request.target_request_id == acknowledgement.target_request_id,
@@ -389,13 +433,13 @@ impl ProcessEnvelope {
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
         match self {
             Self::Hello(value) => {
-                value.header.validate(limits)?;
+                validate_header_schema(&value.header, PROCESS_SCHEMA, limits)?;
                 validate_compatibility(value.header.version, value.accepted)?;
                 validate_text("artifact_id", &value.artifact_id, limits.maximum_kind_bytes)?;
                 validate_text("schema_hash", &value.schema_hash, limits.maximum_kind_bytes)
             }
             Self::Request(value) => {
-                value.header.validate(limits)?;
+                validate_header_schema(&value.header, PROCESS_SCHEMA, limits)?;
                 validate_text("operation", &value.operation, limits.maximum_kind_bytes)?;
                 validate_json(
                     "request_payload",
@@ -407,7 +451,7 @@ impl ProcessEnvelope {
             Self::Error(value) => value.validate(limits),
             Self::Cancel(value) => value.validate(limits),
             Self::CancelAcknowledged(value) => value.validate(limits),
-            Self::Goodbye(value) => value.header.validate(limits),
+            Self::Goodbye(value) => validate_header_schema(&value.header, PROCESS_SCHEMA, limits),
         }
     }
 }
@@ -448,7 +492,7 @@ impl PluginEnvelope {
     ///
     /// Returns a typed protocol bound or header error.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, PLUGIN_SCHEMA, limits)?;
         validate_compatibility(self.header.version, self.compatibility)?;
         validate_provenance(&self.provenance, limits)?;
         match &self.message {
@@ -479,7 +523,7 @@ impl JavaScriptWorkerEnvelope {
     ///
     /// Returns a typed protocol bound or header error.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        self.header.validate(limits)?;
+        validate_header_schema(&self.header, JAVASCRIPT_WORKER_SCHEMA, limits)?;
         validate_compatibility(self.header.version, self.compatibility)?;
         validate_provenance(&self.provenance, limits)?;
         match &self.message {
@@ -489,14 +533,21 @@ impl JavaScriptWorkerEnvelope {
                 deadline_millis,
                 memory_limit_bytes,
             } => {
-                validate_text(
+                validate_reference(
                     "program_reference",
                     program_reference,
-                    limits.maximum_kind_bytes,
+                    limits.maximum_reference_bytes,
                 )?;
-                if *deadline_millis == 0 || *memory_limit_bytes == 0 {
-                    return Err(ProtocolError::InvalidSequence);
-                }
+                validate_numeric_limit(
+                    "javascript_deadline_millis",
+                    *deadline_millis,
+                    limits.maximum_javascript_deadline_millis,
+                )?;
+                validate_numeric_limit(
+                    "javascript_memory_limit_bytes",
+                    *memory_limit_bytes,
+                    limits.maximum_javascript_memory_bytes,
+                )?;
                 validate_json("javascript_input", input, limits.maximum_message_bytes)
             }
             JavaScriptWorkerMessage::Result { output } => {
@@ -519,12 +570,58 @@ fn validate_provenance(
     provenance: &BoundaryProvenance,
     limits: ProtocolLimits,
 ) -> Result<(), ProtocolError> {
-    for (field, value) in [
-        ("artifact_id", &provenance.artifact_id),
-        ("schema_hash", &provenance.schema_hash),
-        ("capability_grant_id", &provenance.capability_grant_id),
-    ] {
-        validate_text(field, value, limits.maximum_kind_bytes)?;
+    validate_reference(
+        "artifact_id",
+        &provenance.artifact_id,
+        limits.maximum_reference_bytes,
+    )?;
+    validate_reference(
+        "capability_grant_id",
+        &provenance.capability_grant_id,
+        limits.maximum_reference_bytes,
+    )?;
+    if provenance.schema_hash.len() != 64
+        || !provenance
+            .schema_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(ProtocolError::InvalidField {
+            field: "schema_hash",
+        });
+    }
+    Ok(())
+}
+
+fn parse_schema_id(schema_id: &str) -> Option<u16> {
+    let mut parts = schema_id.split('@');
+    let name = parts.next()?;
+    let major = parts.next()?.parse::<u16>().ok()?;
+    if parts.next().is_some()
+        || name.is_empty()
+        || !name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'_')
+        })
+    {
+        return None;
+    }
+    Some(major)
+}
+
+fn validate_header_schema(
+    header: &EnvelopeHeader,
+    expected: &'static str,
+    limits: ProtocolLimits,
+) -> Result<(), ProtocolError> {
+    header.validate(limits)?;
+    let Some((name, _)) = header.schema_id.split_once('@') else {
+        return Err(ProtocolError::InvalidVersion);
+    };
+    if name != expected {
+        return Err(ProtocolError::UnexpectedSchema {
+            expected,
+            received: header.schema_id.clone(),
+        });
     }
     Ok(())
 }
@@ -545,10 +642,46 @@ fn validate_compatibility(
 }
 
 fn validate_text(field: &'static str, value: &str, maximum: usize) -> Result<(), ProtocolError> {
-    if value.is_empty() || value.len() > maximum {
+    if value.is_empty() || value.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err(ProtocolError::InvalidField { field });
+    }
+    if value.len() > maximum {
         return Err(ProtocolError::FieldTooLong {
             field,
             actual: value.len(),
+            maximum,
+        });
+    }
+    Ok(())
+}
+
+fn validate_reference(
+    field: &'static str,
+    value: &str,
+    maximum: usize,
+) -> Result<(), ProtocolError> {
+    validate_text(field, value, maximum)?;
+    let normalized = value.replace('\\', "/");
+    if normalized.starts_with('/')
+        || normalized.contains(':')
+        || normalized
+            .split('/')
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
+    {
+        return Err(ProtocolError::InvalidField { field });
+    }
+    Ok(())
+}
+
+fn validate_numeric_limit(
+    field: &'static str,
+    actual: u64,
+    maximum: u64,
+) -> Result<(), ProtocolError> {
+    if actual == 0 || actual > maximum {
+        return Err(ProtocolError::NumericLimitExceeded {
+            field,
+            actual,
             maximum,
         });
     }
@@ -687,10 +820,8 @@ mod tests {
         };
         assert!(matches!(
             error.validate(ProtocolLimits::default()),
-            Err(ProtocolError::FieldTooLong {
-                field: "error_message",
-                actual: 0,
-                ..
+            Err(ProtocolError::InvalidField {
+                field: "error_message"
             })
         ));
         Ok(())
@@ -719,10 +850,12 @@ mod tests {
             generation: 1,
             outcome: CancellationOutcome::Accepted,
         };
+        let expected_producer = acknowledgement.header.producer_id.clone();
         assert_eq!(
             validate_cancellation_correlation(
                 &request,
                 &acknowledgement,
+                &expected_producer,
                 ProtocolLimits::default()
             ),
             Ok(())
@@ -732,10 +865,116 @@ mod tests {
             validate_cancellation_correlation(
                 &request,
                 &acknowledgement,
+                &expected_producer,
                 ProtocolLimits::default()
             ),
             Err(ProtocolError::CorrelationMismatch {
                 field: "header.request_id"
+            })
+        );
+        acknowledgement.header.request_id = request.header.request_id.clone();
+        acknowledgement.header.producer_id = ProducerId::new("producer_other")?;
+        assert_eq!(
+            validate_cancellation_correlation(
+                &request,
+                &acknowledgement,
+                &expected_producer,
+                ProtocolLimits::default()
+            ),
+            Err(ProtocolError::CorrelationMismatch {
+                field: "header.producer_id"
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_self_declared_versions_and_cross_type_schema_ids() -> Result<(), crate::IdError> {
+        let mut config = ConfigEnvelope {
+            header: header("ff.config@1", "request_config_schema", 1)?,
+            compatibility: CompatibilityRange {
+                major: 1,
+                minimum_minor: 0,
+                maximum_minor: 1,
+            },
+            values: ExtensionMap::default(),
+        };
+        config.header.schema_id = "ff.config@99".into();
+        config.header.version = SchemaVersion {
+            major: 99,
+            minor: u16::MAX,
+        };
+        config.compatibility = CompatibilityRange {
+            major: 99,
+            minimum_minor: 0,
+            maximum_minor: u16::MAX,
+        };
+        assert!(matches!(
+            config.validate(ProtocolLimits::default()),
+            Err(ProtocolError::IncompatibleVersion { .. })
+        ));
+        config.header.schema_id = "ff.plugin@1".into();
+        config.header.version = SchemaVersion { major: 1, minor: 0 };
+        config.compatibility = ProtocolLimits::default().accepted_version;
+        assert_eq!(
+            config.validate(ProtocolLimits::default()),
+            Err(ProtocolError::UnexpectedSchema {
+                expected: CONFIG_SCHEMA,
+                received: "ff.plugin@1".into(),
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn strict_nested_serde_and_worker_resource_policy_fail_closed() -> Result<(), crate::IdError> {
+        let plugin_with_unknown = r#"{
+            "header":{"schema_id":"ff.plugin@1","version":{"major":1,"minor":0},"request_id":"request_plugin","producer_id":"producer_plugin","job_id":"job_plugin","sequence":1},
+            "compatibility":{"major":1,"minimum_minor":0,"maximum_minor":1},
+            "provenance":{"artifact_id":"artifact-1","schema_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","capability_grant_id":"grant-1"},
+            "message":{"kind":"invoke","body":{"plugin_id":"plugin-1","capability":"resolve","input":{},"smuggled":true}}
+        }"#;
+        assert!(serde_json::from_str::<PluginEnvelope>(plugin_with_unknown).is_err());
+        let provenance = BoundaryProvenance {
+            artifact_id: "artifact-1".into(),
+            schema_hash: "a".repeat(64),
+            capability_grant_id: "grant-1".into(),
+        };
+        let mut worker = JavaScriptWorkerEnvelope {
+            header: header("ff.javascript-worker@1", "request_worker_limits", 1)?,
+            compatibility: ProtocolLimits::default().accepted_version,
+            provenance,
+            message: JavaScriptWorkerMessage::Evaluate {
+                program_reference: "program-1".into(),
+                input: serde_json::Value::Null,
+                deadline_millis: u64::MAX,
+                memory_limit_bytes: u64::MAX,
+            },
+        };
+        assert!(matches!(
+            worker.validate(ProtocolLimits::default()),
+            Err(ProtocolError::NumericLimitExceeded { .. })
+        ));
+        worker.message = JavaScriptWorkerMessage::Evaluate {
+            program_reference: "../../host-secret".into(),
+            input: serde_json::Value::Null,
+            deadline_millis: 1,
+            memory_limit_bytes: 1,
+        };
+        assert_eq!(
+            worker.validate(ProtocolLimits::default()),
+            Err(ProtocolError::InvalidField {
+                field: "program_reference"
+            })
+        );
+        worker.provenance.schema_hash = "not-a-hash".into();
+        worker.message = JavaScriptWorkerMessage::Result {
+            output: serde_json::Value::Null,
+        };
+        assert_eq!(
+            worker.validate(ProtocolLimits::default()),
+            Err(ProtocolError::InvalidField {
+                field: "schema_hash"
             })
         );
         Ok(())

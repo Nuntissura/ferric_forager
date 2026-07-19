@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Generate the pinned compatibility inventory and executable oracle corpus",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T12:38:49Z"
+    "updated_at_utc": "2026-07-19T12:49:08Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -53,7 +53,7 @@
     "status": "IN_PROGRESS",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Complete current source-level research and the EXPANDED refinement against validated WP-FF-003 v2, verify the exact yt-dlp 2026.07.04 oracle identity and fixture boundaries, and define the versioned artifact manifest and corpus partitions before product implementation.",
+    "next_action": "Implement the versioned oracle manifest, generated compatibility profile, deterministic corpus partitions, fail-closed validators, differential reporting, negative fixtures, and no-context commands through the validated WP-FF-003 v2 tooling surface.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -139,12 +139,13 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T12:38:49Z",
+      "recorded_at_utc": "2026-07-19T12:49:08Z",
       "branch": "codex/compatibility-inventory-corpus",
       "base_sha": "91404decb77599c0491084627b7ef97c96bfb9b5",
-      "head_sha": "e62e60240f5fd09783f81df015775ac07d1c3096",
+      "head_sha": "b502180bcc969c83baf22fe8ebb57258e6af3fac",
       "dirty_paths": [
-        ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json"
+        ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json",
+        ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/refinement.json"
       ],
       "checks_run": [
         "git branch --show-current: codex/compatibility-inventory-corpus",
@@ -156,15 +157,18 @@
         "FF-GATE-ARCH-001 after linking substantive refinement: PASS; report build/reports/architecture-check-1784464607934492900-651580.json",
         "Final activation FF-GATE-ARCH-001 after checkpoint-state update: PASS; report build/reports/architecture-check-1784464663149698900-651004.json",
         "Activation checkpoint commit: e62e60240f5fd09783f81df015775ac07d1c3096",
-        "Remote backup verified: origin/codex/compatibility-inventory-corpus contains e62e60240f5fd09783f81df015775ac07d1c3096"
+        "Remote backup verified: origin/codex/compatibility-inventory-corpus contains e62e60240f5fd09783f81df015775ac07d1c3096",
+        "Pinned oracle verification: immutable release 2026.07.04, tag fdec00e0bf530dc6c3cc7b1dd780e95d9ae460e9, release source head 997fa140840a08df3938b40da470c78049fef1f6, yt-dlp.exe SHA-256 52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8",
+        "Official oracle surfaces captured successfully: 895 help lines, 277 unique long-option spellings, 1752 extractor rows with 1751 unique strings and one exact generic duplicate, 1595 description rows"
       ],
       "blockers": [],
-      "next_action": "Complete current source-level research and the EXPANDED refinement against validated WP-FF-003 v2, verify the exact yt-dlp 2026.07.04 oracle identity and fixture boundaries, and define the versioned artifact manifest and corpus partitions before product implementation."
+      "next_action": "Implement the versioned oracle manifest, generated compatibility profile, deterministic corpus partitions, fail-closed validators, differential reporting, negative fixtures, and no-context commands through the validated WP-FF-003 v2 tooling surface."
     }
   },
   "validation": {
     "checks": [
-      "Activation FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784464663149698900-651004.json"
+      "Activation FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784464663149698900-651004.json",
+      "Current research and pinned yt-dlp 2026.07.04 source/executable identity verification recorded in refinement.json"
     ],
     "not_proven": [
       "Compatibility profile completeness",

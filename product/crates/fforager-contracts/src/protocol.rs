@@ -492,7 +492,7 @@ impl PluginEnvelope {
     ///
     /// Returns a typed protocol bound or header error.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        validate_header_schema(&self.header, PLUGIN_SCHEMA, limits)?;
+        validate_boundary_header(&self.header, PLUGIN_SCHEMA, limits)?;
         validate_compatibility(self.header.version, self.compatibility)?;
         validate_provenance(&self.provenance, limits)?;
         match &self.message {
@@ -523,7 +523,7 @@ impl JavaScriptWorkerEnvelope {
     ///
     /// Returns a typed protocol bound or header error.
     pub fn validate(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
-        validate_header_schema(&self.header, JAVASCRIPT_WORKER_SCHEMA, limits)?;
+        validate_boundary_header(&self.header, JAVASCRIPT_WORKER_SCHEMA, limits)?;
         validate_compatibility(self.header.version, self.compatibility)?;
         validate_provenance(&self.provenance, limits)?;
         match &self.message {
@@ -621,6 +621,20 @@ fn validate_header_schema(
         return Err(ProtocolError::UnexpectedSchema {
             expected,
             received: header.schema_id.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_boundary_header(
+    header: &EnvelopeHeader,
+    expected: &'static str,
+    limits: ProtocolLimits,
+) -> Result<(), ProtocolError> {
+    validate_header_schema(header, expected, limits)?;
+    if header.job_id.is_none() {
+        return Err(ProtocolError::InvalidField {
+            field: "header.job_id",
         });
     }
     Ok(())
@@ -850,7 +864,8 @@ mod tests {
             generation: 1,
             outcome: CancellationOutcome::Accepted,
         };
-        let expected_producer = acknowledgement.header.producer_id.clone();
+        let expected_producer = ProducerId::new("producer_trusted_acknowledger")?;
+        acknowledgement.header.producer_id = expected_producer.clone();
         assert_eq!(
             validate_cancellation_correlation(
                 &request,
@@ -940,6 +955,19 @@ mod tests {
             schema_hash: "a".repeat(64),
             capability_grant_id: "grant-1".into(),
         };
+        let mut plugin = PluginEnvelope {
+            header: header("ff.plugin@1", "request_plugin_job", 1)?,
+            compatibility: ProtocolLimits::default().accepted_version,
+            provenance: provenance.clone(),
+            message: PluginMessage::Describe,
+        };
+        plugin.header.job_id = None;
+        assert_eq!(
+            plugin.validate(ProtocolLimits::default()),
+            Err(ProtocolError::InvalidField {
+                field: "header.job_id"
+            })
+        );
         let mut worker = JavaScriptWorkerEnvelope {
             header: header("ff.javascript-worker@1", "request_worker_limits", 1)?,
             compatibility: ProtocolLimits::default().accepted_version,
@@ -975,6 +1003,14 @@ mod tests {
             worker.validate(ProtocolLimits::default()),
             Err(ProtocolError::InvalidField {
                 field: "schema_hash"
+            })
+        );
+        worker.provenance.schema_hash = "a".repeat(64);
+        worker.header.job_id = None;
+        assert_eq!(
+            worker.validate(ProtocolLimits::default()),
+            Err(ProtocolError::InvalidField {
+                field: "header.job_id"
             })
         );
         Ok(())

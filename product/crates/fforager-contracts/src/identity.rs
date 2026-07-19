@@ -184,7 +184,12 @@ impl std::error::Error for CompatibilityError {}
 
 /// Explicit three-state metadata value; missing is never conflated with null.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "state", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "state",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum TriState<T> {
     Unknown,
     NotApplicable,
@@ -294,7 +299,16 @@ impl ExtensionMap {
                 maximum: limits.maximum_entries,
             });
         }
-        let mut total = 0usize;
+        let encoded_map =
+            serde_json::to_vec(&self.0).map_err(|_| ExtensionError::Serialization {
+                key: "<extension-map>".to_owned(),
+            })?;
+        if encoded_map.len() > limits.maximum_total_bytes {
+            return Err(ExtensionError::TotalTooLarge {
+                actual: encoded_map.len(),
+                maximum: limits.maximum_total_bytes,
+            });
+        }
         for (key, value) in &self.0 {
             if key.len() > limits.maximum_key_bytes {
                 return Err(ExtensionError::KeyTooLong {
@@ -312,19 +326,6 @@ impl ExtensionMap {
                     key: key.clone(),
                     actual: encoded.len(),
                     maximum: limits.maximum_value_bytes,
-                });
-            }
-            total = total
-                .checked_add(key.len())
-                .and_then(|sum| sum.checked_add(encoded.len()))
-                .ok_or(ExtensionError::TotalTooLarge {
-                    actual: usize::MAX,
-                    maximum: limits.maximum_total_bytes,
-                })?;
-            if total > limits.maximum_total_bytes {
-                return Err(ExtensionError::TotalTooLarge {
-                    actual: total,
-                    maximum: limits.maximum_total_bytes,
                 });
             }
         }
@@ -401,5 +402,50 @@ mod tests {
         assert!(valid.is_ok());
         let nested = serde_json::from_str::<ExtensionMap>(r#"{"plugin.group.value":null}"#);
         assert!(nested.is_ok());
+    }
+
+    #[test]
+    fn tri_state_rejects_unknown_wire_fields() {
+        assert!(
+            serde_json::from_str::<TriState<String>>(r#"{"state":"unknown","smuggled":true}"#)
+                .is_err()
+        );
+        assert!(
+            serde_json::from_str::<TriState<String>>(
+                r#"{"state":"present","value":"visible","smuggled":true}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn extension_total_budget_counts_exact_json_encoding() {
+        let mut values = BTreeMap::new();
+        values.insert("plugin.value".to_owned(), serde_json::Value::Null);
+        let encoded_len = serde_json::to_vec(&values).unwrap().len();
+        let old_partial_count =
+            "plugin.value".len() + serde_json::to_vec(&serde_json::Value::Null).unwrap().len();
+        assert!(old_partial_count < encoded_len);
+        assert!(matches!(
+            ExtensionMap::new(
+                values.clone(),
+                ExtensionLimits {
+                    maximum_total_bytes: old_partial_count,
+                    ..ExtensionLimits::default()
+                }
+            ),
+            Err(ExtensionError::TotalTooLarge { actual, maximum })
+                if actual == encoded_len && maximum == old_partial_count
+        ));
+        assert!(
+            ExtensionMap::new(
+                values,
+                ExtensionLimits {
+                    maximum_total_bytes: encoded_len,
+                    ..ExtensionLimits::default()
+                }
+            )
+            .is_ok()
+        );
     }
 }

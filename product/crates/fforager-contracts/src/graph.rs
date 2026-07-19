@@ -256,6 +256,10 @@ pub enum GraphError {
     RedirectCycle {
         node: NodeId,
     },
+    InvalidRedirectSource {
+        edge: EdgeId,
+        node: NodeId,
+    },
     RedirectBudgetExceeded {
         node: NodeId,
         maximum: usize,
@@ -476,24 +480,19 @@ fn validate_node(
             });
         }
     }
-    check_limit(
-        "representations_per_node",
+    let identity_count = [
+        usize::from(node.identities.item.is_some()),
         node.identities.representations.len(),
-        limits.maximum_identity_values_per_node,
-    )?;
-    check_limit(
-        "tracks_per_node",
         node.identities.tracks.len(),
-        limits.maximum_identity_values_per_node,
-    )?;
-    check_limit(
-        "assets_per_node",
         node.identities.assets.len(),
-        limits.maximum_identity_values_per_node,
-    )?;
-    check_limit(
-        "derived_outputs_per_node",
         node.identities.derived_outputs.len(),
+    ]
+    .into_iter()
+    .try_fold(0usize, usize::checked_add)
+    .unwrap_or(usize::MAX);
+    check_limit(
+        "identities_per_node",
+        identity_count,
         limits.maximum_identity_values_per_node,
     )?;
     for (kind, value) in node
@@ -560,6 +559,18 @@ fn validate_redirects(
         .iter()
         .filter(|edge| edge.kind == EdgeKind::TransparentlyOverlays)
     {
+        let Some(source) = nodes.get(&edge.from) else {
+            return Err(GraphError::DanglingEdge {
+                edge: edge.id.clone(),
+                node: edge.from.clone(),
+            });
+        };
+        if source.kind != NodeKind::Redirect {
+            return Err(GraphError::InvalidRedirectSource {
+                edge: edge.id.clone(),
+                node: edge.from.clone(),
+            });
+        }
         redirect_targets
             .entry(&edge.from)
             .or_default()
@@ -1008,6 +1019,46 @@ mod tests {
     }
 
     #[test]
+    fn overlay_edges_require_redirect_sources_and_cycles_always_fail() -> Result<(), crate::IdError>
+    {
+        let first = node("overlay_first")?;
+        let second = node("overlay_second")?;
+        let first_edge = SourceEdge {
+            id: EdgeId::new("edge_overlay_first")?,
+            from: first.id.clone(),
+            to: second.id.clone(),
+            kind: EdgeKind::TransparentlyOverlays,
+        };
+        let second_edge = SourceEdge {
+            id: EdgeId::new("edge_overlay_second")?,
+            from: second.id.clone(),
+            to: first.id.clone(),
+            kind: EdgeKind::TransparentlyOverlays,
+        };
+        let mut graph = SourceGraph {
+            schema: SchemaVersion { major: 1, minor: 0 },
+            roots: vec![first.id.clone()],
+            nodes: vec![first.clone(), second.clone()],
+            edges: vec![first_edge.clone(), second_edge],
+            continuations: vec![],
+        };
+        assert_eq!(
+            graph.validate(GraphLimits::default()),
+            Err(GraphError::InvalidRedirectSource {
+                edge: first_edge.id,
+                node: first.id.clone(),
+            })
+        );
+        graph.nodes[0].kind = NodeKind::Redirect;
+        graph.nodes[1].kind = NodeKind::Redirect;
+        assert_eq!(
+            graph.validate(GraphLimits::default()),
+            Err(GraphError::RedirectCycle { node: first.id })
+        );
+        Ok(())
+    }
+
+    #[test]
     fn round_trip_preserves_tri_state() -> Result<(), crate::IdError> {
         let source = node("one")?;
         let encoded = serde_json::to_vec(&source);
@@ -1122,10 +1173,9 @@ mod tests {
     fn graph_bounds_identity_collections_without_clone_amplification() -> Result<(), crate::IdError>
     {
         let mut source = node("identities")?;
-        source.identities.representations = vec![
-            RepresentationId::new("repr_one")?,
-            RepresentationId::new("repr_two")?,
-        ];
+        source.identities.representations = vec![RepresentationId::new("repr_one")?];
+        source.identities.tracks = vec![TrackId::new("track_one")?];
+        source.identities.assets = vec![AssetId::new("asset_one")?];
         let graph = SourceGraph {
             schema: SchemaVersion { major: 1, minor: 0 },
             roots: vec![source.id.clone()],
@@ -1135,13 +1185,13 @@ mod tests {
         };
         assert_eq!(
             graph.validate(GraphLimits {
-                maximum_identity_values_per_node: 1,
+                maximum_identity_values_per_node: 2,
                 ..GraphLimits::default()
             }),
             Err(GraphError::LimitExceeded {
-                field: "representations_per_node",
-                actual: 2,
-                maximum: 1,
+                field: "identities_per_node",
+                actual: 3,
+                maximum: 2,
             })
         );
         Ok(())

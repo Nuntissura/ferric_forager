@@ -39,7 +39,7 @@ cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compati
 
 Generation verifies the immutable release identity, executable SHA-256, source Git commit, and selected source-file hashes before writing `build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json` atomically. The generated profile contains stable option, alias, preset, interaction, extractor, description, and URL-class rows. Line endings, CP-1252 executable output, identical extractor duplicates, and upstream-randomized search examples have explicit deterministic normalization rules.
 
-Validation reads the committed oracle manifest, generated profile, seven-plane corpus, opt-in live manifest, and every negative fixture. It checks stable IDs, counts, hashes, coverage, shard assignments, normalization versions, offline/network separation, secret placeholders, and pinned provenance. A successful run emits a unique `ff.compatibility-report@1` JSON report under `build/reports/`.
+Validation reads the committed oracle manifest, generated profile, seven-plane corpus, opt-in live manifest, and the exact required negative-fixture inventory. It binds each versioned manifest/profile to its canonical content digest, checks stable IDs, counts, coverage, shard assignments, normalization versions, offline/network separation, allowlisted secret placeholders, and pinned provenance. Case fixture digests normalize CRLF/CR to LF before hashing so clean Git checkouts remain portable. JSON inputs are bounded to 16 MiB. A successful run emits a unique `ff.compatibility-report@1` JSON report under `build/reports/`.
 
 Offline replay never opens the network. Run all cases or a zero-based deterministic shard; a valid shard may contain zero cases:
 
@@ -61,7 +61,7 @@ A candidate results JSON file uses `ff.compatibility-candidate-results@1`, names
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-diff --candidate build/fixtures/compatibility/candidate-empty-v1.json
 ```
 
-Every corpus case receives a row. Equal digests are `equivalent`; omitted cases are `missing_feature`; unequal observations must be `ferric_defect`, `accepted_baseline_correction`, `nondeterministic_response`, or `accepted_divergence`. An accepted divergence requires a stable decision ID. Report completeness proves that nothing was silently omitted; it does not prove Ferric parity.
+Every corpus case receives a row. The command first validates the canonical profile, corpus, and case fixtures, and the report records the candidate path and SHA-256. Equal digests are `equivalent`; omitted cases are `missing_feature`; unequal observations must be `ferric_defect`, `accepted_baseline_correction`, `nondeterministic_response`, or `accepted_divergence`. Accepted corrections/divergences require an explicitly authorized stable decision ID, and deterministic offline cases cannot be relabeled nondeterministic. Report completeness proves that nothing was silently omitted; it does not prove Ferric parity.
 
 Compare two generated inventories by stable ID:
 
@@ -69,13 +69,15 @@ Compare two generated inventories by stable ID:
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-inventory-diff --before build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json --after build/fixtures/compatibility/yt-dlp-2026.07.04/profile.json
 ```
 
-Live canaries are a mechanically separate, credential-free, nondeterministic observation suite. The command refuses to run unless the operator supplies both the pinned executable and the explicit opt-in flag:
+Inventory-diff reports use `ff.compatibility-inventory-diff@2` and cover option, preset, interaction, extractor, and extractor-description additions, removals, and changes. Reusing one profile ID for changed content fails closed.
+
+Live canaries are a mechanically separate, credential-free, nondeterministic observation suite with exact public destination allowlists. The command refuses to run unless the operator supplies both the pinned executable and the explicit opt-in flag:
 
 ```powershell
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-live-canaries --enable-live --oracle-exe $oracleExe
 ```
 
-The live report records `OBSERVED` success or failure for every configured URL and always states `deterministic_proof=false`. Live results never replace offline acceptance evidence and anti-bot, site drift, rate limits, or network failures are observations rather than deterministic regressions.
+The live report status and every canary row are `OBSERVED`, and the command always states `deterministic_proof=false`. Live results never replace offline acceptance evidence and anti-bot, site drift, rate limits, or network failures are observations rather than deterministic regressions.
 
 Recovery follows the stable diagnostic:
 
@@ -83,6 +85,7 @@ Recovery follows the stable diagnostic:
 - `FF-COMP-E-PARSE` or deterministic regeneration mismatch: preserve both outputs, inspect the pinned source and normalization rule, then fix and rerun the generator twice.
 - `FF-COMP-E-UNSANITIZED-SECRET`: replace the named secret or machine-local value with an allowlisted `{{PLACEHOLDER}}`, recompute the fixture hash, and rerun validation.
 - `FF-COMP-E-COVERAGE`, `FF-COMP-E-SHARD`, or `FF-COMP-E-NORMALIZATION`: repair the canonical manifest/case mapping rather than bypassing the validator.
+- Profile/corpus/live integrity or unsafe canonical-path errors: restore the versioned committed artifact or use a repository-relative file physically contained under `build/fixtures/compatibility/` or `build/target/`; do not reuse an ID for changed content or route through a link outside those roots.
 - Candidate identity, digest, classification, or decision errors: repair the candidate file; do not remove missing rows from the emitted report.
 - Report-write failure: verify `build/reports/` is writable. Atomic writes do not accept a partial final JSON report.
 

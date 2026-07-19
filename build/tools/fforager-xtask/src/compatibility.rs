@@ -3,7 +3,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -22,6 +22,42 @@ const ORACLE_VERSION: &str = "2026.07.04";
 const ORACLE_TAG_COMMIT: &str = "fdec00e0bf530dc6c3cc7b1dd780e95d9ae460e9";
 const ORACLE_RELEASE_HEAD: &str = "997fa140840a08df3938b40da470c78049fef1f6";
 const ORACLE_EXE_SHA256: &str = "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8";
+const ORACLE_MANIFEST_SHA256: &str =
+    "a11c4914b1094e9329d1aa9543671f74b3495cdee69d73341010c59ee07dd2c1";
+const PROFILE_SHA256: &str = "f64d65c1c24bece65a641d4e305710a9760de3367f7f7f83bbac5f67fb79f55c";
+const CORPUS_MANIFEST_SHA256: &str =
+    "1016c7836f3b0d6660105abf13a639376f457f51121f709c98a27b0b161f6c78";
+const LIVE_MANIFEST_SHA256: &str =
+    "3808834a75c3d6f368618e740e2dbcac6fdab610b42396a39c7a8863b4522321";
+const MAX_JSON_BYTES: u64 = 16 * 1024 * 1024;
+const ACCEPTED_DIVERGENCE_DECISIONS: &[&str] = &[];
+const SANITIZED_PLACEHOLDERS: &[&str] = &[
+    "AUTHORIZATION",
+    "COOKIE",
+    "QUERY_TOKEN",
+    "RANDOMIZED_SEARCH_EXAMPLE",
+    "RANDOM_SEED",
+    "SET_COOKIE",
+    "TIMESTAMP",
+];
+const REQUIRED_NEGATIVE_FIXTURES: &[&str] = &[
+    "accepted-divergence-without-decision",
+    "deterministic-network",
+    "duplicate-shard-case",
+    "duplicate-stable-id",
+    "invalid-candidate-digest",
+    "missing-inventory-row",
+    "nondeterministic-offline-classification",
+    "self-consistent-corpus-change",
+    "self-consistent-inventory-removal",
+    "unauthorized-divergence-decision",
+    "unknown-normalization",
+    "unpinned-oracle",
+    "unpinned-oracle-artifact",
+    "unsafe-oracle-command",
+    "unsanitized-secret",
+    "unstable-id",
+];
 const TOOL_TIMEOUT: Duration = Duration::from_mins(1);
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -304,17 +340,32 @@ struct InventoryDiffReport {
     added_options: Vec<String>,
     removed_options: Vec<String>,
     changed_options: Vec<String>,
+    added_presets: Vec<String>,
+    removed_presets: Vec<String>,
+    changed_presets: Vec<String>,
+    added_interactions: Vec<String>,
+    removed_interactions: Vec<String>,
+    changed_interactions: Vec<String>,
     added_extractors: Vec<String>,
     removed_extractors: Vec<String>,
     changed_extractors: Vec<String>,
+    added_extractor_descriptions: Vec<String>,
+    removed_extractor_descriptions: Vec<String>,
+    changed_extractor_descriptions: Vec<String>,
     proof_limitations: Vec<String>,
+}
+
+struct InventoryDelta {
+    added: Vec<String>,
+    removed: Vec<String>,
+    changed: Vec<String>,
 }
 
 pub(super) fn run_generate(root: &Path, args: &[String]) -> Result<(), String> {
     let oracle_exe = required_arg(args, "--oracle-exe")?;
     let source_root = required_arg(args, "--source-root")?;
     let output = optional_arg(args, "--output").unwrap_or(PROFILE_PATH);
-    require_safe_output(output)?;
+    let output_path = require_safe_output(root, output)?;
     let manifest: OracleManifest = read_json(&root.join(ORACLE_PATH))?;
     validate_oracle_manifest(&manifest)?;
     let profile = generate_profile(
@@ -324,7 +375,7 @@ pub(super) fn run_generate(root: &Path, args: &[String]) -> Result<(), String> {
         &manifest,
     )?;
     validate_profile(&profile, &manifest)?;
-    atomic_json(&root.join(output), &profile)?;
+    atomic_json(&output_path, &profile)?;
     println!(
         "PASS FF-GATE-COMPAT-GENERATE-001; profile={output}; options={}; extractors={}",
         profile.counts.options, profile.counts.unique_extractors
@@ -361,6 +412,8 @@ pub(super) fn run_validate(root: &Path, args: &[String]) -> Result<(), String> {
     let report = base_report(
         root,
         "compatibility-validate",
+        "PASS",
+        BTreeMap::new(),
         checks,
         negative_fixtures,
         Vec::new(),
@@ -377,8 +430,11 @@ pub(super) fn run_validate(root: &Path, args: &[String]) -> Result<(), String> {
 }
 
 pub(super) fn run_replay(root: &Path, args: &[String], rest: &[String]) -> Result<(), String> {
+    let manifest: OracleManifest = read_json(&root.join(ORACLE_PATH))?;
     let profile: CompatibilityProfile = read_json(&root.join(PROFILE_PATH))?;
     let corpus: CorpusManifest = read_json(&root.join(CORPUS_PATH))?;
+    validate_oracle_manifest(&manifest)?;
+    validate_profile(&profile, &manifest)?;
     let shard = optional_arg(rest, "--shard").map(parse_shard).transpose()?;
     if shard.is_some_and(|(_, total)| total != corpus.shard_count) {
         return Err(format!(
@@ -393,6 +449,15 @@ pub(super) fn run_replay(root: &Path, args: &[String], rest: &[String]) -> Resul
         .iter()
         .filter(|case| shard.is_none_or(|(index, _)| case.shard == index))
         .collect::<Vec<_>>();
+    for case in &selected {
+        checks.push(pass(
+            &format!("replay-{}", case.id),
+            &format!(
+                "plane={} expected_outcome={} fixture_sha256={}",
+                case.plane, case.expected_outcome, case.fixture_sha256
+            ),
+        ));
+    }
     checks.push(pass(
         "offline-replay",
         &format!(
@@ -401,7 +466,15 @@ pub(super) fn run_replay(root: &Path, args: &[String], rest: &[String]) -> Resul
             shard
         ),
     ));
-    let report = base_report(root, "compatibility-replay", checks, Vec::new(), Vec::new())?;
+    let report = base_report(
+        root,
+        "compatibility-replay",
+        "PASS",
+        BTreeMap::new(),
+        checks,
+        Vec::new(),
+        Vec::new(),
+    )?;
     let path = write_compatibility_report(root, "compatibility-replay", &report)?;
     println!(
         "PASS FF-GATE-COMPAT-REPLAY-001; report={}; cases={}",
@@ -414,23 +487,39 @@ pub(super) fn run_replay(root: &Path, args: &[String], rest: &[String]) -> Resul
 
 pub(super) fn run_diff(root: &Path, args: &[String], rest: &[String]) -> Result<(), String> {
     let candidate_path = required_arg(rest, "--candidate")?;
-    require_safe_input(candidate_path)?;
+    let candidate_file = require_safe_input(root, candidate_path)?;
+    let manifest: OracleManifest = read_json(&root.join(ORACLE_PATH))?;
     let profile: CompatibilityProfile = read_json(&root.join(PROFILE_PATH))?;
     let corpus: CorpusManifest = read_json(&root.join(CORPUS_PATH))?;
-    let candidate: CandidateResults = read_json(&root.join(candidate_path))?;
+    validate_oracle_manifest(&manifest)?;
+    validate_profile(&profile, &manifest)?;
+    let mut canonical_checks = Vec::new();
+    validate_corpus(root, &corpus, &profile, &mut canonical_checks)?;
+    let candidate: CandidateResults = read_json(&candidate_file)?;
     let rows = differential_rows(&corpus, &profile, &candidate)?;
     let missing = rows
         .iter()
         .filter(|row| row.classification == "missing_feature")
         .count();
-    let checks = vec![pass(
+    canonical_checks.push(pass(
         "differential-completeness",
         &format!(
             "every one of {} corpus cases has an explicit row; missing_features={missing}",
             rows.len()
         ),
-    )];
-    let report = base_report(root, "compatibility-diff", checks, Vec::new(), rows)?;
+    ));
+    let report = base_report(
+        root,
+        "compatibility-diff",
+        "PASS",
+        BTreeMap::from([(
+            format!("candidate:{candidate_path}"),
+            sha256_file(&candidate_file)?,
+        )]),
+        canonical_checks,
+        Vec::new(),
+        rows,
+    )?;
     let path = write_compatibility_report(root, "compatibility-diff", &report)?;
     println!(
         "PASS FF-GATE-COMPAT-DIFF-001; report={}; this proves report completeness, not Ferric parity",
@@ -447,20 +536,18 @@ pub(super) fn run_inventory_diff(
 ) -> Result<(), String> {
     let before_path = required_arg(rest, "--before")?;
     let after_path = required_arg(rest, "--after")?;
-    require_safe_input(before_path)?;
-    require_safe_input(after_path)?;
-    let before: CompatibilityProfile = read_json(&root.join(before_path))?;
-    let after: CompatibilityProfile = read_json(&root.join(after_path))?;
+    let before_file = require_safe_input(root, before_path)?;
+    let after_file = require_safe_input(root, after_path)?;
+    let before: CompatibilityProfile = read_json(&before_file)?;
+    let after: CompatibilityProfile = read_json(&after_file)?;
+    let manifest: OracleManifest = read_json(&root.join(ORACLE_PATH))?;
+    validate_oracle_manifest(&manifest)?;
+    validate_inventory_profile(&before, &manifest)?;
+    validate_inventory_profile(&after, &manifest)?;
     let state = source_state(root)?;
     let inputs = BTreeMap::from([
-        (
-            format!("before:{before_path}"),
-            sha256_file(&root.join(before_path))?,
-        ),
-        (
-            format!("after:{after_path}"),
-            sha256_file(&root.join(after_path))?,
-        ),
+        (format!("before:{before_path}"), sha256_file(&before_file)?),
+        (format!("after:{after_path}"), sha256_file(&after_file)?),
     ]);
     let report = inventory_diff(
         &before,
@@ -471,7 +558,7 @@ pub(super) fn run_inventory_diff(
             dirty_paths: state.dirty_paths,
         },
         inputs,
-    );
+    )?;
     let path = unique_report_path(root, "compatibility-inventory-diff")?;
     atomic_json(&path, &report)?;
     println!(
@@ -548,6 +635,11 @@ pub(super) fn run_live_canaries(
     let report = base_report(
         root,
         "compatibility-live-canaries",
+        "OBSERVED",
+        BTreeMap::from([(
+            "live-oracle-executable:yt-dlp-windows-x64".to_owned(),
+            ORACLE_EXE_SHA256.to_owned(),
+        )]),
         checks,
         Vec::new(),
         Vec::new(),
@@ -1063,6 +1155,11 @@ fn validate_oracle_manifest(manifest: &OracleManifest) -> Result<(), String> {
     {
         return Err("FF-COMP-E-UNPINNED-ORACLE: source identity mismatch".to_owned());
     }
+    require_canonical_json_digest(
+        manifest,
+        ORACLE_MANIFEST_SHA256,
+        "FF-COMP-E-ORACLE-INTEGRITY: pinned oracle manifest content mismatch",
+    )?;
     Ok(())
 }
 
@@ -1070,6 +1167,7 @@ fn validate_profile(
     profile: &CompatibilityProfile,
     manifest: &OracleManifest,
 ) -> Result<(), String> {
+    validate_profile_structure(profile)?;
     if profile.schema_id != "ff.compatibility-profile@1"
         || profile.schema_version != "1.0.0"
         || profile.profile_id != "yt-dlp-2026.07.04-profile-v1"
@@ -1080,6 +1178,35 @@ fn validate_profile(
         || profile.source_identity.release_git_head != manifest.release.release_git_head
     {
         return Err("FF-COMP-E-UNPINNED-ORACLE: profile identity mismatch".to_owned());
+    }
+    if profile.source_identity.executable_sha256 != ORACLE_EXE_SHA256 {
+        return Err("FF-COMP-E-UNPINNED-ORACLE: profile executable mismatch".to_owned());
+    }
+    let expected_input_keys =
+        BTreeSet::from(["extractor-descriptions-lf", "help-lf", "list-extractors-lf"]);
+    if profile
+        .input_digests
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_input_keys
+    {
+        return Err("FF-COMP-E-UNPINNED-ORACLE: profile input digest keys mismatch".to_owned());
+    }
+    for input in &manifest.source_inputs {
+        if profile.source_identity.source_inputs.get(&input.path) != Some(&input.sha256) {
+            return Err(format!(
+                "FF-COMP-E-UNPINNED-ORACLE: profile source digest mismatch for {}",
+                input.path
+            ));
+        }
+    }
+    validate_current_profile_content(profile)
+}
+
+fn validate_profile_structure(profile: &CompatibilityProfile) -> Result<(), String> {
+    if profile.schema_id != "ff.compatibility-profile@1" || profile.schema_version != "1.0.0" {
+        return Err("FF-COMP-E-PROFILE-IDENTITY: unsupported profile schema".to_owned());
     }
     if profile.counts.options != profile.options.len()
         || profile.counts.presets != profile.presets.len()
@@ -1106,17 +1233,44 @@ fn validate_profile(
             .input_digests
             .values()
             .any(|digest| !valid_sha256(digest))
-        || profile.source_identity.source_inputs.len() != manifest.source_inputs.len()
+        || profile.source_identity.source_inputs.is_empty()
+        || profile
+            .source_identity
+            .source_inputs
+            .values()
+            .any(|digest| !valid_sha256(digest))
+        || !valid_sha256(&profile.source_identity.executable_sha256)
     {
         return Err("FF-COMP-E-UNPINNED-ORACLE: profile input digests are incomplete".to_owned());
     }
-    for input in &manifest.source_inputs {
-        if profile.source_identity.source_inputs.get(&input.path) != Some(&input.sha256) {
-            return Err(format!(
-                "FF-COMP-E-UNPINNED-ORACLE: profile source digest mismatch for {}",
-                input.path
-            ));
-        }
+    if profile.options.iter().any(|row| {
+        row.aliases.is_empty()
+            || !row.aliases.contains(&row.canonical)
+            || row.group.trim().is_empty()
+            || row.synopsis.trim().is_empty()
+    }) || profile.extractors.iter().any(|row| {
+        row.key.trim().is_empty() || row.url_class.trim().is_empty() || row.source_occurrences == 0
+    }) {
+        return Err("FF-COMP-E-INVENTORY-CONTENT: incomplete profile row".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_current_profile_content(profile: &CompatibilityProfile) -> Result<(), String> {
+    require_canonical_json_digest(
+        profile,
+        PROFILE_SHA256,
+        "FF-COMP-E-PROFILE-INTEGRITY: pinned profile content mismatch",
+    )
+}
+
+fn validate_inventory_profile(
+    profile: &CompatibilityProfile,
+    manifest: &OracleManifest,
+) -> Result<(), String> {
+    validate_profile_structure(profile)?;
+    if profile.profile_id == "yt-dlp-2026.07.04-profile-v1" {
+        validate_profile(profile, manifest)?;
     }
     Ok(())
 }
@@ -1127,77 +1281,20 @@ fn validate_corpus(
     profile: &CompatibilityProfile,
     checks: &mut Vec<CompatibilityCheck>,
 ) -> Result<(), String> {
-    if corpus.schema_id != "ff.compatibility-corpus@1"
-        || corpus.schema_version != "1.0.0"
-        || corpus.corpus_id != "ff-ytdlp-2026.07.04-corpus-v1"
-        || corpus.profile_id != profile.profile_id
-        || corpus.normalization_versions != [NORMALIZATION_VERSION]
-        || corpus.shard_algorithm != "sha256-stable-id-mod-v1"
-        || corpus.shard_count == 0
-    {
-        return Err("FF-COMP-E-CORPUS-IDENTITY: corpus identity or version mismatch".to_owned());
+    validate_corpus_without_files(corpus)?;
+    if corpus.profile_id != profile.profile_id {
+        return Err("FF-COMP-E-CORPUS-IDENTITY: corpus profile mismatch".to_owned());
     }
-    let expected_planes = BTreeSet::from([
-        "archive",
-        "failure",
-        "filesystem_process_artifact",
-        "migration",
-        "normalized_observation",
-        "sanitized_network_transcript",
-        "source_graph",
-    ]);
-    let declared_planes = corpus
-        .planes
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    if declared_planes != expected_planes {
-        return Err("FF-COMP-E-COVERAGE: corpus plane inventory is incomplete".to_owned());
-    }
-    require_unique_stable_ids(corpus.cases.iter().map(|case| case.id.as_str()))?;
     let mut observed_planes = BTreeSet::new();
     for case in &corpus.cases {
         observed_planes.insert(case.plane.as_str());
-        if !expected_planes.contains(case.plane.as_str()) {
-            return Err(format!("FF-COMP-E-COVERAGE: unknown plane {}", case.plane));
-        }
-        if case.normalization_version != NORMALIZATION_VERSION {
-            return Err(format!(
-                "FF-COMP-E-NORMALIZATION: unknown version {}",
-                case.normalization_version
-            ));
-        }
-        if case.deterministic && case.network_allowed {
-            return Err(format!("FF-COMP-E-DETERMINISTIC-NETWORK: {}", case.id));
-        }
-        if !case.deterministic {
-            return Err(format!(
-                "FF-COMP-E-COVERAGE: mandatory case {} is not deterministic",
-                case.id
-            ));
-        }
-        if case.shard != shard_for(&case.id, corpus.shard_count) {
-            return Err(format!("FF-COMP-E-SHARD: {} has incorrect shard", case.id));
-        }
-        if !case
-            .fixture
-            .starts_with("build/fixtures/compatibility/cases/")
-            || !safe_relative(&case.fixture)
-        {
-            return Err(format!(
-                "FF-COMP-E-FIXTURE-PATH: unsafe fixture path {}",
-                case.fixture
-            ));
-        }
         let fixture_path = root.join(&case.fixture);
-        if sha256_file(&fixture_path)? != case.fixture_sha256 {
+        if sha256_normalized_text_file(&fixture_path)? != case.fixture_sha256 {
             return Err(format!("FF-COMP-E-FIXTURE-DIGEST: {}", case.id));
         }
         let fixture: Value = read_json(&fixture_path)?;
+        validate_case_fixture(case, &fixture)?;
         validate_sanitized_value(&fixture)?;
-    }
-    if observed_planes != expected_planes {
-        return Err("FF-COMP-E-COVERAGE: one or more mandatory planes have no case".to_owned());
     }
     checks.push(pass(
         "corpus-coverage",
@@ -1211,6 +1308,27 @@ fn validate_corpus(
         "corpus-network-isolation",
         "every mandatory case declares deterministic=true and network_allowed=false",
     ));
+    Ok(())
+}
+
+fn validate_case_fixture(case: &CorpusCase, fixture: &Value) -> Result<(), String> {
+    let expected_schema = match case.plane.as_str() {
+        "archive" => "ff.oracle-archive-observation@1",
+        "failure" => "ff.oracle-failure-observation@1",
+        "filesystem_process_artifact" => "ff.oracle-artifact-observation@1",
+        "migration" => "ff.oracle-migration-observation@1",
+        "normalized_observation" | "source_graph" => "ff.oracle-observation@1",
+        "sanitized_network_transcript" => "ff.oracle-network-transcript@1",
+        _ => return Err(format!("FF-COMP-E-COVERAGE: unknown plane {}", case.plane)),
+    };
+    if fixture.get("schema_id").and_then(Value::as_str) != Some(expected_schema)
+        || fixture.get("case_id").and_then(Value::as_str) != Some(case.id.as_str())
+    {
+        return Err(format!(
+            "FF-COMP-E-FIXTURE-SCHEMA: {} does not match its manifest row",
+            case.id
+        ));
+    }
     Ok(())
 }
 
@@ -1241,10 +1359,34 @@ fn validate_live_manifest(
                 .any(|extractor| extractor.url_class == canary.url_class)
             || canary.credential_policy != "operator-supplied-outside-repository-or-none"
             || canary.expected_classification != "nondeterministic_observation"
+            || !live_destination_is_allowlisted(canary)
     }) {
         return Err("FF-COMP-E-LIVE-POLICY: live canary row violates policy".to_owned());
     }
-    Ok(())
+    require_canonical_json_digest(
+        live,
+        LIVE_MANIFEST_SHA256,
+        "FF-COMP-E-LIVE-INTEGRITY: pinned live manifest content mismatch",
+    )
+}
+
+fn live_destination_is_allowlisted(canary: &LiveCanary) -> bool {
+    matches!(
+        (
+            canary.id.as_str(),
+            canary.url_class.as_str(),
+            canary.url.as_str()
+        ),
+        (
+            "live-canary-youtube-test-video-v1",
+            "url-class-youtube",
+            "https://www.youtube.com/watch?v=BaW_jenozKc"
+        ) | (
+            "live-canary-vimeo-public-v1",
+            "url-class-vimeo",
+            "https://vimeo.com/56015672"
+        )
+    )
 }
 
 fn validate_negative_fixtures(
@@ -1296,8 +1438,15 @@ fn validate_negative_fixtures(
         });
     }
     results.sort_by(|left, right| left.fixture_id.cmp(&right.fixture_id));
-    if results.len() < 7 {
-        return Err("FF-COMP-E-NEGATIVE-INVENTORY: expected at least seven mutations".to_owned());
+    let expected_ids = REQUIRED_NEGATIVE_FIXTURES
+        .iter()
+        .map(|id| (*id).to_owned())
+        .collect::<BTreeSet<_>>();
+    if ids != expected_ids {
+        return Err(format!(
+            "FF-COMP-E-NEGATIVE-INVENTORY: expected exact required set of {} mutations",
+            expected_ids.len()
+        ));
     }
     Ok(results)
 }
@@ -1309,13 +1458,45 @@ fn exercise_mutation(
     corpus: &CorpusManifest,
 ) -> Result<(), String> {
     match mutation {
+        "remove_option_row"
+        | "remove_option_row_and_count"
+        | "duplicate_option_id"
+        | "unstable_option_id" => exercise_profile_mutation(mutation, manifest, profile),
+        "unpin_oracle_version" | "unpin_oracle_artifact" | "unsafe_oracle_command" => {
+            exercise_oracle_mutation(mutation, manifest)
+        }
+        "unknown_normalization"
+        | "change_expected_outcome"
+        | "enable_network_for_deterministic_case"
+        | "duplicate_shard_case" => exercise_corpus_mutation(mutation, corpus),
+        "inject_unsanitized_secret" => validate_sanitized_value(&serde_json::json!({
+            "headers": {"Authorization": "Bearer actual-secret"}
+        })),
+        "invalid_candidate_digest"
+        | "accepted_divergence_without_decision"
+        | "accepted_divergence_with_unauthorized_decision"
+        | "nondeterministic_classification_for_offline_case" => {
+            exercise_candidate_mutation(mutation, corpus, profile)
+        }
+        other => Err(format!("FF-COMP-E-UNKNOWN-MUTATION: {other}")),
+    }
+}
+
+fn exercise_profile_mutation(
+    mutation: &str,
+    manifest: &OracleManifest,
+    profile: &CompatibilityProfile,
+) -> Result<(), String> {
+    let mut changed = profile.clone();
+    match mutation {
         "remove_option_row" => {
-            let mut changed = profile.clone();
             changed.options.pop();
-            validate_profile(&changed, manifest)
+        }
+        "remove_option_row_and_count" => {
+            changed.options.pop();
+            changed.counts.options = changed.options.len();
         }
         "duplicate_option_id" => {
-            let mut changed = profile.clone();
             let duplicate = changed
                 .options
                 .first()
@@ -1323,10 +1504,8 @@ fn exercise_mutation(
                 .clone();
             changed.options.push(duplicate);
             changed.counts.options += 1;
-            validate_profile(&changed, manifest)
         }
         "unstable_option_id" => {
-            let mut changed = profile.clone();
             "Option Has Spaces".clone_into(
                 &mut changed
                     .options
@@ -1334,15 +1513,17 @@ fn exercise_mutation(
                     .ok_or("profile has no option")?
                     .id,
             );
-            validate_profile(&changed, manifest)
         }
-        "unpin_oracle_version" => {
-            let mut changed = manifest.clone();
-            "latest".clone_into(&mut changed.release.version);
-            validate_oracle_manifest(&changed)
-        }
+        other => return Err(format!("FF-COMP-E-UNKNOWN-MUTATION: {other}")),
+    }
+    validate_profile(&changed, manifest)
+}
+
+fn exercise_oracle_mutation(mutation: &str, manifest: &OracleManifest) -> Result<(), String> {
+    let mut changed = manifest.clone();
+    match mutation {
+        "unpin_oracle_version" => "latest".clone_into(&mut changed.release.version),
         "unpin_oracle_artifact" => {
-            let mut changed = manifest.clone();
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".clone_into(
                 &mut changed
                     .artifacts
@@ -1351,10 +1532,8 @@ fn exercise_mutation(
                     .ok_or("oracle executable artifact is absent")?
                     .sha256,
             );
-            validate_oracle_manifest(&changed)
         }
         "unsafe_oracle_command" => {
-            let mut changed = manifest.clone();
             "--dump-json".clone_into(
                 changed
                     .generator
@@ -1363,10 +1542,16 @@ fn exercise_mutation(
                     .and_then(|command| command.last_mut())
                     .ok_or("oracle command is absent")?,
             );
-            validate_oracle_manifest(&changed)
         }
+        other => return Err(format!("FF-COMP-E-UNKNOWN-MUTATION: {other}")),
+    }
+    validate_oracle_manifest(&changed)
+}
+
+fn exercise_corpus_mutation(mutation: &str, corpus: &CorpusManifest) -> Result<(), String> {
+    let mut changed = corpus.clone();
+    match mutation {
         "unknown_normalization" => {
-            let mut changed = corpus.clone();
             "unknown".clone_into(
                 &mut changed
                     .cases
@@ -1374,36 +1559,53 @@ fn exercise_mutation(
                     .ok_or("corpus has no case")?
                     .normalization_version,
             );
-            validate_corpus_without_files(&changed)
+        }
+        "change_expected_outcome" => {
+            "silently-redefined".clone_into(
+                &mut changed
+                    .cases
+                    .first_mut()
+                    .ok_or("corpus has no case")?
+                    .expected_outcome,
+            );
         }
         "enable_network_for_deterministic_case" => {
-            let mut changed = corpus.clone();
             changed
                 .cases
                 .first_mut()
                 .ok_or("corpus has no case")?
                 .network_allowed = true;
-            validate_corpus_without_files(&changed)
         }
-        "inject_unsanitized_secret" => validate_sanitized_value(&serde_json::json!({
-            "headers": {"Authorization": "Bearer actual-secret"}
-        })),
         "duplicate_shard_case" => {
-            let mut changed = corpus.clone();
             let duplicate = changed.cases.first().ok_or("corpus has no case")?.clone();
             changed.cases.push(duplicate);
-            require_unique_stable_ids(changed.cases.iter().map(|case| case.id.as_str()))
+            return require_unique_stable_ids(changed.cases.iter().map(|case| case.id.as_str()));
         }
-        "invalid_candidate_digest" => {
-            let candidate = candidate_with_difference(corpus, None, Some("not-a-digest"));
-            differential_rows(corpus, profile, &candidate).map(|_| ())
-        }
-        "accepted_divergence_without_decision" => {
-            let candidate = candidate_with_difference(corpus, Some("accepted_divergence"), None);
-            differential_rows(corpus, profile, &candidate).map(|_| ())
-        }
-        other => Err(format!("FF-COMP-E-UNKNOWN-MUTATION: {other}")),
+        other => return Err(format!("FF-COMP-E-UNKNOWN-MUTATION: {other}")),
     }
+    validate_corpus_without_files(&changed)
+}
+
+fn exercise_candidate_mutation(
+    mutation: &str,
+    corpus: &CorpusManifest,
+    profile: &CompatibilityProfile,
+) -> Result<(), String> {
+    let mut candidate = match mutation {
+        "invalid_candidate_digest" => candidate_with_difference(corpus, None, Some("not-a-digest")),
+        "accepted_divergence_without_decision"
+        | "accepted_divergence_with_unauthorized_decision" => {
+            candidate_with_difference(corpus, Some("accepted_divergence"), None)
+        }
+        "nondeterministic_classification_for_offline_case" => {
+            candidate_with_difference(corpus, Some("nondeterministic_response"), None)
+        }
+        other => return Err(format!("FF-COMP-E-UNKNOWN-MUTATION: {other}")),
+    };
+    if mutation == "accepted_divergence_with_unauthorized_decision" {
+        candidate.observations[0].decision_id = Some("invented-decision".to_owned());
+    }
+    differential_rows(corpus, profile, &candidate).map(|_| ())
 }
 
 fn candidate_with_difference(
@@ -1428,8 +1630,40 @@ fn candidate_with_difference(
 }
 
 fn validate_corpus_without_files(corpus: &CorpusManifest) -> Result<(), String> {
+    if corpus.schema_id != "ff.compatibility-corpus@1"
+        || corpus.schema_version != "1.0.0"
+        || corpus.corpus_id != "ff-ytdlp-2026.07.04-corpus-v1"
+        || corpus.profile_id != "yt-dlp-2026.07.04-profile-v1"
+        || corpus.normalization_versions != [NORMALIZATION_VERSION]
+        || corpus.shard_algorithm != "sha256-stable-id-mod-v1"
+        || corpus.shard_count == 0
+    {
+        return Err("FF-COMP-E-CORPUS-IDENTITY: corpus identity or version mismatch".to_owned());
+    }
+    let expected_planes = BTreeSet::from([
+        "archive",
+        "failure",
+        "filesystem_process_artifact",
+        "migration",
+        "normalized_observation",
+        "sanitized_network_transcript",
+        "source_graph",
+    ]);
+    let declared_planes = corpus
+        .planes
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if declared_planes != expected_planes || corpus.planes.len() != expected_planes.len() {
+        return Err("FF-COMP-E-COVERAGE: corpus plane inventory is incomplete".to_owned());
+    }
     require_unique_stable_ids(corpus.cases.iter().map(|case| case.id.as_str()))?;
+    let mut observed_planes = BTreeSet::new();
     for case in &corpus.cases {
+        observed_planes.insert(case.plane.as_str());
+        if !expected_planes.contains(case.plane.as_str()) {
+            return Err(format!("FF-COMP-E-COVERAGE: unknown plane {}", case.plane));
+        }
         if case.normalization_version != NORMALIZATION_VERSION {
             return Err("FF-COMP-E-NORMALIZATION: unknown normalization version".to_owned());
         }
@@ -1438,25 +1672,42 @@ fn validate_corpus_without_files(corpus: &CorpusManifest) -> Result<(), String> 
                 "FF-COMP-E-DETERMINISTIC-NETWORK: deterministic case permits network".to_owned(),
             );
         }
+        if !case.deterministic || case.expected_outcome.trim().is_empty() {
+            return Err(format!(
+                "FF-COMP-E-COVERAGE: mandatory case {} is incomplete",
+                case.id
+            ));
+        }
+        if case.shard != shard_for(&case.id, corpus.shard_count) {
+            return Err(format!("FF-COMP-E-SHARD: {} has incorrect shard", case.id));
+        }
+        if !case
+            .fixture
+            .starts_with("build/fixtures/compatibility/cases/")
+            || !safe_relative(&case.fixture)
+            || !valid_sha256(&case.fixture_sha256)
+        {
+            return Err(format!(
+                "FF-COMP-E-FIXTURE-PATH: unsafe fixture row {}",
+                case.id
+            ));
+        }
     }
-    Ok(())
+    if observed_planes != expected_planes {
+        return Err("FF-COMP-E-COVERAGE: one or more mandatory planes have no case".to_owned());
+    }
+    require_canonical_json_digest(
+        corpus,
+        CORPUS_MANIFEST_SHA256,
+        "FF-COMP-E-CORPUS-INTEGRITY: pinned corpus content mismatch",
+    )
 }
 
 fn validate_sanitized_value(value: &Value) -> Result<(), String> {
     match value {
         Value::Object(object) => {
             for (key, value) in object {
-                let sensitive = matches!(
-                    key.to_ascii_lowercase().as_str(),
-                    "authorization"
-                        | "proxy-authorization"
-                        | "cookie"
-                        | "set-cookie"
-                        | "api_key"
-                        | "token"
-                        | "password"
-                );
-                if sensitive
+                if sensitive_key(key)
                     && value
                         .as_str()
                         .is_none_or(|text| !is_sanitized_placeholder(text))
@@ -1474,10 +1725,20 @@ fn validate_sanitized_value(value: &Value) -> Result<(), String> {
         Value::String(text) => {
             let lower = text.to_ascii_lowercase();
             if lower.contains("c:\\users\\")
+                || lower.contains("c:/users/")
                 || lower.starts_with("/home/")
+                || lower.starts_with("/users/")
+                || lower.starts_with("\\\\")
+                || lower.starts_with("//")
                 || contains_unsanitized_assignment(text, "bearer ")
                 || contains_unsanitized_assignment(text, "api_key=")
+                || contains_unsanitized_assignment(text, "api-key=")
                 || contains_unsanitized_assignment(text, "token=")
+                || contains_unsanitized_assignment(text, "access_token=")
+                || contains_unsanitized_assignment(text, "password=")
+                || contains_unsanitized_assignment(text, "client_secret=")
+                || contains_unsanitized_assignment(text, "secret=")
+                || contains_url_userinfo(text)
             {
                 return Err(
                     "FF-COMP-E-UNSANITIZED-SECRET: sensitive or machine-local string".to_owned(),
@@ -1487,6 +1748,36 @@ fn validate_sanitized_value(value: &Value) -> Result<(), String> {
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
     Ok(())
+}
+
+fn sensitive_key(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase().replace('-', "_");
+    matches!(
+        normalized.as_str(),
+        "authorization"
+            | "proxy_authorization"
+            | "cookie"
+            | "set_cookie"
+            | "api_key"
+            | "x_api_key"
+            | "access_token"
+            | "refresh_token"
+            | "id_token"
+            | "token"
+            | "password"
+            | "client_secret"
+            | "secret"
+            | "session"
+    )
+}
+
+fn contains_url_userinfo(text: &str) -> bool {
+    let Some(scheme) = text.find("://") else {
+        return false;
+    };
+    let authority = &text[scheme + 3..];
+    let authority = authority.split(['/', '?', '#']).next().unwrap_or_default();
+    authority.contains('@')
 }
 
 fn contains_unsanitized_assignment(text: &str, assignment: &str) -> bool {
@@ -1517,10 +1808,7 @@ fn is_sanitized_placeholder(value: &str) -> bool {
     else {
         return false;
     };
-    !inner.is_empty()
-        && inner.chars().all(|character| {
-            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
-        })
+    SANITIZED_PLACEHOLDERS.contains(&inner)
 }
 
 fn differential_rows(
@@ -1528,6 +1816,63 @@ fn differential_rows(
     profile: &CompatibilityProfile,
     candidate: &CandidateResults,
 ) -> Result<Vec<DifferentialRow>, String> {
+    validate_profile_structure(profile)?;
+    validate_current_profile_content(profile)?;
+    validate_corpus_without_files(corpus)?;
+    validate_candidate_input(corpus, profile, candidate)?;
+    let observed = candidate
+        .observations
+        .iter()
+        .map(|row| (row.case_id.as_str(), row))
+        .collect::<BTreeMap<_, _>>();
+    let mut rows = Vec::new();
+    for case in &corpus.cases {
+        let Some(candidate_row) = observed.get(case.id.as_str()) else {
+            rows.push(DifferentialRow {
+                case_id: case.id.clone(),
+                status: "DIFFERENT",
+                classification: "missing_feature".to_owned(),
+                decision_id: None,
+                expected_digest: case.fixture_sha256.clone(),
+                observed_digest: None,
+            });
+            continue;
+        };
+        if candidate_row.observed_digest == case.fixture_sha256 {
+            if candidate_row.classification.is_some() || candidate_row.decision_id.is_some() {
+                return Err(
+                    "FF-COMP-E-CLASSIFICATION: equivalent row carries difference metadata"
+                        .to_owned(),
+                );
+            }
+            rows.push(DifferentialRow {
+                case_id: case.id.clone(),
+                status: "EQUIVALENT",
+                classification: "equivalent".to_owned(),
+                decision_id: None,
+                expected_digest: case.fixture_sha256.clone(),
+                observed_digest: Some(candidate_row.observed_digest.clone()),
+            });
+            continue;
+        }
+        let classification = difference_classification(case, candidate_row)?;
+        rows.push(DifferentialRow {
+            case_id: case.id.clone(),
+            status: "DIFFERENT",
+            classification: classification.to_owned(),
+            decision_id: candidate_row.decision_id.clone(),
+            expected_digest: case.fixture_sha256.clone(),
+            observed_digest: Some(candidate_row.observed_digest.clone()),
+        });
+    }
+    Ok(rows)
+}
+
+fn validate_candidate_input(
+    corpus: &CorpusManifest,
+    profile: &CompatibilityProfile,
+    candidate: &CandidateResults,
+) -> Result<(), String> {
     if candidate.schema_id != "ff.compatibility-candidate-results@1"
         || candidate.schema_version != "1.0.0"
         || candidate.corpus_id != corpus.corpus_id
@@ -1560,71 +1905,61 @@ fn differential_rows(
     {
         return Err("FF-COMP-E-CANDIDATE-DIGEST: candidate digest is not SHA-256".to_owned());
     }
-    let observed = candidate
-        .observations
-        .iter()
-        .map(|row| (row.case_id.as_str(), row))
-        .collect::<BTreeMap<_, _>>();
-    let allowed = BTreeSet::from([
-        "accepted_baseline_correction",
-        "accepted_divergence",
-        "ferric_defect",
-        "nondeterministic_response",
-    ]);
-    let mut rows = Vec::new();
-    for case in &corpus.cases {
-        let Some(candidate_row) = observed.get(case.id.as_str()) else {
-            rows.push(DifferentialRow {
-                case_id: case.id.clone(),
-                status: "DIFFERENT",
-                classification: "missing_feature".to_owned(),
-                decision_id: None,
-                expected_digest: case.fixture_sha256.clone(),
-                observed_digest: None,
-            });
-            continue;
+    Ok(())
+}
+
+fn difference_classification<'a>(
+    case: &CorpusCase,
+    candidate: &'a CandidateObservation,
+) -> Result<&'a str, String> {
+    let classification = candidate
+        .classification
+        .as_deref()
+        .unwrap_or("ferric_defect");
+    if !matches!(
+        classification,
+        "accepted_baseline_correction"
+            | "accepted_divergence"
+            | "ferric_defect"
+            | "nondeterministic_response"
+    ) {
+        return Err(format!(
+            "FF-COMP-E-CLASSIFICATION: unknown {classification}"
+        ));
+    }
+    if classification == "nondeterministic_response" && case.deterministic {
+        return Err(
+            "FF-COMP-E-CLASSIFICATION: deterministic case cannot be nondeterministic_response"
+                .to_owned(),
+        );
+    }
+    if matches!(
+        classification,
+        "accepted_divergence" | "accepted_baseline_correction"
+    ) {
+        let Some(decision_id) = candidate.decision_id.as_deref() else {
+            return Err(
+                "FF-COMP-E-DIVERGENCE-DECISION: accepted divergence lacks stable decision ID"
+                    .to_owned(),
+            );
         };
-        if candidate_row.observed_digest == case.fixture_sha256 {
-            rows.push(DifferentialRow {
-                case_id: case.id.clone(),
-                status: "EQUIVALENT",
-                classification: "equivalent".to_owned(),
-                decision_id: None,
-                expected_digest: case.fixture_sha256.clone(),
-                observed_digest: Some(candidate_row.observed_digest.clone()),
-            });
-            continue;
-        }
-        let classification = candidate_row
-            .classification
-            .as_deref()
-            .unwrap_or("ferric_defect");
-        if !allowed.contains(classification) {
-            return Err(format!(
-                "FF-COMP-E-CLASSIFICATION: unknown {classification}"
-            ));
-        }
-        if classification == "accepted_divergence"
-            && candidate_row
-                .decision_id
-                .as_deref()
-                .is_none_or(|id| !stable_id(id))
-        {
+        if !stable_id(decision_id) {
             return Err(
                 "FF-COMP-E-DIVERGENCE-DECISION: accepted divergence lacks stable decision ID"
                     .to_owned(),
             );
         }
-        rows.push(DifferentialRow {
-            case_id: case.id.clone(),
-            status: "DIFFERENT",
-            classification: classification.to_owned(),
-            decision_id: candidate_row.decision_id.clone(),
-            expected_digest: case.fixture_sha256.clone(),
-            observed_digest: Some(candidate_row.observed_digest.clone()),
-        });
+        if !ACCEPTED_DIVERGENCE_DECISIONS.contains(&decision_id) {
+            return Err(format!(
+                "FF-COMP-E-DIVERGENCE-DECISION: decision ID is not authorized: {decision_id}"
+            ));
+        }
+    } else if candidate.decision_id.is_some() {
+        return Err(
+            "FF-COMP-E-DIVERGENCE-DECISION: non-accepted row carries a decision ID".to_owned(),
+        );
     }
-    Ok(rows)
+    Ok(classification)
 }
 
 fn inventory_diff(
@@ -1632,77 +1967,87 @@ fn inventory_diff(
     after: &CompatibilityProfile,
     source: CompatibilitySource,
     inputs: BTreeMap<String, String>,
-) -> InventoryDiffReport {
-    let before_options = before
-        .options
-        .iter()
-        .map(|row| (&row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    let after_options = after
-        .options
-        .iter()
-        .map(|row| (&row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    let before_extractors = before
-        .extractors
-        .iter()
-        .map(|row| (&row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    let after_extractors = after
-        .extractors
-        .iter()
-        .map(|row| (&row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    InventoryDiffReport {
-        schema_id: "ff.compatibility-inventory-diff@1",
-        schema_version: "1.0.0",
+) -> Result<InventoryDiffReport, String> {
+    validate_profile_structure(before)?;
+    validate_profile_structure(after)?;
+    if before.profile_id == after.profile_id
+        && canonical_json_sha256(before)? != canonical_json_sha256(after)?
+    {
+        return Err(format!(
+            "FF-COMP-E-PROFILE-INTEGRITY: profile ID {} has divergent content",
+            before.profile_id
+        ));
+    }
+    let options = inventory_delta(&before.options, &after.options, |row| &row.id);
+    let presets = inventory_delta(&before.presets, &after.presets, |row| &row.id);
+    let interactions = inventory_delta(&before.interactions, &after.interactions, |row| &row.id);
+    let extractors = inventory_delta(&before.extractors, &after.extractors, |row| &row.id);
+    let descriptions = inventory_delta(
+        &before.extractor_descriptions,
+        &after.extractor_descriptions,
+        |row| &row.id,
+    );
+    Ok(InventoryDiffReport {
+        schema_id: "ff.compatibility-inventory-diff@2",
+        schema_version: "2.0.0",
         status: "PASS",
         source,
         inputs,
         before_profile_id: before.profile_id.clone(),
         after_profile_id: after.profile_id.clone(),
-        added_options: set_difference(
-            after_options.keys().copied(),
-            before_options.keys().copied(),
-        ),
-        removed_options: set_difference(
-            before_options.keys().copied(),
-            after_options.keys().copied(),
-        ),
-        changed_options: before_options
-            .iter()
-            .filter_map(|(id, row)| {
-                after_options
-                    .get(id)
-                    .filter(|other| {
-                        serde_json::to_value(row).ok() != serde_json::to_value(other).ok()
-                    })
-                    .map(|_| (*id).clone())
-            })
-            .collect(),
-        added_extractors: set_difference(
-            after_extractors.keys().copied(),
-            before_extractors.keys().copied(),
-        ),
-        removed_extractors: set_difference(
-            before_extractors.keys().copied(),
-            after_extractors.keys().copied(),
-        ),
-        changed_extractors: before_extractors
-            .iter()
-            .filter_map(|(id, row)| {
-                after_extractors
-                    .get(id)
-                    .filter(|other| {
-                        serde_json::to_value(row).ok() != serde_json::to_value(other).ok()
-                    })
-                    .map(|_| (*id).clone())
-            })
-            .collect(),
+        added_options: options.added,
+        removed_options: options.removed,
+        changed_options: options.changed,
+        added_presets: presets.added,
+        removed_presets: presets.removed,
+        changed_presets: presets.changed,
+        added_interactions: interactions.added,
+        removed_interactions: interactions.removed,
+        changed_interactions: interactions.changed,
+        added_extractors: extractors.added,
+        removed_extractors: extractors.removed,
+        changed_extractors: extractors.changed,
+        added_extractor_descriptions: descriptions.added,
+        removed_extractor_descriptions: descriptions.removed,
+        changed_extractor_descriptions: descriptions.changed,
         proof_limitations: vec![
             "Inventory diffing reports stable-row additions, removals, and changes; it does not prove behavioral parity or explain the cause of upstream drift.".to_owned(),
         ],
+    })
+}
+
+fn inventory_delta<T: Serialize, F>(before: &[T], after: &[T], id: F) -> InventoryDelta
+where
+    F: Fn(&T) -> &String + Copy,
+{
+    let before = before
+        .iter()
+        .map(|row| (id(row), row))
+        .collect::<BTreeMap<_, _>>();
+    let after = after
+        .iter()
+        .map(|row| (id(row), row))
+        .collect::<BTreeMap<_, _>>();
+    InventoryDelta {
+        added: set_difference(after.keys().copied(), before.keys().copied()),
+        removed: set_difference(before.keys().copied(), after.keys().copied()),
+        changed: changed_rows(&before, &after),
     }
+}
+
+fn changed_rows<T: Serialize>(
+    before: &BTreeMap<&String, &T>,
+    after: &BTreeMap<&String, &T>,
+) -> Vec<String> {
+    before
+        .iter()
+        .filter_map(|(id, row)| {
+            after
+                .get(id)
+                .filter(|other| serde_json::to_value(row).ok() != serde_json::to_value(other).ok())
+                .map(|_| (*id).clone())
+        })
+        .collect()
 }
 
 fn set_difference<'a>(
@@ -1717,20 +2062,27 @@ fn set_difference<'a>(
 fn base_report(
     root: &Path,
     command: &str,
+    status: &'static str,
+    extra_inputs: BTreeMap<String, String>,
     checks: Vec<CompatibilityCheck>,
     negative_fixtures: Vec<NegativeResult>,
     differential_rows: Vec<DifferentialRow>,
 ) -> Result<CompatibilityReport, String> {
     let source = source_state(root)?;
-    let inputs = [ORACLE_PATH, PROFILE_PATH, CORPUS_PATH, LIVE_PATH]
+    let mut inputs = [ORACLE_PATH, PROFILE_PATH, CORPUS_PATH, LIVE_PATH]
         .into_iter()
         .map(|path| Ok((path.to_owned(), sha256_file(&root.join(path))?)))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
+    for (key, digest) in extra_inputs {
+        if inputs.insert(key.clone(), digest).is_some() {
+            return Err(format!("duplicate report input key {key}"));
+        }
+    }
     Ok(CompatibilityReport {
         schema_id: "ff.compatibility-report@1",
         schema_version: "1.0.0",
         command: command.to_owned(),
-        status: "PASS",
+        status,
         source: CompatibilitySource {
             git_commit: source.git_commit,
             dirty: source.dirty,
@@ -1808,9 +2160,19 @@ fn atomic_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
-    let text =
-        fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
-    serde_json::from_str(&text).map_err(|error| format!("parse {}: {error}", path.display()))
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .map_err(|error| format!("read {}: {error}", path.display()))?
+        .take(MAX_JSON_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("read {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_JSON_BYTES {
+        return Err(format!(
+            "FF-COMP-E-JSON-SIZE: {} exceeds {MAX_JSON_BYTES} bytes",
+            path.display()
+        ));
+    }
+    serde_json::from_slice(&bytes).map_err(|error| format!("parse {}: {error}", path.display()))
 }
 
 fn required_arg<'a>(args: &'a [String], name: &str) -> Result<&'a str, String> {
@@ -1823,22 +2185,59 @@ fn optional_arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
         .map(|window| window[1].as_str())
 }
 
-fn require_safe_output(path: &str) -> Result<(), String> {
+fn require_safe_output(root: &Path, path: &str) -> Result<PathBuf, String> {
     if !safe_relative(path)
         || !(path.starts_with("build/fixtures/compatibility/") || path.starts_with("build/target/"))
     {
         return Err(format!("unsafe compatibility output path {path}"));
     }
-    Ok(())
+    let output = root.join(path);
+    let mut ancestor = output
+        .parent()
+        .ok_or_else(|| format!("unsafe compatibility output path {path}"))?;
+    while !ancestor.exists() {
+        ancestor = ancestor
+            .parent()
+            .ok_or_else(|| format!("unsafe compatibility output path {path}"))?;
+    }
+    let canonical_ancestor = fs::canonicalize(ancestor)
+        .map_err(|error| format!("canonicalize {}: {error}", ancestor.display()))?;
+    if !canonical_compatibility_roots(root)?
+        .iter()
+        .any(|allowed| canonical_ancestor.starts_with(allowed))
+    {
+        return Err(format!(
+            "unsafe compatibility output path {path}: canonical containment failed"
+        ));
+    }
+    Ok(output)
 }
 
-fn require_safe_input(path: &str) -> Result<(), String> {
+fn require_safe_input(root: &Path, path: &str) -> Result<PathBuf, String> {
     if !safe_relative(path)
         || !(path.starts_with("build/fixtures/compatibility/") || path.starts_with("build/target/"))
     {
         return Err(format!("unsafe compatibility input path {path}"));
     }
-    Ok(())
+    let input = fs::canonicalize(root.join(path))
+        .map_err(|error| format!("canonicalize compatibility input {path}: {error}"))?;
+    if !canonical_compatibility_roots(root)?
+        .iter()
+        .any(|allowed| input.starts_with(allowed))
+    {
+        return Err(format!(
+            "unsafe compatibility input path {path}: canonical containment failed"
+        ));
+    }
+    Ok(input)
+}
+
+fn canonical_compatibility_roots(root: &Path) -> Result<[PathBuf; 2], String> {
+    let fixtures = fs::canonicalize(root.join("build/fixtures/compatibility"))
+        .map_err(|error| format!("canonicalize compatibility fixtures: {error}"))?;
+    let target = fs::canonicalize(root.join("build/target"))
+        .map_err(|error| format!("canonicalize build target: {error}"))?;
+    Ok([fixtures, target])
 }
 
 fn safe_relative(path: &str) -> bool {
@@ -2007,6 +2406,33 @@ fn sha256_text(text: &str) -> String {
     encode_hex(&digest.finalize())
 }
 
+fn sha256_normalized_text_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|error| format!("{} is not UTF-8: {error}", path.display()))?;
+    Ok(sha256_text(&normalized_capture(&text)))
+}
+
+fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, String> {
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
+    bytes.push(b'\n');
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    Ok(encode_hex(&digest.finalize()))
+}
+
+fn require_canonical_json_digest<T: Serialize>(
+    value: &T,
+    expected: &str,
+    diagnostic: &str,
+) -> Result<(), String> {
+    let observed = canonical_json_sha256(value)?;
+    if observed != expected {
+        return Err(diagnostic.to_owned());
+    }
+    Ok(())
+}
+
 fn encode_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
@@ -2047,6 +2473,66 @@ fn parse_shard(value: &str) -> Result<(u32, u32), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
+    }
+
+    fn canonical_inputs() -> (OracleManifest, CompatibilityProfile, CorpusManifest) {
+        let root = test_root();
+        (
+            read_json(&root.join(ORACLE_PATH)).expect("oracle manifest"),
+            read_json(&root.join(PROFILE_PATH)).expect("compatibility profile"),
+            read_json(&root.join(CORPUS_PATH)).expect("corpus manifest"),
+        )
+    }
+
+    #[test]
+    fn canonical_artifact_digests_match_constants() {
+        let root = test_root();
+        let (manifest, profile, corpus) = canonical_inputs();
+        let live: LiveManifest = read_json(&root.join(LIVE_PATH)).expect("live manifest");
+        let oracle_digest = canonical_json_sha256(&manifest).expect("oracle digest");
+        let profile_digest = canonical_json_sha256(&profile).expect("profile digest");
+        let corpus_digest = canonical_json_sha256(&corpus).expect("corpus digest");
+        let live_digest = canonical_json_sha256(&live).expect("live digest");
+        assert_eq!(oracle_digest, ORACLE_MANIFEST_SHA256);
+        assert_eq!(profile_digest, PROFILE_SHA256);
+        assert_eq!(corpus_digest, CORPUS_MANIFEST_SHA256);
+        assert_eq!(live_digest, LIVE_MANIFEST_SHA256);
+    }
+
+    #[test]
+    fn normalized_fixture_digest_is_line_ending_portable() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = test_root()
+            .join("build/target")
+            .join(format!("compatibility-crlf-{nonce}.json"));
+        fs::write(&path, b"{\r\n  \"value\": true\r\n}\r\n").expect("write CRLF fixture");
+        let observed = sha256_normalized_text_file(&path).expect("normalized digest");
+        fs::remove_file(&path).expect("remove CRLF fixture");
+        assert_eq!(observed, sha256_text("{\n  \"value\": true\n}\n"));
+    }
+
+    #[test]
+    fn bounded_json_reader_rejects_oversized_input() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = test_root()
+            .join("build/target")
+            .join(format!("compatibility-oversized-{nonce}.json"));
+        let file = fs::File::create(&path).expect("create sparse input");
+        file.set_len(MAX_JSON_BYTES + 1).expect("size sparse input");
+        let result = read_json::<Value>(&path);
+        fs::remove_file(&path).expect("remove sparse input");
+        let error = result.expect_err("oversized JSON must fail before parsing");
+        assert!(error.starts_with("FF-COMP-E-JSON-SIZE"));
+    }
 
     #[test]
     fn stable_component_is_portable() {
@@ -2125,5 +2611,193 @@ mod tests {
         );
         assert_eq!(first, second);
         assert!(first.contains("{{RANDOMIZED_SEARCH_EXAMPLE}}"));
+    }
+
+    #[test]
+    fn profile_rejects_self_consistent_inventory_removal() {
+        let (manifest, mut profile, _) = canonical_inputs();
+        profile.options.pop().expect("profile has options");
+        profile.counts.options -= 1;
+        let error = validate_profile(&profile, &manifest)
+            .expect_err("removing a pinned row and its count must fail closed");
+        assert!(error.starts_with("FF-COMP-E-PROFILE-INTEGRITY"));
+    }
+
+    #[test]
+    fn corpus_rejects_self_consistent_expected_outcome_change() {
+        let (_, _, mut corpus) = canonical_inputs();
+        corpus.cases[0].expected_outcome = "silently-redefined".to_owned();
+        let error = validate_corpus_without_files(&corpus)
+            .expect_err("changing a pinned expected outcome must fail closed");
+        assert!(error.starts_with("FF-COMP-E-CORPUS-INTEGRITY"));
+    }
+
+    #[test]
+    fn differential_rejects_invalid_canonical_profile() {
+        let (_, mut profile, corpus) = canonical_inputs();
+        profile.options.pop().expect("profile has options");
+        profile.counts.options -= 1;
+        let candidate = CandidateResults {
+            schema_id: "ff.compatibility-candidate-results@1".to_owned(),
+            schema_version: "1.0.0".to_owned(),
+            corpus_id: corpus.corpus_id.clone(),
+            profile_id: profile.profile_id.clone(),
+            observations: Vec::new(),
+        };
+        differential_rows(&corpus, &profile, &candidate)
+            .expect_err("diff must not PASS when its canonical profile is invalid");
+    }
+
+    #[test]
+    fn differential_rejects_unregistered_divergence_decision() {
+        let (_, profile, corpus) = canonical_inputs();
+        let mut candidate = candidate_with_difference(&corpus, Some("accepted_divergence"), None);
+        candidate.observations[0].decision_id = Some("invented-decision".to_owned());
+        differential_rows(&corpus, &profile, &candidate)
+            .expect_err("syntactically stable but unauthorized decisions must fail closed");
+    }
+
+    #[test]
+    fn differential_rejects_nondeterministic_classification_for_offline_case() {
+        let (_, profile, corpus) = canonical_inputs();
+        let candidate = candidate_with_difference(&corpus, Some("nondeterministic_response"), None);
+        differential_rows(&corpus, &profile, &candidate)
+            .expect_err("deterministic offline cases cannot be reclassified as nondeterministic");
+    }
+
+    #[test]
+    fn inventory_diff_does_not_pass_invalid_profile() {
+        let (_, profile, _) = canonical_inputs();
+        let mut invalid = profile.clone();
+        invalid.options.pop().expect("profile has options");
+        invalid.counts.options -= 1;
+        inventory_diff(
+            &profile,
+            &invalid,
+            CompatibilitySource {
+                git_commit: "test".to_owned(),
+                dirty: false,
+                dirty_paths: Vec::new(),
+            },
+            BTreeMap::new(),
+        )
+        .expect_err("same profile ID with changed content must fail closed");
+    }
+
+    #[test]
+    fn inventory_diff_covers_every_versioned_row_family() {
+        let (_, profile, _) = canonical_inputs();
+        let mut changed = profile.clone();
+        changed.profile_id = "yt-dlp-2026.07.04-profile-v2-test".to_owned();
+        changed.presets[0].expansion.push_str(" --test-change");
+        changed.interactions[0]
+            .description
+            .push_str(" Test change.");
+        changed.extractor_descriptions[0]
+            .description
+            .push_str(" test change");
+        let report = inventory_diff(
+            &profile,
+            &changed,
+            CompatibilitySource {
+                git_commit: "test".to_owned(),
+                dirty: false,
+                dirty_paths: Vec::new(),
+            },
+            BTreeMap::new(),
+        )
+        .expect("different version IDs may be structurally compared");
+        assert_eq!(report.schema_id, "ff.compatibility-inventory-diff@2");
+        assert_eq!(report.changed_presets, [profile.presets[0].id.clone()]);
+        assert_eq!(
+            report.changed_interactions,
+            [profile.interactions[0].id.clone()]
+        );
+        assert_eq!(
+            report.changed_extractor_descriptions,
+            [profile.extractor_descriptions[0].id.clone()]
+        );
+    }
+
+    #[test]
+    fn negative_inventory_rejects_a_missing_required_mutation() {
+        let (manifest, profile, corpus) = canonical_inputs();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = test_root()
+            .join("build/target")
+            .join(format!("compatibility-negative-inventory-test-{nonce}"));
+        let target = root.join(NEGATIVE_ROOT);
+        fs::create_dir_all(&target).expect("negative target");
+        let source = test_root().join(NEGATIVE_ROOT);
+        for entry in fs::read_dir(source).expect("negative source") {
+            let entry = entry.expect("negative entry");
+            let name = entry.file_name();
+            if name == "unstable-id" {
+                continue;
+            }
+            let directory = target.join(name);
+            fs::create_dir_all(&directory).expect("fixture directory");
+            fs::copy(entry.path().join("case.json"), directory.join("case.json"))
+                .expect("copy fixture");
+        }
+        let result = validate_negative_fixtures(&root, &manifest, &profile, &corpus);
+        fs::remove_dir_all(&root).expect("remove fixture root");
+        result.expect_err("removing one required negative mutation must fail closed");
+    }
+
+    #[test]
+    fn live_report_is_observed_not_pass() {
+        let report = base_report(
+            &test_root(),
+            "compatibility-live-canaries",
+            "OBSERVED",
+            BTreeMap::new(),
+            vec![CompatibilityCheck {
+                id: "live-canary-test".to_owned(),
+                status: "OBSERVED",
+                detail: "nondeterministic observation".to_owned(),
+            }],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("report construction");
+        assert_eq!(report.status, "OBSERVED");
+    }
+
+    #[test]
+    fn secret_scanner_rejects_sensitive_key_variants_and_unknown_placeholders() {
+        for value in [
+            serde_json::json!({"X-Api-Key": "actual-secret"}),
+            serde_json::json!({"access_token": "actual-secret"}),
+            serde_json::json!({"Authorization": "{{NOT_ALLOWLISTED}}"}),
+        ] {
+            validate_sanitized_value(&value)
+                .expect_err("sensitive aliases and unknown placeholders must fail closed");
+        }
+    }
+
+    #[test]
+    fn secret_scanner_rejects_portable_machine_local_paths() {
+        for path in [
+            "C:/Users/Alice/private.txt",
+            "/Users/alice/private.txt",
+            "\\\\server\\private\\fixture.json",
+        ] {
+            validate_sanitized_value(&Value::String(path.to_owned()))
+                .expect_err("machine-local path must fail closed");
+        }
+    }
+
+    #[test]
+    fn live_manifest_rejects_private_destination() {
+        let root = test_root();
+        let profile: CompatibilityProfile = read_json(&root.join(PROFILE_PATH)).expect("profile");
+        let mut live: LiveManifest = read_json(&root.join(LIVE_PATH)).expect("live manifest");
+        live.canaries[0].url = "https://127.0.0.1/internal".to_owned();
+        validate_live_manifest(&live, &profile)
+            .expect_err("live canary destinations must be explicitly allowlisted");
     }
 }

@@ -414,6 +414,7 @@ pub enum CreditError {
     UnknownClaim(u64),
     ClaimAlreadyReleased(u64),
     ClaimOwnerMismatch,
+    ConsumedClaimCannotTransfer { consumed: u64 },
     ReceivedBytesRequireClaim,
     PositionRegressed,
     WrittenAheadOfReceived,
@@ -504,17 +505,24 @@ impl ByteCreditLedger {
         Ok(id)
     }
 
-    /// Transfer exact claim ownership without changing the conserved byte total.
+    /// Transfer an unconsumed claim without changing the conserved byte total.
     ///
     /// # Errors
     ///
-    /// Returns an error for an unknown, released, or differently owned claim.
+    /// Returns an error for an unknown, released, differently owned, or already
+    /// consumed claim. Rejecting consumed transfers preserves receive-time
+    /// attribution to exactly one owner.
     pub fn transfer(&mut self, id: u64, from: OwnerId, to: OwnerId) -> Result<(), CreditError> {
         let Some(claim) = self.active.get(&id).copied() else {
             return self.missing_claim(id);
         };
         if claim.owner != from {
             return Err(CreditError::ClaimOwnerMismatch);
+        }
+        if claim.consumed != 0 {
+            return Err(CreditError::ConsumedClaimCannotTransfer {
+                consumed: claim.consumed,
+            });
         }
         self.active.insert(id, ByteClaim { owner: to, ..claim });
         Ok(())
@@ -977,6 +985,29 @@ mod tests {
                 owner: OwnerId(2),
                 bytes: 5,
                 consumed: 3,
+            })
+        );
+        assert!(credits.verify().is_ok());
+    }
+
+    #[test]
+    fn consumed_claim_transfer_is_rejected_without_rewriting_attribution() {
+        let mut credits = ByteCreditLedger::new(10, 1);
+        let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
+        assert!(credits.receive(claim, OwnerId(1), 4).is_ok());
+        let before = credits.clone();
+        assert_eq!(
+            credits.transfer(claim, OwnerId(1), OwnerId(2)),
+            Err(CreditError::ConsumedClaimCannotTransfer { consumed: 4 })
+        );
+        assert_eq!(credits, before, "rejected transfer must be atomic");
+        assert_eq!(
+            credits.attribution(claim),
+            Ok(CreditAttribution {
+                claim_id: claim,
+                owner: OwnerId(1),
+                bytes: 10,
+                consumed: 4,
             })
         );
         assert!(credits.verify().is_ok());

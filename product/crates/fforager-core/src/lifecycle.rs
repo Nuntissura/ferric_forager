@@ -17,6 +17,26 @@ pub enum MachineKind {
     Watcher,
 }
 
+/// Caller-supplied stable identity for one state-machine instance.
+///
+/// The value must remain unchanged across durable restoration. Callers must
+/// allocate distinct values for concurrently routable instances.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MachineInstanceId(u64);
+
+impl MachineInstanceId {
+    /// Construct a nonzero instance identity.
+    #[must_use]
+    pub const fn new(value: u64) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// The complete finite state space. Variants retain lifecycle-specific names so
 /// traces remain unambiguous without ambient context.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +154,7 @@ pub enum Event {
     /// Callers must use [`Event::EffectAcknowledged`].
     Acknowledge,
     EffectAcknowledged {
+        instance_id: MachineInstanceId,
         effect: EffectIntent,
         generation: u64,
     },
@@ -213,6 +234,7 @@ pub enum TransitionError {
     InvalidRestorationGeneration,
     EffectGenerationExhausted,
     UnexpectedAcknowledgement {
+        instance_id: MachineInstanceId,
         effect: EffectIntent,
         generation: u64,
         expected: Vec<EffectAcknowledgement>,
@@ -241,6 +263,7 @@ pub struct Transition {
 /// Correlation token for one effect completion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EffectAcknowledgement {
+    pub instance_id: MachineInstanceId,
     pub effect: EffectIntent,
     pub generation: u64,
 }
@@ -248,6 +271,7 @@ pub struct EffectAcknowledgement {
 /// One bounded, deterministic state machine instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateMachine {
+    instance_id: MachineInstanceId,
     kind: MachineKind,
     state: State,
     trace_limit: usize,
@@ -258,8 +282,9 @@ pub struct StateMachine {
 
 impl StateMachine {
     #[must_use]
-    pub fn new(kind: MachineKind, trace_limit: usize) -> Self {
+    pub fn new(kind: MachineKind, instance_id: MachineInstanceId, trace_limit: usize) -> Self {
         Self {
+            instance_id,
             kind,
             state: initial(kind),
             trace_limit,
@@ -278,6 +303,7 @@ impl StateMachine {
     pub fn from_state(
         kind: MachineKind,
         state: State,
+        instance_id: MachineInstanceId,
         trace_limit: usize,
         next_effect_generation: u64,
     ) -> Result<Self, TransitionError> {
@@ -291,6 +317,7 @@ impl StateMachine {
             return Err(TransitionError::InvalidRestorationGeneration);
         }
         Ok(Self {
+            instance_id,
             kind,
             state,
             trace_limit,
@@ -303,6 +330,11 @@ impl StateMachine {
     #[must_use]
     pub fn state(&self) -> State {
         self.state
+    }
+
+    #[must_use]
+    pub fn instance_id(&self) -> MachineInstanceId {
+        self.instance_id
     }
 
     #[must_use]
@@ -327,11 +359,19 @@ impl StateMachine {
             });
         }
         let mut remaining_acknowledgements = self.pending_acknowledgements.clone();
-        if let Event::EffectAcknowledged { effect, generation } = event {
+        if let Event::EffectAcknowledged {
+            instance_id,
+            effect,
+            generation,
+        } = event
+        {
             let Some(index) = remaining_acknowledgements.iter().position(|expected| {
-                expected.effect == effect && expected.generation == generation
+                expected.instance_id == instance_id
+                    && expected.effect == effect
+                    && expected.generation == generation
             }) else {
                 return Err(TransitionError::UnexpectedAcknowledgement {
+                    instance_id,
                     effect,
                     generation,
                     expected: self.pending_acknowledgements.clone(),
@@ -366,6 +406,7 @@ impl StateMachine {
         let pending_acknowledgements = required
             .into_iter()
             .map(|effect| EffectAcknowledgement {
+                instance_id: self.instance_id,
                 effect,
                 generation: self.next_effect_generation,
             })
@@ -393,10 +434,11 @@ impl StateMachine {
     /// Returns the first transition, bound, or record mismatch.
     pub fn replay(
         kind: MachineKind,
+        instance_id: MachineInstanceId,
         trace_limit: usize,
         expected: &[Transition],
     ) -> Result<Self, TransitionError> {
-        let mut machine = Self::new(kind, trace_limit);
+        let mut machine = Self::new(kind, instance_id, trace_limit);
         for (index, record) in expected.iter().enumerate() {
             let actual = machine.apply(record.event)?;
             if actual != record {
@@ -547,87 +589,49 @@ fn belongs(kind: MachineKind, state: State) -> bool {
     )
 }
 
-#[allow(clippy::too_many_lines)]
+/// Exact public-restoration whitelist represented by the contract inventory's
+/// `durable_prefixes` field. An empty slice is represented as `["none"]` in
+/// the inventory because its schema requires a nonempty explanatory array.
+#[must_use]
+pub const fn durable_states(kind: MachineKind) -> &'static [State] {
+    match kind {
+        MachineKind::JobCancellation => &[State::JobSucceeded],
+        MachineKind::SourceRedirect => &[State::SourceResolved],
+        MachineKind::AtomicAdmission | MachineKind::JavascriptWorker | MachineKind::PluginIpc => {
+            &[]
+        }
+        MachineKind::ByteCreditDurability => &[
+            State::BytesReceived,
+            State::BytesWritten,
+            State::BytesDurable,
+        ],
+        MachineKind::Live => &[State::LiveStreaming],
+        MachineKind::Sink => &[State::SinkActive, State::SinkCompleted],
+        MachineKind::Ffmpeg => &[State::FfmpegExited],
+        MachineKind::CommitArchiveReconciliation => &[
+            State::CommitPrepared,
+            State::CommitRenamed,
+            State::CommitArchived,
+            State::CommitCleaned,
+            State::CommitReconciled,
+        ],
+        MachineKind::FilesystemCapability => &[
+            State::FilesystemConfined,
+            State::FilesystemDegraded,
+            State::FilesystemUnsupported,
+        ],
+        MachineKind::Watcher => &[
+            State::WatcherReady,
+            State::WatcherServing,
+            State::WatcherDegraded,
+            State::WatcherStale,
+            State::WatcherStopped,
+        ],
+    }
+}
+
 fn is_durable_state(kind: MachineKind, state: State) -> bool {
-    matches!(
-        (kind, state),
-        (
-            MachineKind::JobCancellation,
-            State::JobQueued | State::JobSucceeded | State::JobFailed | State::JobCancelled
-        ) | (
-            MachineKind::SourceRedirect,
-            State::SourceNew | State::SourceResolved | State::SourceFailed | State::SourceCancelled
-        ) | (
-            MachineKind::AtomicAdmission,
-            State::AdmissionWaiting | State::AdmissionReleased | State::AdmissionCancelled
-        ) | (
-            MachineKind::ByteCreditDurability,
-            State::BytesEmpty
-                | State::BytesReceived
-                | State::BytesWritten
-                | State::BytesDurable
-                | State::BytesFailed
-                | State::BytesCancelled
-        ) | (
-            MachineKind::Live,
-            State::LiveStarting
-                | State::LiveStreaming
-                | State::LiveStopped
-                | State::LiveFailed
-                | State::LiveCancelled
-        ) | (
-            MachineKind::Sink,
-            State::SinkPending
-                | State::SinkActive
-                | State::SinkCompleted
-                | State::SinkDropped
-                | State::SinkFailed
-                | State::SinkCancelled
-        ) | (
-            MachineKind::Ffmpeg,
-            State::FfmpegPrepared
-                | State::FfmpegExited
-                | State::FfmpegFailed
-                | State::FfmpegCancelled
-        ) | (
-            MachineKind::JavascriptWorker,
-            State::JavascriptIdle
-                | State::JavascriptQuarantined
-                | State::JavascriptCompleted
-                | State::JavascriptCancelled
-        ) | (
-            MachineKind::PluginIpc,
-            State::PluginDisconnected
-                | State::PluginReady
-                | State::PluginStopped
-                | State::PluginFailed
-        ) | (
-            MachineKind::CommitArchiveReconciliation,
-            State::CommitWorking
-                | State::CommitPrepared
-                | State::CommitRenamed
-                | State::CommitArchived
-                | State::CommitCleaned
-                | State::CommitReconciled
-                | State::CommitInconsistent
-                | State::CommitCancelled
-        ) | (
-            MachineKind::FilesystemCapability,
-            State::FilesystemUnknown
-                | State::FilesystemConfined
-                | State::FilesystemDegraded
-                | State::FilesystemUnsupported
-                | State::FilesystemCancelled
-        ) | (
-            MachineKind::Watcher,
-            State::WatcherStarting
-                | State::WatcherReady
-                | State::WatcherServing
-                | State::WatcherDegraded
-                | State::WatcherStale
-                | State::WatcherStopped
-        )
-    )
+    durable_states(kind).contains(&state)
 }
 
 fn acknowledgement_effects(state: State, emitted: &[EffectIntent]) -> Vec<EffectIntent> {
@@ -1121,6 +1125,14 @@ fn watcher(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
 mod tests {
     use super::*;
 
+    fn instance(value: u64) -> MachineInstanceId {
+        MachineInstanceId::new(value).expect("test instance identity must be nonzero")
+    }
+
+    fn machine(kind: MachineKind, trace_limit: usize) -> StateMachine {
+        StateMachine::new(kind, instance(1), trace_limit)
+    }
+
     fn acknowledge_all(model: &mut StateMachine) {
         let pending = model.pending_acknowledgements().to_vec();
         assert!(!pending.is_empty(), "ack marker requires pending effects");
@@ -1128,6 +1140,7 @@ mod tests {
             assert!(
                 model
                     .apply(Event::EffectAcknowledged {
+                        instance_id: acknowledgement.instance_id,
                         effect: acknowledgement.effect,
                         generation: acknowledgement.generation,
                     })
@@ -1137,7 +1150,7 @@ mod tests {
     }
 
     fn run(kind: MachineKind, events: &[Event], expected: State) -> StateMachine {
-        let mut model = StateMachine::new(kind, events.len().saturating_mul(2).saturating_add(2));
+        let mut model = machine(kind, events.len().saturating_mul(2).saturating_add(2));
         for event in events {
             if *event == Event::Acknowledge {
                 acknowledge_all(&mut model);
@@ -1250,7 +1263,8 @@ mod tests {
         ];
         for (kind, events, expected) in cases {
             let model = run(*kind, events, *expected);
-            let replay = StateMachine::replay(*kind, model.trace().len(), model.trace());
+            let replay =
+                StateMachine::replay(*kind, instance(1), model.trace().len(), model.trace());
             assert!(matches!(replay, Ok(replayed) if replayed.state() == *expected));
         }
     }
@@ -1455,8 +1469,13 @@ mod tests {
             ),
         ];
         for (state, verifying, required) in prefixes {
-            let model =
-                StateMachine::from_state(MachineKind::CommitArchiveReconciliation, state, 3, 100);
+            let model = StateMachine::from_state(
+                MachineKind::CommitArchiveReconciliation,
+                state,
+                instance(1),
+                3,
+                100,
+            );
             let Ok(mut model) = model else {
                 return Err("commit prefix must belong to commit model".to_owned());
             };
@@ -1472,7 +1491,7 @@ mod tests {
 
     #[test]
     fn success_and_durable_prefixes_require_effect_acknowledgements() {
-        let mut job = StateMachine::new(MachineKind::JobCancellation, 3);
+        let mut job = machine(MachineKind::JobCancellation, 3);
         assert!(job.apply(Event::Start).is_ok());
         assert!(job.apply(Event::Reconcile).is_ok());
         assert_eq!(job.state(), State::JobVerifying);
@@ -1480,7 +1499,7 @@ mod tests {
         acknowledge_all(&mut job);
         assert_eq!(job.state(), State::JobSucceeded);
 
-        let mut commit = StateMachine::new(MachineKind::CommitArchiveReconciliation, 11);
+        let mut commit = machine(MachineKind::CommitArchiveReconciliation, 11);
         for (request, pending, acknowledged) in [
             (
                 Event::Prepare,
@@ -1507,7 +1526,7 @@ mod tests {
             assert_eq!(commit.state(), acknowledged);
         }
 
-        let mut bytes = StateMachine::new(MachineKind::ByteCreditDurability, 5);
+        let mut bytes = machine(MachineKind::ByteCreditDurability, 5);
         assert!(bytes.apply(Event::Receive).is_ok());
         assert!(bytes.apply(Event::Validate).is_ok());
         assert_eq!(bytes.state(), State::BytesWriting);
@@ -1518,7 +1537,7 @@ mod tests {
         acknowledge_all(&mut bytes);
         assert_eq!(bytes.state(), State::BytesDurable);
 
-        let mut cancelling = StateMachine::new(MachineKind::CommitArchiveReconciliation, 3);
+        let mut cancelling = machine(MachineKind::CommitArchiveReconciliation, 3);
         assert!(cancelling.apply(Event::Prepare).is_ok());
         let cancel = cancelling
             .apply(Event::Cancel)
@@ -1529,6 +1548,7 @@ mod tests {
         let pending = cancelling.pending_acknowledgements()[0];
         let acknowledged = cancelling
             .apply(Event::EffectAcknowledged {
+                instance_id: pending.instance_id,
                 effect: pending.effect,
                 generation: pending.generation,
             })
@@ -1543,7 +1563,7 @@ mod tests {
 
     #[test]
     fn illegal_transitions_are_typed_and_do_not_mutate_or_trace() {
-        let mut model = StateMachine::new(MachineKind::CommitArchiveReconciliation, 2);
+        let mut model = machine(MachineKind::CommitArchiveReconciliation, 2);
         assert!(matches!(
             model.apply(Event::Archive),
             Err(TransitionError::InvalidTransition { .. })
@@ -1551,14 +1571,14 @@ mod tests {
         assert_eq!(model.state(), State::CommitWorking);
         assert!(model.trace().is_empty());
         assert!(matches!(
-            StateMachine::from_state(MachineKind::Watcher, State::JobQueued, 1, 1),
+            StateMachine::from_state(MachineKind::Watcher, State::JobQueued, instance(1), 1, 1,),
             Err(TransitionError::StateDoesNotBelongToMachine { .. })
         ));
     }
 
     #[test]
     fn trace_bound_is_checked_before_transition() {
-        let mut model = StateMachine::new(MachineKind::SourceRedirect, 1);
+        let mut model = machine(MachineKind::SourceRedirect, 1);
         assert!(model.apply(Event::Start).is_ok());
         assert!(matches!(
             model.apply(Event::Complete),
@@ -1585,7 +1605,7 @@ mod tests {
             record.next = State::BytesDurable;
         }
         assert!(matches!(
-            StateMachine::replay(MachineKind::ByteCreditDurability, 5, &mutated),
+            StateMachine::replay(MachineKind::ByteCreditDurability, instance(1), 5, &mutated,),
             Err(TransitionError::ReplayMismatch { index: 1 })
         ));
     }
@@ -1605,6 +1625,7 @@ mod tests {
         let model = StateMachine::from_state(
             MachineKind::FilesystemCapability,
             State::FilesystemDegraded,
+            instance(1),
             1,
             1,
         );
@@ -1626,13 +1647,14 @@ mod tests {
             StateMachine::from_state(
                 MachineKind::CommitArchiveReconciliation,
                 State::CommitRenaming,
+                instance(1),
                 4,
                 40,
             ),
             Err(TransitionError::StateIsNotDurable { .. })
         ));
 
-        let mut model = StateMachine::new(MachineKind::CommitArchiveReconciliation, 8);
+        let mut model = machine(MachineKind::CommitArchiveReconciliation, 8);
         assert!(model.apply(Event::Prepare).is_ok());
         let stale = model.pending_acknowledgements()[0];
         assert!(model.apply(Event::Cancel).is_ok());
@@ -1640,6 +1662,7 @@ mod tests {
         assert_ne!(stale.generation, cancellation.generation);
         assert!(matches!(
             model.apply(Event::EffectAcknowledged {
+                instance_id: stale.instance_id,
                 effect: stale.effect,
                 generation: stale.generation,
             }),
@@ -1647,6 +1670,7 @@ mod tests {
         ));
         assert!(matches!(
             model.apply(Event::EffectAcknowledged {
+                instance_id: cancellation.instance_id,
                 effect: EffectIntent::RenameOutput,
                 generation: cancellation.generation,
             }),
@@ -1658,5 +1682,81 @@ mod tests {
         ));
         assert_eq!(model.state(), State::CommitCancelling);
         assert_eq!(model.pending_acknowledgements(), &[cancellation]);
+    }
+
+    #[test]
+    fn acknowledgement_rejects_cross_instance_routing() {
+        let mut first =
+            StateMachine::new(MachineKind::CommitArchiveReconciliation, instance(41), 4);
+        let mut second =
+            StateMachine::new(MachineKind::CommitArchiveReconciliation, instance(42), 4);
+        assert!(first.apply(Event::Prepare).is_ok());
+        assert!(second.apply(Event::Prepare).is_ok());
+        let first_ack = first.pending_acknowledgements()[0];
+        let second_ack = second.pending_acknowledgements()[0];
+        assert_eq!(first_ack.effect, second_ack.effect);
+        assert_eq!(first_ack.generation, second_ack.generation);
+        assert_ne!(first_ack.instance_id, second_ack.instance_id);
+
+        let prior = second.clone();
+        assert!(matches!(
+            second.apply(Event::EffectAcknowledged {
+                instance_id: first_ack.instance_id,
+                effect: first_ack.effect,
+                generation: first_ack.generation,
+            }),
+            Err(TransitionError::UnexpectedAcknowledgement { .. })
+        ));
+        assert_eq!(second, prior);
+    }
+
+    #[test]
+    fn restoration_accepts_only_inventory_enumerated_durable_states() {
+        for state in [
+            State::CommitPrepared,
+            State::CommitRenamed,
+            State::CommitArchived,
+            State::CommitCleaned,
+            State::CommitReconciled,
+        ] {
+            assert!(
+                StateMachine::from_state(
+                    MachineKind::CommitArchiveReconciliation,
+                    state,
+                    instance(7),
+                    1,
+                    2,
+                )
+                .is_ok()
+            );
+        }
+        for state in [
+            State::CommitWorking,
+            State::CommitPreparing,
+            State::CommitRenaming,
+            State::CommitInconsistent,
+            State::CommitCancelled,
+        ] {
+            assert!(matches!(
+                StateMachine::from_state(
+                    MachineKind::CommitArchiveReconciliation,
+                    state,
+                    instance(7),
+                    1,
+                    2,
+                ),
+                Err(TransitionError::StateIsNotDurable { .. })
+            ));
+        }
+        for (kind, state) in [
+            (MachineKind::AtomicAdmission, State::AdmissionReleased),
+            (MachineKind::JavascriptWorker, State::JavascriptCompleted),
+            (MachineKind::PluginIpc, State::PluginStopped),
+        ] {
+            assert!(matches!(
+                StateMachine::from_state(kind, state, instance(7), 1, 2),
+                Err(TransitionError::StateIsNotDurable { .. })
+            ));
+        }
     }
 }

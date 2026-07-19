@@ -89,12 +89,25 @@ mod tests {
         PluginEnvelope, ProcessEnvelope, ProtocolLimits, RepresentationId, SchemaVersion,
         SinkSemantics, SourceGraph, TrackId,
     };
-    use fforager_core::lifecycle::{Event, MachineKind, StateMachine, TransitionError};
+    use fforager_core::lifecycle::{
+        Event, MachineInstanceId, MachineKind, StateMachine, TransitionError, durable_states,
+    };
     use fforager_core::resource::{
         Admission, ByteCreditLedger, CreditError, OwnerId, ResourceLedger, ResourceVector,
     };
     use fforager_diagnostics_contract as diagnostics;
     use std::collections::BTreeSet;
+
+    const CANONICAL_INVENTORY_FNV1A64: u64 = 0x1e27_ca36_4d14_9206;
+
+    fn inventory_digest(bytes: &[u8]) -> u64 {
+        bytes
+            .iter()
+            .filter(|byte| **byte != b'\r')
+            .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+    }
 
     #[test]
     fn prior_and_current_wire_versions_are_accepted_but_next_major_is_rejected() {
@@ -156,6 +169,11 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     fn inventory_is_unique_complete_and_references_existing_fixtures() {
         let bytes = read_fixture("inventory.json").expect("inventory must load");
+        assert_eq!(
+            inventory_digest(&bytes),
+            CANONICAL_INVENTORY_FNV1A64,
+            "canonical inventory byte digest drifted; every semantic change requires an explicit reviewed digest update"
+        );
         let inventory: serde_json::Value =
             serde_json::from_slice(&bytes).expect("inventory must be JSON");
         assert_eq!(inventory["schema_id"], "ff.contract-inventory@1");
@@ -322,7 +340,7 @@ mod tests {
             (
                 "FF-STATE-FRAGMENT-DURABILITY-001",
                 "BytesEmpty|BytesReceived|BytesWriting|BytesWritten|BytesSynchronizing|BytesDurable|BytesFailed|BytesCancelled",
-                "write and synchronization effects require correlated acknowledgement|durable never exceeds validated or received|positions never regress|released unused credits cannot authorize receive|received-byte consumption is attributable to one claim owner",
+                "write and synchronization effects require correlated acknowledgement|durable never exceeds validated or received|positions never regress|released unused credits cannot authorize receive|received-byte consumption is attributable to one claim owner|consumed claims cannot transfer ownership",
                 "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution",
             ),
             (
@@ -358,7 +376,7 @@ mod tests {
             (
                 "FF-STATE-COMMIT-ARCHIVE-001",
                 "CommitWorking|CommitPreparing|CommitPrepared|CommitRenaming|CommitRenamed|CommitArchiving|CommitArchived|CommitCleaning|CommitCleaned|CommitReconciling|CommitVerifyingPrepared|CommitVerifyingRenamed|CommitVerifyingArchived|CommitVerifyingCleaned|CommitCancelling|CommitReconciled|CommitInconsistent|CommitCancelled",
-                "archive requires acknowledged rename|restart verification is acknowledged before archive or cleanup|restart never invents success|effect intent advances only after matching effect and generation acknowledgement|only enumerated durable prefixes can be restored",
+                "archive requires acknowledged rename|restart verification is acknowledged before archive or cleanup|restart never invents success|effect intent advances only after matching instance identity, effect, and generation acknowledgement|only enumerated durable prefixes can be restored",
                 "core::lifecycle::tests::transient_restore_and_stale_or_wrong_acknowledgements_are_rejected",
             ),
             (
@@ -391,6 +409,21 @@ mod tests {
                 "{id} invariant drift"
             );
             assert_eq!(row["proof_id"], proof_id, "{id} proof_id drift");
+            let expected_durable = durable_states(inventory_machine_kind(id))
+                .iter()
+                .map(|state| format!("{state:?}"))
+                .collect::<Vec<_>>()
+                .join("|");
+            let expected_durable = if expected_durable.is_empty() {
+                "none"
+            } else {
+                &expected_durable
+            };
+            assert_eq!(
+                json_strings(&row["durable_prefixes"]),
+                expected_durable,
+                "{id} durable-prefix whitelist drift"
+            );
         }
         for required_id in [
             "FF-CONTRACT-ACQUISITION-001",
@@ -404,6 +437,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn inventory_digest_rejects_semantic_field_mutations() {
+        let bytes = read_fixture("inventory.json").expect("inventory must load");
+        assert_eq!(inventory_digest(&bytes), CANONICAL_INVENTORY_FNV1A64);
+        for field in [
+            "version_policy",
+            "limits_errors",
+            "design_anchors",
+            "residual_uncertainty",
+            "preconditions",
+            "postconditions",
+            "invalid_transitions",
+            "cancellation_outcomes",
+            "durable_prefixes",
+            "finite_assumptions",
+        ] {
+            let mut mutated = bytes.clone();
+            let needle = field.as_bytes();
+            let key_offset = mutated
+                .windows(needle.len())
+                .position(|window| window == needle)
+                .unwrap_or_else(|| panic!("canonical inventory omits {field}"));
+            let value_offset = key_offset
+                + needle.len()
+                + mutated[key_offset + needle.len()..]
+                    .iter()
+                    .position(u8::is_ascii_alphabetic)
+                    .unwrap_or_else(|| panic!("{field} has no textual canonical value"));
+            mutated[value_offset] ^= 0x20;
+            assert_ne!(
+                inventory_digest(&mutated),
+                CANONICAL_INVENTORY_FNV1A64,
+                "{field} mutation bypassed the canonical digest"
+            );
+        }
+    }
+
     fn json_strings(value: &serde_json::Value) -> String {
         value
             .as_array()
@@ -412,6 +482,24 @@ mod tests {
             .map(|value| value.as_str().expect("canonical item must be a string"))
             .collect::<Vec<_>>()
             .join("|")
+    }
+
+    fn inventory_machine_kind(id: &str) -> MachineKind {
+        match id {
+            "FF-STATE-JOB-CANCEL-001" => MachineKind::JobCancellation,
+            "FF-STATE-SOURCE-REDIRECT-001" => MachineKind::SourceRedirect,
+            "FF-STATE-ADMISSION-001" => MachineKind::AtomicAdmission,
+            "FF-STATE-FRAGMENT-DURABILITY-001" => MachineKind::ByteCreditDurability,
+            "FF-STATE-LIVE-001" => MachineKind::Live,
+            "FF-STATE-SINK-001" => MachineKind::Sink,
+            "FF-STATE-FFMPEG-001" => MachineKind::Ffmpeg,
+            "FF-STATE-JS-WORKER-001" => MachineKind::JavascriptWorker,
+            "FF-STATE-PLUGIN-IPC-001" => MachineKind::PluginIpc,
+            "FF-STATE-COMMIT-ARCHIVE-001" => MachineKind::CommitArchiveReconciliation,
+            "FF-STATE-FILESYSTEM-CAPABILITY-001" => MachineKind::FilesystemCapability,
+            "FF-STATE-WATCHER-001" => MachineKind::Watcher,
+            _ => panic!("unregistered inventory state-machine ID {id}"),
+        }
     }
 
     #[test]
@@ -680,8 +768,12 @@ mod tests {
                 .expect("scenario case is required");
             let kind = machine_kind(machine_name).expect("registered machine kind");
             let events = scenario["events"].as_array().expect("events are required");
-            let mut model =
-                StateMachine::new(kind, events.len().saturating_mul(2).saturating_add(2));
+            let instance_id = MachineInstanceId::new(1).expect("fixture instance is nonzero");
+            let mut model = StateMachine::new(
+                kind,
+                instance_id,
+                events.len().saturating_mul(2).saturating_add(2),
+            );
             for event in events {
                 let event = lifecycle_event(event.as_str().unwrap_or_default())
                     .expect("registered lifecycle event");
@@ -807,6 +899,7 @@ mod tests {
             assert!(
                 model
                     .apply(Event::EffectAcknowledged {
+                        instance_id: acknowledgement.instance_id,
                         effect: acknowledgement.effect,
                         generation: acknowledgement.generation,
                     })

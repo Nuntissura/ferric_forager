@@ -192,9 +192,19 @@ pub enum TriState<T> {
 }
 
 /// Bounded namespaced JSON extension map.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct ExtensionMap(BTreeMap<String, serde_json::Value>);
+
+impl<'de> Deserialize<'de> for ExtensionMap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let values = BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
+        Self::new(values, ExtensionLimits::default()).map_err(serde::de::Error::custom)
+    }
+}
 
 /// Extension validation limits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -372,5 +382,13 @@ mod tests {
             ExtensionMap::new(values, ExtensionLimits::default()),
             Err(ExtensionError::InvalidNamespace { .. })
         ));
+    }
+
+    #[test]
+    fn extension_deserialization_cannot_bypass_validation() {
+        let invalid = serde_json::from_str::<ExtensionMap>(r#"{"plain":null}"#);
+        assert!(invalid.is_err());
+        let valid = serde_json::from_str::<ExtensionMap>(r#"{"plugin.value":null}"#);
+        assert!(valid.is_ok());
     }
 }

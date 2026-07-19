@@ -3,7 +3,7 @@
 //! The declared length is checked before payload allocation. A decoder retains at
 //! most four header bytes plus one configured maximum frame.
 
-use crate::{CompatibilityRange, ProcessEnvelope};
+use crate::{CompatibilityRange, ProcessEnvelope, ProtocolLimits};
 use serde::de::DeserializeOwned;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -177,6 +177,19 @@ impl FrameDecoder {
         payload: &[u8],
         limits: FrameLimits,
     ) -> Result<ProcessEnvelope, FrameError> {
+        Self::decode_process_with_limits(payload, limits, ProtocolLimits::default())
+    }
+
+    /// Decodes and recursively validates a process envelope with caller-selected limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed framing errors for malformed, unknown, oversized, or invalid fields.
+    pub fn decode_process_with_limits(
+        payload: &[u8],
+        limits: FrameLimits,
+        protocol_limits: ProtocolLimits,
+    ) -> Result<ProcessEnvelope, FrameError> {
         if payload.len() > limits.maximum_frame_bytes {
             return Err(FrameError::Oversized {
                 declared: payload.len(),
@@ -200,9 +213,16 @@ impl FrameDecoder {
                 });
             }
         }
-        serde_json::from_value(value).map_err(|error| FrameError::InvalidJson {
-            message: error.to_string(),
-        })
+        let envelope: ProcessEnvelope =
+            serde_json::from_value(value).map_err(|error| FrameError::InvalidJson {
+                message: error.to_string(),
+            })?;
+        envelope
+            .validate(protocol_limits)
+            .map_err(|error| FrameError::InvalidJson {
+                message: format!("protocol validation failed: {error:?}"),
+            })?;
+        Ok(envelope)
     }
 
     fn reset(&mut self) {
@@ -252,7 +272,10 @@ impl ProcessConformance {
                 received_major: header.version.major,
                 supported_major: self.compatibility.major,
             })?;
-        let request = header.request_id.to_string();
+        let ProcessEnvelope::Request(request_envelope) = envelope else {
+            return Ok(());
+        };
+        let request = request_envelope.header.request_id.to_string();
         if self.seen_requests.contains(&request) {
             return Err(FrameError::DuplicateRequestId {
                 request_id: request,
@@ -322,5 +345,58 @@ mod tests {
                 kind: "future_required".into()
             })
         );
+    }
+
+    fn request_json(extra: &str, schema_id: &str, operation: &str) -> Vec<u8> {
+        format!(
+            r#"{{"kind":"request","body":{{"header":{{"schema_id":"{schema_id}","version":{{"major":1,"minor":0}},"request_id":"request_1","producer_id":"producer_1","job_id":null,"sequence":1}},"operation":"{operation}","payload":{{}}}}{extra}}}"#
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn process_decode_enforces_field_limits_and_unknown_top_level_fields() {
+        let over_schema = "s".repeat(129);
+        assert!(matches!(
+            FrameDecoder::decode_process(
+                &request_json("", &over_schema, "op"),
+                FrameLimits::default()
+            ),
+            Err(FrameError::InvalidJson { .. })
+        ));
+        assert!(matches!(
+            FrameDecoder::decode_process(
+                &request_json(",\"smuggled\":\"secret\"", "ff.process@1", "op"),
+                FrameLimits::default()
+            ),
+            Err(FrameError::InvalidJson { .. })
+        ));
+    }
+
+    #[test]
+    fn conformance_allows_correlated_event_but_rejects_duplicate_request() {
+        let request = FrameDecoder::decode_process(
+            &request_json("", "ff.process@1", "op"),
+            FrameLimits::default(),
+        )
+        .expect("request must decode");
+        let event: ProcessEnvelope = serde_json::from_str(
+            r#"{"kind":"event","body":{"header":{"schema_id":"ff.process@1","version":{"major":1,"minor":0},"request_id":"request_1","producer_id":"producer_1","job_id":null,"sequence":2},"kind":"progress","criticality":"operational","sensitivity":"operational","payload":{}}}"#,
+        )
+        .expect("event must decode");
+        let mut conformance = ProcessConformance::new(
+            CompatibilityRange {
+                major: 1,
+                minimum_minor: 0,
+                maximum_minor: 1,
+            },
+            8,
+        );
+        assert!(conformance.validate(&request).is_ok());
+        assert!(conformance.validate(&event).is_ok());
+        assert!(matches!(
+            conformance.validate(&request),
+            Err(FrameError::DuplicateRequestId { .. })
+        ));
     }
 }

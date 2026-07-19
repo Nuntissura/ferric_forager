@@ -162,7 +162,6 @@ pub struct DiagnosticEnvelope {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct DiagnosticEnvelopeWire {
     protocol: ProtocolVersion,
     schema: SchemaIdentity,
@@ -182,6 +181,7 @@ impl DiagnosticEnvelope {
     pub fn validate(&self) -> Result<(), ContractError> {
         self.protocol.validate()?;
         self.schema.validate()?;
+        self.sequence.validate()?;
         if self.sequence.key.producer_instance != self.producer_instance {
             return Err(ContractError::Sequence {
                 fault: SequenceFault::IdentityChanged,

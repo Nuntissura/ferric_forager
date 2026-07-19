@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 fforager-contracts = { path = "../../../product/crates/fforager-contracts" }
 fforager-diagnostics-contract = { path = "../../../product/crates/fforager-diagnostics-contract" }
+fforager-core = { path = "../../../product/crates/fforager-core" }
 serde_json.workspace = true
 
 [lints]

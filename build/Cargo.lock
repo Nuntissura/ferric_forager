@@ -124,6 +124,7 @@ name = "fforager-testkit"
 version = "0.1.0"
 dependencies = [
  "fforager-contracts",
+ "fforager-core",
  "fforager-diagnostics-contract",
  "serde_json",
 ]

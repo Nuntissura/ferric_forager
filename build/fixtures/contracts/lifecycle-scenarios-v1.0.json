@@ -1,0 +1,17 @@
+{
+  "schema_id":"ff.lifecycle-scenarios@1",
+  "scenarios":[
+    {"machine_kind":"JobCancellation","events":["Start","Reconcile","Acknowledge"],"expected_state":"JobSucceeded"},
+    {"machine_kind":"SourceRedirect","events":["Start","Redirect","Continue","Complete"],"expected_state":"SourceResolved"},
+    {"machine_kind":"AtomicAdmission","events":["Admit","Release"],"expected_state":"AdmissionReleased"},
+    {"machine_kind":"ByteCreditDurability","events":["Receive","Validate","PersistDurably"],"expected_state":"BytesDurable"},
+    {"machine_kind":"Live","events":["Ready","Serve","Drain"],"expected_state":"LiveStopped"},
+    {"machine_kind":"Sink","events":["Start","Drain","Complete"],"expected_state":"SinkCompleted"},
+    {"machine_kind":"Ffmpeg","events":["Spawn","Start","Complete","Acknowledge"],"expected_state":"FfmpegExited"},
+    {"machine_kind":"JavascriptWorker","events":["Assign","Start","Complete"],"expected_state":"JavascriptCompleted"},
+    {"machine_kind":"PluginIpc","events":["Start","Ready","Assign","Complete","Drain","Acknowledge"],"expected_state":"PluginStopped"},
+    {"machine_kind":"CommitArchiveReconciliation","events":["Prepare","Acknowledge","Rename","Acknowledge","Archive","Acknowledge","Cleanup","Acknowledge","Reconcile","Acknowledge"],"expected_state":"CommitReconciled"},
+    {"machine_kind":"FilesystemCapability","events":["Probe","Confine"],"expected_state":"FilesystemConfined"},
+    {"machine_kind":"Watcher","events":["Ready","Serve","Drain","Acknowledge"],"expected_state":"WatcherStopped"}
+  ]
+}

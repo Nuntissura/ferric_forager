@@ -358,6 +358,19 @@ impl SequenceIdentity {
         Ok(Self { key, sequence })
     }
 
+    /// Revalidates a sequence identity that may have been constructed in memory.
+    ///
+    /// # Errors
+    /// Returns [`ContractError`] when the sequence is zero.
+    pub fn validate(&self) -> Result<(), ContractError> {
+        if !(FIRST_SEQUENCE..=LAST_SEQUENCE).contains(&self.sequence) {
+            return Err(ContractError::Sequence {
+                fault: SequenceFault::InvalidStart,
+            });
+        }
+        Ok(())
+    }
+
     /// Advances without wrapping.
     ///
     /// # Errors

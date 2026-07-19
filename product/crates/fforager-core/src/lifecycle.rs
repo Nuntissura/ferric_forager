@@ -24,6 +24,7 @@ pub enum State {
     JobQueued,
     JobRunning,
     JobCancelling,
+    JobVerifying,
     JobSucceeded,
     JobFailed,
     JobCancelled,
@@ -79,17 +80,24 @@ pub enum State {
     PluginStopped,
     PluginFailed,
     CommitWorking,
+    CommitPreparing,
     CommitPrepared,
+    CommitRenaming,
     CommitRenamed,
+    CommitArchiving,
     CommitArchived,
+    CommitCleaning,
     CommitCleaned,
+    CommitReconciling,
     CommitReconciled,
     CommitInconsistent,
+    CommitCancelled,
     FilesystemUnknown,
     FilesystemProbing,
     FilesystemConfined,
     FilesystemDegraded,
     FilesystemUnsupported,
+    FilesystemCancelled,
     WatcherStarting,
     WatcherReady,
     WatcherServing,
@@ -329,6 +337,7 @@ fn belongs(kind: MachineKind, state: State) -> bool {
             State::JobQueued
                 | State::JobRunning
                 | State::JobCancelling
+                | State::JobVerifying
                 | State::JobSucceeded
                 | State::JobFailed
                 | State::JobCancelled
@@ -402,12 +411,18 @@ fn belongs(kind: MachineKind, state: State) -> bool {
         ) | (
             MachineKind::CommitArchiveReconciliation,
             State::CommitWorking
+                | State::CommitPreparing
                 | State::CommitPrepared
+                | State::CommitRenaming
                 | State::CommitRenamed
+                | State::CommitArchiving
                 | State::CommitArchived
+                | State::CommitCleaning
                 | State::CommitCleaned
+                | State::CommitReconciling
                 | State::CommitReconciled
                 | State::CommitInconsistent
+                | State::CommitCancelled
         ) | (
             MachineKind::FilesystemCapability,
             State::FilesystemUnknown
@@ -415,6 +430,7 @@ fn belongs(kind: MachineKind, state: State) -> bool {
                 | State::FilesystemConfined
                 | State::FilesystemDegraded
                 | State::FilesystemUnsupported
+                | State::FilesystemCancelled
         ) | (
             MachineKind::Watcher,
             State::WatcherStarting
@@ -462,20 +478,20 @@ fn job(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
     match (state, event) {
         (State::JobQueued, Event::Start) => step(State::JobRunning, &[EffectIntent::BeginJob]),
         (State::JobQueued, Event::Cancel) => step(State::JobCancelled, &[]),
-        (State::JobRunning, Event::Cancel) => {
+        (State::JobRunning | State::JobVerifying, Event::Cancel) => {
             step(State::JobCancelling, &[EffectIntent::RequestCancellation])
         }
         (State::JobCancelling, Event::Acknowledge) => {
             step(State::JobCancelled, &[EffectIntent::ReleaseResources])
         }
         (State::JobRunning, Event::Reconcile) => step(
-            State::JobSucceeded,
-            &[
-                EffectIntent::VerifyArchiveOutputPair,
-                EffectIntent::ReleaseResources,
-            ],
+            State::JobVerifying,
+            &[EffectIntent::VerifyArchiveOutputPair],
         ),
-        (State::JobRunning | State::JobCancelling, Event::Fail) => step(
+        (State::JobVerifying, Event::Acknowledge) => {
+            step(State::JobSucceeded, &[EffectIntent::ReleaseResources])
+        }
+        (State::JobRunning | State::JobCancelling | State::JobVerifying, Event::Fail) => step(
             State::JobFailed,
             &[
                 EffectIntent::PreserveDiagnostics,
@@ -613,13 +629,13 @@ fn ffmpeg(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (State::FfmpegReaping, Event::Acknowledge) => {
             step(State::FfmpegExited, &[EffectIntent::ReleaseResources])
         }
+        (State::FfmpegPrepared, Event::Cancel) | (State::FfmpegCancelling, Event::Acknowledge) => {
+            step(State::FfmpegCancelled, &[EffectIntent::ReleaseResources])
+        }
         (State::FfmpegSpawned | State::FfmpegRunning, Event::Cancel) => step(
             State::FfmpegCancelling,
             &[EffectIntent::TerminateProcess, EffectIntent::ReapProcess],
         ),
-        (State::FfmpegCancelling, Event::Acknowledge) => {
-            step(State::FfmpegCancelled, &[EffectIntent::ReleaseResources])
-        }
         (State::FfmpegSpawned | State::FfmpegRunning | State::FfmpegReaping, Event::Fail) => step(
             State::FfmpegFailed,
             &[EffectIntent::ReapProcess, EffectIntent::PreserveDiagnostics],
@@ -671,9 +687,10 @@ fn plugin(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (State::PluginReady, Event::Assign) => {
             step(State::PluginInFlight, &[EffectIntent::SendPluginRequest])
         }
-        (State::PluginReady | State::PluginInFlight, Event::Drain | Event::Cancel) => {
-            step(State::PluginDraining, &[EffectIntent::ClosePluginChannel])
-        }
+        (
+            State::PluginHandshaking | State::PluginReady | State::PluginInFlight,
+            Event::Drain | Event::Cancel,
+        ) => step(State::PluginDraining, &[EffectIntent::ClosePluginChannel]),
         (State::PluginDraining, Event::Acknowledge) => step(State::PluginStopped, &[]),
         (
             State::PluginHandshaking
@@ -698,22 +715,27 @@ fn plugin(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
 fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
     match (state, event) {
         (State::CommitWorking, Event::Prepare) => step(
-            State::CommitPrepared,
+            State::CommitPreparing,
             &[EffectIntent::ValidateOutput, EffectIntent::SynchronizeData],
         ),
+        (State::CommitPreparing, Event::Acknowledge) => step(State::CommitPrepared, &[]),
         (State::CommitPrepared, Event::Rename) => {
-            step(State::CommitRenamed, &[EffectIntent::RenameOutput])
+            step(State::CommitRenaming, &[EffectIntent::RenameOutput])
         }
+        (State::CommitRenaming, Event::Acknowledge) => step(State::CommitRenamed, &[]),
         (State::CommitRenamed, Event::Archive) => {
-            step(State::CommitArchived, &[EffectIntent::InsertArchiveRow])
+            step(State::CommitArchiving, &[EffectIntent::InsertArchiveRow])
         }
+        (State::CommitArchiving, Event::Acknowledge) => step(State::CommitArchived, &[]),
         (State::CommitArchived, Event::Cleanup) => {
-            step(State::CommitCleaned, &[EffectIntent::RemoveTemporaryState])
+            step(State::CommitCleaning, &[EffectIntent::RemoveTemporaryState])
         }
+        (State::CommitCleaning, Event::Acknowledge) => step(State::CommitCleaned, &[]),
         (State::CommitCleaned, Event::Reconcile) => step(
-            State::CommitReconciled,
+            State::CommitReconciling,
             &[EffectIntent::VerifyArchiveOutputPair],
         ),
+        (State::CommitReconciling, Event::Acknowledge) => step(State::CommitReconciled, &[]),
         (State::CommitPrepared, Event::Restart | Event::Reconcile) => step(
             State::CommitPrepared,
             &[EffectIntent::RevalidatePreparedOutput],
@@ -738,14 +760,37 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         ),
         (
             State::CommitWorking
+            | State::CommitPreparing
             | State::CommitPrepared
+            | State::CommitRenaming
             | State::CommitRenamed
+            | State::CommitArchiving
             | State::CommitArchived
+            | State::CommitCleaning
             | State::CommitCleaned,
             Event::Fail,
         ) => step(
             State::CommitInconsistent,
             &[EffectIntent::PreserveDiagnostics],
+        ),
+        (
+            State::CommitWorking
+            | State::CommitPreparing
+            | State::CommitPrepared
+            | State::CommitRenaming
+            | State::CommitRenamed
+            | State::CommitArchiving
+            | State::CommitArchived
+            | State::CommitCleaning
+            | State::CommitCleaned
+            | State::CommitReconciling,
+            Event::Cancel,
+        ) => step(
+            State::CommitCancelled,
+            &[
+                EffectIntent::PreserveDiagnostics,
+                EffectIntent::ReleaseResources,
+            ],
         ),
         _ => None,
     }
@@ -768,9 +813,11 @@ fn filesystem(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> 
             State::FilesystemUnsupported,
             &[EffectIntent::RejectFilesystem],
         ),
-        (State::FilesystemDegraded | State::FilesystemUnsupported, Event::Restart) => {
-            step(State::FilesystemUnknown, &[])
-        }
+        (State::FilesystemProbing, Event::Cancel) => step(State::FilesystemCancelled, &[]),
+        (
+            State::FilesystemDegraded | State::FilesystemUnsupported | State::FilesystemCancelled,
+            Event::Restart,
+        ) => step(State::FilesystemUnknown, &[]),
         _ => None,
     }
 }
@@ -802,7 +849,8 @@ fn watcher(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             &[EffectIntent::ReportDiagnosticsDegraded],
         ),
         (
-            State::WatcherReady
+            State::WatcherStarting
+            | State::WatcherReady
             | State::WatcherServing
             | State::WatcherDegraded
             | State::WatcherStale,
@@ -834,7 +882,7 @@ mod tests {
         let cases: &[(MachineKind, &[Event], State)] = &[
             (
                 MachineKind::JobCancellation,
-                &[Event::Start, Event::Reconcile],
+                &[Event::Start, Event::Reconcile, Event::Acknowledge],
                 State::JobSucceeded,
             ),
             (
@@ -898,10 +946,15 @@ mod tests {
                 MachineKind::CommitArchiveReconciliation,
                 &[
                     Event::Prepare,
+                    Event::Acknowledge,
                     Event::Rename,
+                    Event::Acknowledge,
                     Event::Archive,
+                    Event::Acknowledge,
                     Event::Cleanup,
+                    Event::Acknowledge,
                     Event::Reconcile,
+                    Event::Acknowledge,
                 ],
                 State::CommitReconciled,
             ),
@@ -995,6 +1048,26 @@ mod tests {
                     Event::Acknowledge,
                 ],
                 State::PluginStopped,
+            ),
+            (
+                MachineKind::Ffmpeg,
+                &[Event::Cancel],
+                State::FfmpegCancelled,
+            ),
+            (
+                MachineKind::FilesystemCapability,
+                &[Event::Probe, Event::Cancel],
+                State::FilesystemCancelled,
+            ),
+            (
+                MachineKind::Watcher,
+                &[Event::Cancel, Event::Acknowledge],
+                State::WatcherStopped,
+            ),
+            (
+                MachineKind::CommitArchiveReconciliation,
+                &[Event::Prepare, Event::Cancel],
+                State::CommitCancelled,
             ),
         ];
         for (kind, events, expected) in cases {
@@ -1100,6 +1173,44 @@ mod tests {
             assert_ne!(model.state(), State::CommitReconciled);
         }
         Ok(())
+    }
+
+    #[test]
+    fn success_and_durable_prefixes_require_effect_acknowledgements() {
+        let mut job = StateMachine::new(MachineKind::JobCancellation, 3);
+        assert!(job.apply(Event::Start).is_ok());
+        assert!(job.apply(Event::Reconcile).is_ok());
+        assert_eq!(job.state(), State::JobVerifying);
+        assert_ne!(job.state(), State::JobSucceeded);
+        assert!(job.apply(Event::Acknowledge).is_ok());
+        assert_eq!(job.state(), State::JobSucceeded);
+
+        let mut commit = StateMachine::new(MachineKind::CommitArchiveReconciliation, 10);
+        for (request, pending, acknowledged) in [
+            (
+                Event::Prepare,
+                State::CommitPreparing,
+                State::CommitPrepared,
+            ),
+            (Event::Rename, State::CommitRenaming, State::CommitRenamed),
+            (
+                Event::Archive,
+                State::CommitArchiving,
+                State::CommitArchived,
+            ),
+            (Event::Cleanup, State::CommitCleaning, State::CommitCleaned),
+            (
+                Event::Reconcile,
+                State::CommitReconciling,
+                State::CommitReconciled,
+            ),
+        ] {
+            assert!(commit.apply(request).is_ok());
+            assert_eq!(commit.state(), pending);
+            assert_ne!(commit.state(), acknowledged);
+            assert!(commit.apply(Event::Acknowledge).is_ok());
+            assert_eq!(commit.state(), acknowledged);
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Atomic coupled-resource and byte-credit accounting models.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub use fforager_contracts::DurabilityPosition;
 
@@ -160,6 +160,7 @@ pub struct ResourceLedger {
     active: BTreeMap<GrantId, Grant>,
     waiters: VecDeque<Waiter>,
     max_active_grants: usize,
+    max_active_per_owner: usize,
     max_waiters: usize,
     max_waiter_bytes: u64,
     waiter_bytes: u64,
@@ -181,6 +182,7 @@ impl ResourceLedger {
             active: BTreeMap::new(),
             waiters: VecDeque::new(),
             max_active_grants,
+            max_active_per_owner: max_active_grants.div_ceil(2),
             max_waiters,
             max_waiter_bytes,
             waiter_bytes: 0,
@@ -214,7 +216,8 @@ impl ResourceLedger {
         }
         if self.waiters.is_empty()
             && self.active.len() < self.max_active_grants
-            && self.can_grant(resources)?
+            && self.owner_active_count(owner) < self.max_active_per_owner
+            && self.can_grant(resources)
         {
             return self.issue(owner, resources).map(Admission::Granted);
         }
@@ -252,6 +255,13 @@ impl ResourceLedger {
     ///
     /// Returns an error for an unknown waiter or broken accounting invariant.
     pub fn cancel_waiter(&mut self, id: WaiterId) -> Result<Vec<Grant>, LedgerError> {
+        let mut candidate = self.clone();
+        let issued = candidate.cancel_waiter_checked(id)?;
+        *self = candidate;
+        Ok(issued)
+    }
+
+    fn cancel_waiter_checked(&mut self, id: WaiterId) -> Result<Vec<Grant>, LedgerError> {
         let Some(position) = self.waiters.iter().position(|waiter| waiter.id == id) else {
             return Err(LedgerError::UnknownWaiter(id));
         };
@@ -271,6 +281,13 @@ impl ResourceLedger {
     ///
     /// Returns a typed unknown, duplicate, ownership, or invariant error.
     pub fn release(&mut self, id: GrantId, owner: OwnerId) -> Result<Vec<Grant>, LedgerError> {
+        let mut candidate = self.clone();
+        let issued = candidate.release_checked(id, owner)?;
+        *self = candidate;
+        Ok(issued)
+    }
+
+    fn release_checked(&mut self, id: GrantId, owner: OwnerId) -> Result<Vec<Grant>, LedgerError> {
         let Some(grant) = self.active.get(&id).copied() else {
             return if id.0 > 0 && id.0 < self.next_grant {
                 Err(LedgerError::GrantAlreadyReleased(id))
@@ -311,6 +328,13 @@ impl ResourceLedger {
             || !self.in_use.fits_within(self.capacity)
             || bytes != Some(self.waiter_bytes)
             || self.active.len() > self.max_active_grants
+            || self
+                .active
+                .values()
+                .map(|grant| grant.owner)
+                .collect::<BTreeSet<_>>()
+                .iter()
+                .any(|owner| self.owner_active_count(*owner) > self.max_active_per_owner)
             || self.waiters.len() > self.max_waiters
             || self.waiter_bytes > self.max_waiter_bytes
         {
@@ -319,12 +343,11 @@ impl ResourceLedger {
         Ok(())
     }
 
-    fn can_grant(&self, resources: ResourceVector) -> Result<bool, LedgerError> {
-        let combined = self
-            .in_use
-            .checked_add(resources)
-            .ok_or(LedgerError::ArithmeticOverflow)?;
-        Ok(combined.fits_within(self.capacity))
+    fn can_grant(&self, resources: ResourceVector) -> bool {
+        let Some(combined) = self.in_use.checked_add(resources) else {
+            return false;
+        };
+        combined.fits_within(self.capacity)
     }
 
     fn issue(&mut self, owner: OwnerId, resources: ResourceVector) -> Result<Grant, LedgerError> {
@@ -352,11 +375,20 @@ impl ResourceLedger {
 
     fn drain_waiters(&mut self) -> Result<Vec<Grant>, LedgerError> {
         let mut issued = Vec::new();
-        while let Some(waiter) = self.waiters.front().copied() {
-            if self.active.len() >= self.max_active_grants || !self.can_grant(waiter.resources)? {
-                break;
+        while self.active.len() < self.max_active_grants {
+            let mut eligible = None;
+            for (position, waiter) in self.waiters.iter().copied().enumerate() {
+                if self.owner_active_count(waiter.owner) < self.max_active_per_owner
+                    && self.can_grant(waiter.resources)
+                {
+                    eligible = Some(position);
+                    break;
+                }
             }
-            let Some(waiter) = self.waiters.pop_front() else {
+            let Some(position) = eligible else {
+                break;
+            };
+            let Some(waiter) = self.waiters.remove(position) else {
                 return Err(LedgerError::InvariantViolation);
             };
             self.waiter_bytes = self
@@ -366,6 +398,13 @@ impl ResourceLedger {
             issued.push(self.issue(waiter.owner, waiter.resources)?);
         }
         Ok(issued)
+    }
+
+    fn owner_active_count(&self, owner: OwnerId) -> usize {
+        self.active
+            .values()
+            .filter(|grant| grant.owner == owner)
+            .count()
     }
 }
 
@@ -382,6 +421,7 @@ pub enum CreditError {
     PositionRegressed,
     WrittenAheadOfReceived,
     DurableAheadOfWritten,
+    UncreditedBytes { received: u64, credited: u64 },
 }
 
 /// Bounded byte ownership plus monotonic durable-prefix accounting.
@@ -392,6 +432,7 @@ pub struct ByteCreditLedger {
     next_claim: u64,
     max_claims: usize,
     active: BTreeMap<u64, (OwnerId, u64)>,
+    credited_total: u64,
     position: DurabilityPosition,
 }
 
@@ -404,6 +445,7 @@ impl ByteCreditLedger {
             next_claim: 1,
             max_claims,
             active: BTreeMap::new(),
+            credited_total: 0,
             position: DurabilityPosition::default(),
         }
     }
@@ -427,6 +469,10 @@ impl ByteCreditLedger {
         if combined > self.capacity {
             return Err(CreditError::CapacityExceeded);
         }
+        let credited_total = self
+            .credited_total
+            .checked_add(bytes)
+            .ok_or(CreditError::ArithmeticOverflow)?;
         let id = self.next_claim;
         self.next_claim = self
             .next_claim
@@ -434,6 +480,7 @@ impl ByteCreditLedger {
             .ok_or(CreditError::IdExhausted)?;
         self.active.insert(id, (owner, bytes));
         self.in_use = combined;
+        self.credited_total = credited_total;
         Ok(id)
     }
 
@@ -491,6 +538,12 @@ impl ByteCreditLedger {
         if next.durable_bytes > next.validated_bytes {
             return Err(CreditError::DurableAheadOfWritten);
         }
+        if next.received_bytes > self.credited_total {
+            return Err(CreditError::UncreditedBytes {
+                received: next.received_bytes,
+                credited: self.credited_total,
+            });
+        }
         self.position = next;
         Ok(())
     }
@@ -520,6 +573,7 @@ impl ByteCreditLedger {
             || self.active.len() > self.max_claims
             || self.position.validated_bytes > self.position.received_bytes
             || self.position.durable_bytes > self.position.validated_bytes
+            || self.position.received_bytes > self.credited_total
         {
             return Err(CreditError::ArithmeticOverflow);
         }
@@ -667,6 +721,7 @@ mod tests {
     #[test]
     fn durable_position_is_monotonic_and_never_ahead_of_written() {
         let mut credits = ByteCreditLedger::new(u64::MAX, 1);
+        assert!(credits.claim(OwnerId(1), u64::MAX).is_ok());
         assert!(
             credits
                 .advance(DurabilityPosition {
@@ -693,6 +748,7 @@ mod tests {
             Err(CreditError::PositionRegressed)
         ));
         let mut invalid = ByteCreditLedger::new(1, 1);
+        assert!(invalid.claim(OwnerId(1), 1).is_ok());
         assert!(matches!(
             invalid.advance(DurabilityPosition {
                 received_bytes: 1,
@@ -709,6 +765,46 @@ mod tests {
             }),
             Err(CreditError::WrittenAheadOfReceived)
         ));
+    }
+
+    #[test]
+    fn durability_rejects_bytes_that_were_never_credited() {
+        let mut credits = ByteCreditLedger::new(0, 0);
+        assert!(matches!(
+            credits.advance(DurabilityPosition {
+                received_bytes: u64::MAX,
+                validated_bytes: u64::MAX,
+                durable_bytes: u64::MAX,
+            }),
+            Err(CreditError::UncreditedBytes {
+                received: u64::MAX,
+                credited: 0
+            })
+        ));
+        assert_eq!(credits.position(), DurabilityPosition::default());
+    }
+
+    #[test]
+    fn release_is_atomic_when_a_waiter_cannot_fit_at_integer_boundary() -> Result<(), String> {
+        let mut ledger = ResourceLedger::new(vector(u64::MAX, 0, 0), 3, 2, u64::MAX);
+        let first = ledger.request(OwnerId(1), vector(u64::MAX - 10, 0, 0));
+        let Ok(Admission::Granted(_first)) = first else {
+            return Err("first boundary grant must be admitted".to_owned());
+        };
+        let second = ledger.request(OwnerId(2), vector(5, 0, 0));
+        let Ok(Admission::Granted(second)) = second else {
+            return Err("second boundary grant must be admitted".to_owned());
+        };
+        assert!(matches!(
+            ledger.request(OwnerId(3), vector(20, 0, 0)),
+            Ok(Admission::Queued(_))
+        ));
+        assert!(
+            matches!(ledger.release(second.id, second.owner), Ok(ref issued) if issued.is_empty())
+        );
+        assert_eq!(ledger.in_use(), vector(u64::MAX - 10, 0, 0));
+        assert!(ledger.verify().is_ok());
+        Ok(())
     }
 
     #[test]
@@ -733,7 +829,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_fifo_prevents_large_head_waiter_starvation() -> Result<(), String> {
+    fn fair_scheduler_preserves_fifo_when_head_becomes_eligible() -> Result<(), String> {
         let mut ledger = ResourceLedger::new(vector(10, 2, 0), 2, 2, 20);
         let first = ledger.request(OwnerId(1), vector(5, 0, 0));
         let Ok(Admission::Granted(first)) = first else {
@@ -754,6 +850,27 @@ mod tests {
         ));
         assert_eq!(ledger.waiter_occupancy(), (1, 1));
         Ok(())
+    }
+
+    #[test]
+    fn one_owner_cannot_monopolize_multiple_active_slots() {
+        let mut ledger = ResourceLedger::new(vector(10, 0, 0), 2, 2, 20);
+        assert!(matches!(
+            ledger.request(OwnerId(1), vector(1, 0, 0)),
+            Ok(Admission::Granted(_))
+        ));
+        let same_owner = ledger.request(OwnerId(1), vector(1, 0, 0));
+        let Ok(Admission::Queued(same_owner)) = same_owner else {
+            return assert!(matches!(same_owner, Ok(Admission::Queued(_))));
+        };
+        assert!(matches!(
+            ledger.request(OwnerId(2), vector(1, 0, 0)),
+            Ok(Admission::Queued(_))
+        ));
+        assert!(matches!(
+            ledger.cancel_waiter(same_owner),
+            Ok(grants) if grants.first().map(|grant| grant.owner) == Some(OwnerId(2))
+        ));
     }
 
     #[test]

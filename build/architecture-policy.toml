@@ -105,6 +105,7 @@ publish_allowed = false
 allowed_internal_dependencies = [
   { package = "fforager-contracts", kinds = ["normal"], optional = false },
   { package = "fforager-diagnostics-contract", kinds = ["normal"], optional = false },
+  { package = "fforager-core", kinds = ["normal"], optional = false },
 ]
 split_trigger = "WP-FF-005-versioned-core-contracts-v1-AC-005"
 feature_owner = "WP-FF-005-versioned-core-contracts-v1"

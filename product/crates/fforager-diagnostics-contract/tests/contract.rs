@@ -423,6 +423,20 @@ fn wire_round_trip_validates_and_rejects_deserialization_bypasses() -> Result<()
         decode_json_frame(&encoded, FrameCompleteness::Complete)?,
         value
     );
+    let mut additive_minor: serde_json::Value = serde_json::from_slice(&encoded)?;
+    additive_minor["future_optional"] = serde_json::json!({"opaque": true});
+    assert_eq!(
+        decode_json_frame(
+            &serde_json::to_vec(&additive_minor)?,
+            FrameCompleteness::Complete
+        )?,
+        value
+    );
+
+    let mut invalid_sequence = value.clone();
+    invalid_sequence.sequence.sequence = 0;
+    assert!(invalid_sequence.validate().is_err());
+    assert!(encode_json_frame(&invalid_sequence).is_err());
 
     let invalid_range = br#"{"major":1,"minimum_minor":9,"maximum_minor":2}"#;
     assert!(serde_json::from_slice::<CompatibilityRange>(invalid_range).is_err());

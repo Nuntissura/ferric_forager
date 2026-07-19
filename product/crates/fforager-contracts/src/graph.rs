@@ -7,6 +7,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
 /// Limits applied before a graph enters the domain core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,6 +34,68 @@ impl Default for GraphLimits {
         }
     }
 }
+
+/// Bounds for acquisition and output-sink descriptors used outside the source graph.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DataContractLimits {
+    pub maximum_fragments: usize,
+    pub maximum_text_bytes: usize,
+    pub maximum_path_reference_bytes: usize,
+    pub maximum_buffer_items: u64,
+    pub maximum_buffer_bytes: u64,
+    pub maximum_sink_lifetime_seconds: u64,
+}
+
+impl Default for DataContractLimits {
+    fn default() -> Self {
+        Self {
+            maximum_fragments: 10_000,
+            maximum_text_bytes: 16 * 1024,
+            maximum_path_reference_bytes: 4 * 1024,
+            maximum_buffer_items: 4_096,
+            maximum_buffer_bytes: 64 * 1024 * 1024,
+            maximum_sink_lifetime_seconds: 31 * 24 * 60 * 60,
+        }
+    }
+}
+
+/// Fail-closed acquisition and sink descriptor validation error.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataContractError {
+    LimitExceeded {
+        field: &'static str,
+        actual: u64,
+        maximum: u64,
+    },
+    EmptyCollection {
+        field: &'static str,
+    },
+    EmptyText {
+        field: &'static str,
+    },
+    InvalidText {
+        field: &'static str,
+    },
+    InvalidPathReference {
+        field: &'static str,
+        value: String,
+    },
+    InvalidChecksum {
+        sequence: u64,
+    },
+    DuplicateFragmentSequence {
+        sequence: u64,
+    },
+    InvalidBoundedBuffer,
+}
+
+impl fmt::Display for DataContractError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid data contract: {self:?}")
+    }
+}
+
+impl std::error::Error for DataContractError {}
 
 /// Canonical, versioned, serializable source graph.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -148,6 +211,10 @@ pub enum GraphError {
         id: ContinuationId,
         node: NodeId,
     },
+    DanglingProvenanceParent {
+        node: NodeId,
+        parent: NodeId,
+    },
     DuplicateEntityId {
         kind: &'static str,
         id: String,
@@ -167,6 +234,10 @@ pub enum GraphError {
     RedirectBudgetExceeded {
         node: NodeId,
         maximum: usize,
+    },
+    AmbiguousRedirect {
+        node: NodeId,
+        targets: usize,
     },
     AmbiguousCanonicalSource {
         canonical_url: String,
@@ -222,6 +293,16 @@ impl SourceGraph {
         for root in &self.roots {
             if !nodes.contains_key(root) {
                 return Err(GraphError::DanglingRoot { id: root.clone() });
+            }
+        }
+        for node in &self.nodes {
+            if let Some(parent) = &node.provenance.parent_node
+                && !nodes.contains_key(parent)
+            {
+                return Err(GraphError::DanglingProvenanceParent {
+                    node: node.id.clone(),
+                    parent: parent.clone(),
+                });
             }
         }
         let mut edge_ids = BTreeSet::new();
@@ -380,12 +461,25 @@ fn validate_redirects(
     nodes: &BTreeMap<NodeId, &SourceNode>,
     maximum: usize,
 ) -> Result<(), GraphError> {
-    let redirects: BTreeMap<&NodeId, &NodeId> = graph
+    let mut redirect_targets = BTreeMap::<&NodeId, Vec<&NodeId>>::new();
+    for edge in graph
         .edges
         .iter()
         .filter(|edge| edge.kind == EdgeKind::TransparentlyOverlays)
-        .map(|edge| (&edge.from, &edge.to))
-        .collect();
+    {
+        redirect_targets
+            .entry(&edge.from)
+            .or_default()
+            .push(&edge.to);
+    }
+    for (node, targets) in &redirect_targets {
+        if targets.len() > 1 {
+            return Err(GraphError::AmbiguousRedirect {
+                node: (*node).clone(),
+                targets: targets.len(),
+            });
+        }
+    }
     for node in nodes
         .values()
         .filter(|node| node.kind == NodeKind::Redirect)
@@ -398,7 +492,10 @@ fn validate_redirects(
                     node: current.clone(),
                 });
             }
-            let Some(next) = redirects.get(current) else {
+            let Some(next) = redirect_targets
+                .get(current)
+                .and_then(|targets| targets.first())
+            else {
                 break;
             };
             if depth == maximum {
@@ -487,8 +584,200 @@ pub struct SinkSemantics {
 #[serde(rename_all = "snake_case")]
 pub enum BackpressureMode {
     BlockProducer,
-    BoundedBuffer,
+    BoundedBuffer {
+        maximum_items: u64,
+        maximum_bytes: u64,
+    },
     DropDeclaredTelemetryOnly,
+}
+
+impl AcquisitionSource {
+    /// Validates count, text, sequence, and checksum bounds before acquisition planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when a descriptor is empty, duplicated, malformed, or over limit.
+    pub fn validate(&self, limits: DataContractLimits) -> Result<(), DataContractError> {
+        match self {
+            Self::DirectUrl { url } => validate_data_text("direct_url", url, limits),
+            Self::Manifest {
+                url,
+                manifest_identity,
+            } => {
+                validate_data_text("manifest_url", url, limits)?;
+                validate_data_text("manifest_identity", manifest_identity, limits)
+            }
+            Self::Fragments {
+                manifest_identity,
+                fragments,
+            } => {
+                validate_data_text("manifest_identity", manifest_identity, limits)?;
+                if fragments.is_empty() {
+                    return Err(DataContractError::EmptyCollection { field: "fragments" });
+                }
+                if fragments.len() > limits.maximum_fragments {
+                    return Err(DataContractError::LimitExceeded {
+                        field: "fragments",
+                        actual: fragments.len() as u64,
+                        maximum: limits.maximum_fragments as u64,
+                    });
+                }
+                let mut sequences = BTreeSet::new();
+                for fragment in fragments {
+                    if !sequences.insert(fragment.sequence) {
+                        return Err(DataContractError::DuplicateFragmentSequence {
+                            sequence: fragment.sequence,
+                        });
+                    }
+                    fragment.validate(limits)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl FragmentDescriptor {
+    /// Validates one fragment's bounded text and optional checksum.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for empty/oversized URLs or malformed checksums.
+    pub fn validate(&self, limits: DataContractLimits) -> Result<(), DataContractError> {
+        validate_data_text("fragment_url", &self.url, limits)?;
+        if let Some(checksum) = &self.checksum
+            && (checksum.len() != 64
+                || !checksum
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+        {
+            return Err(DataContractError::InvalidChecksum {
+                sequence: self.sequence,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl OutputSinkSpec {
+    /// Validates bounded sink text and capability-relative rooted path references.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for an empty, oversized, absolute, or escaping reference.
+    pub fn validate(&self, limits: DataContractLimits) -> Result<(), DataContractError> {
+        match self {
+            Self::AtomicFile { rooted_path } | Self::NamedPipe { rooted_path } => {
+                validate_rooted_path_reference("rooted_path", rooted_path, limits)
+            }
+            Self::LocalHttp {
+                bind,
+                secret_reference,
+            } => {
+                validate_data_text("local_http_bind", bind, limits)?;
+                if let Some(reference) = secret_reference {
+                    validate_data_text("secret_reference", reference, limits)?;
+                }
+                Ok(())
+            }
+            Self::Player {
+                executable_reference,
+                ..
+            } => validate_data_text("executable_reference", executable_reference, limits),
+            Self::HostCallback { endpoint_id } => {
+                validate_data_text("host_callback_endpoint", endpoint_id, limits)
+            }
+            Self::Stdout | Self::Null => Ok(()),
+        }
+    }
+}
+
+impl SinkSemantics {
+    /// Validates lifetime and bounded-buffer capacity declarations.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when a declared bound is zero or exceeds policy.
+    pub fn validate(&self, limits: DataContractLimits) -> Result<(), DataContractError> {
+        if let Some(lifetime) = self.expected_lifetime_seconds
+            && (lifetime == 0 || lifetime > limits.maximum_sink_lifetime_seconds)
+        {
+            return Err(DataContractError::LimitExceeded {
+                field: "expected_lifetime_seconds",
+                actual: lifetime,
+                maximum: limits.maximum_sink_lifetime_seconds,
+            });
+        }
+        if let BackpressureMode::BoundedBuffer {
+            maximum_items,
+            maximum_bytes,
+        } = self.backpressure
+            && (maximum_items == 0
+                || maximum_bytes == 0
+                || maximum_items > limits.maximum_buffer_items
+                || maximum_bytes > limits.maximum_buffer_bytes)
+        {
+            return Err(DataContractError::InvalidBoundedBuffer);
+        }
+        Ok(())
+    }
+}
+
+fn validate_data_text(
+    field: &'static str,
+    value: &str,
+    limits: DataContractLimits,
+) -> Result<(), DataContractError> {
+    if value.is_empty() {
+        return Err(DataContractError::EmptyText { field });
+    }
+    if value.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err(DataContractError::InvalidText { field });
+    }
+    if value.len() > limits.maximum_text_bytes {
+        return Err(DataContractError::LimitExceeded {
+            field,
+            actual: value.len() as u64,
+            maximum: limits.maximum_text_bytes as u64,
+        });
+    }
+    Ok(())
+}
+
+fn validate_rooted_path_reference(
+    field: &'static str,
+    value: &str,
+    limits: DataContractLimits,
+) -> Result<(), DataContractError> {
+    if value.len() > limits.maximum_path_reference_bytes {
+        return Err(DataContractError::LimitExceeded {
+            field,
+            actual: value.len() as u64,
+            maximum: limits.maximum_path_reference_bytes as u64,
+        });
+    }
+    if value.is_empty()
+        || Path::new(value).is_absolute()
+        || value.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err(DataContractError::InvalidPathReference {
+            field,
+            value: value.to_owned(),
+        });
+    }
+    let normalized = value.replace('\\', "/");
+    if normalized.starts_with('/')
+        || normalized.contains(':')
+        || normalized.split('/').any(|segment| {
+            segment.is_empty() || matches!(segment, "." | "..") || segment.ends_with(['.', ' '])
+        })
+    {
+        return Err(DataContractError::InvalidPathReference {
+            field,
+            value: value.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -529,6 +818,69 @@ mod tests {
     }
 
     #[test]
+    fn rejects_dangling_provenance_parent() -> Result<(), crate::IdError> {
+        let mut child = node("child")?;
+        child.provenance.parent_node = Some(NodeId::new("node_missing_parent")?);
+        let graph = SourceGraph {
+            schema: SchemaVersion { major: 1, minor: 0 },
+            roots: vec![child.id.clone()],
+            nodes: vec![child],
+            edges: vec![],
+            continuations: vec![],
+        };
+        let decoded = serde_json::to_vec(&graph)
+            .ok()
+            .and_then(|wire| serde_json::from_slice::<SourceGraph>(&wire).ok());
+        assert!(matches!(
+            decoded.as_ref().map(|graph| graph.validate(GraphLimits::default())),
+            Some(Err(GraphError::DanglingProvenanceParent { node, parent }))
+                if node.as_str() == "node_child"
+                    && parent.as_str() == "node_missing_parent"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_redirect_with_multiple_overlay_targets() -> Result<(), crate::IdError> {
+        let mut redirect = node("redirect")?;
+        redirect.kind = NodeKind::Redirect;
+        let first = node("first")?;
+        let second = node("second")?;
+        let first_edge = SourceEdge {
+            id: EdgeId::new("edge_redirect_first")?,
+            from: redirect.id.clone(),
+            to: first.id.clone(),
+            kind: EdgeKind::TransparentlyOverlays,
+        };
+        let second_edge = SourceEdge {
+            id: EdgeId::new("edge_redirect_second")?,
+            from: redirect.id.clone(),
+            to: second.id.clone(),
+            kind: EdgeKind::TransparentlyOverlays,
+        };
+        for edges in [
+            vec![first_edge.clone(), second_edge.clone()],
+            vec![second_edge, first_edge],
+        ] {
+            let graph = SourceGraph {
+                schema: SchemaVersion { major: 1, minor: 0 },
+                roots: vec![redirect.id.clone()],
+                nodes: vec![redirect.clone(), first.clone(), second.clone()],
+                edges,
+                continuations: vec![],
+            };
+            assert_eq!(
+                graph.validate(GraphLimits::default()),
+                Err(GraphError::AmbiguousRedirect {
+                    node: redirect.id.clone(),
+                    targets: 2,
+                })
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn round_trip_preserves_tri_state() -> Result<(), crate::IdError> {
         let source = node("one")?;
         let encoded = serde_json::to_vec(&source);
@@ -538,5 +890,61 @@ mod tests {
             .and_then(|bytes| serde_json::from_slice::<SourceNode>(&bytes).ok());
         assert_eq!(decoded, Some(source));
         Ok(())
+    }
+
+    #[test]
+    fn acquisition_rejects_duplicate_fragments_and_bad_checksum() {
+        let fragment = FragmentDescriptor {
+            sequence: 7,
+            url: "https://example.test/fragment".into(),
+            expected_bytes: Some(10),
+            checksum: Some("x".repeat(64)),
+        };
+        assert_eq!(
+            fragment.validate(DataContractLimits::default()),
+            Err(DataContractError::InvalidChecksum { sequence: 7 })
+        );
+        let source = AcquisitionSource::Fragments {
+            manifest_identity: "manifest-one".into(),
+            fragments: vec![
+                FragmentDescriptor {
+                    checksum: None,
+                    ..fragment.clone()
+                },
+                FragmentDescriptor {
+                    checksum: None,
+                    ..fragment
+                },
+            ],
+        };
+        assert_eq!(
+            source.validate(DataContractLimits::default()),
+            Err(DataContractError::DuplicateFragmentSequence { sequence: 7 })
+        );
+    }
+
+    #[test]
+    fn sink_rejects_escaping_path_and_unbounded_capacity() {
+        let sink = OutputSinkSpec::AtomicFile {
+            rooted_path: "../escape.bin".into(),
+        };
+        assert!(matches!(
+            sink.validate(DataContractLimits::default()),
+            Err(DataContractError::InvalidPathReference { .. })
+        ));
+        let semantics = SinkSemantics {
+            backpressure: BackpressureMode::BoundedBuffer {
+                maximum_items: 0,
+                maximum_bytes: 1024,
+            },
+            seekable: false,
+            atomic: false,
+            postprocessing_requires_seekable_temporary: false,
+            expected_lifetime_seconds: Some(1),
+        };
+        assert_eq!(
+            semantics.validate(DataContractLimits::default()),
+            Err(DataContractError::InvalidBoundedBuffer)
+        );
     }
 }

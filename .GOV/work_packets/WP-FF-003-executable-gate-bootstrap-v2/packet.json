@@ -1,0 +1,217 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-003-executable-gate-bootstrap-v2",
+    "base_wp_id": "WP-FF-003-executable-gate-bootstrap",
+    "version": "2",
+    "title": "Adversarially re-evaluate and remediate the Phase 0 executable-gate bootstrap",
+    "created_at_utc": "2026-07-19T10:27:04Z",
+    "updated_at_utc": "2026-07-19T10:27:04Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator requested evaluation tests on WP-FF-003 through different adversarial lenses, remediation of findings, gaps, concerns, and risks, code cleanup where needed, and explicitly authorized sub-agent assistance.",
+    "recorded_at_utc": "2026-07-19T10:27:04Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#9-workspace-and-module-layout",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#268-mandatory-build-and-architecture-gates",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#269-rust-coding-discipline",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0-bootstrap--executable-gate-skeleton",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#appendix-f--architecture-and-build-enforcement-contract"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "f44e5747c59e2b42783a5ea323ac8368ad2b420c",
+    "work_branch": "codex/wp-ff-003-adversarial-remediation",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
+    },
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "IN_PROGRESS",
+    "risk": "HIGH",
+    "blockers": [],
+    "next_action": "Complete independent adversarial audits, reproduce findings, remediate confirmed defects, simplify safely, and rerun the complete WP-FF-003 proof matrix.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Re-evaluate the validated WP-FF-003 implementation through independent contract, hostile-state, and Rust-quality lenses; remediate confirmed defects and regression-proof them without widening Phase 0 scope.",
+    "in_scope": [
+      "Re-prove every WP-FF-003 v1 acceptance requirement against current main",
+      "Attack false-PASS routes, policy/schema boundaries, failure propagation, hostile repository/environment states, and Rust implementation quality",
+      "Add focused regression tests or fixtures for confirmed gaps",
+      "Remove or simplify brittle, duplicated, misleading, or unnecessary code only when full scope remains proven",
+      "Run final architecture-check and verify-pr gates plus independent counterfactual, boundary, and negative-path probes"
+    ],
+    "non_goals": [
+      "Shipped Ferric Forager product features or crates",
+      "Phase 0A through Phase 0D implementation",
+      "Broad implementation-readiness, parity, performance, durability, or cross-platform claims",
+      "New runtime or native dependencies",
+      "Changing the accepted three-root architecture or authority precedence"
+    ],
+    "allowed_paths": [
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/id-registry.yaml",
+      ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json",
+      ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/refinement.json",
+      ".gitignore",
+      "rust-toolchain.toml",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/tooling-policy.toml",
+      "build/rule-to-proof.toml",
+      "build/deny.toml",
+      "build/tools/fforager-xtask/",
+      "build/fixtures/architecture/",
+      "build/integration-tests/",
+      "build/reports/",
+      "product/MODEL_MANUAL.md"
+    ],
+    "dependencies": [
+      "WP-FF-003 v1 validated implementation and acceptance contract",
+      "Pinned Rust toolchain, Cargo, rustfmt, Clippy, cargo-deny, and Git",
+      "No new product runtime or native dependency"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-001",
+      "requirement": "All eight WP-FF-003 v1 acceptance requirements remain preserved and are freshly re-proven against current source, policy, reports, fixtures, manual, and canonical commands.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-002",
+      "requirement": "Independent contract/policy, hostile-state, and Rust-quality audits each derive concrete attack surfaces and run checks beyond the v1 evidence list, including at least two counterfactuals, one producer-consumer boundary probe, and one negative-path probe overall; every material result is reproduced by the primary agent.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-003",
+      "requirement": "Every confirmed finding, gap, concern, and risk is either remediated with executable regression proof or retained as explicit residual uncertainty that does not contradict Phase 0 PASS; no false-PASS route remains known.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-004",
+      "requirement": "A reuse, deletion, dependency, and simplification review removes or improves brittle or unnecessary implementation where safe, and the full accepted scope/risk matrix passes again after cleanup.",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-005",
+      "requirement": "The pinned architecture-check and verify-pr commands, formatting, warnings-denied Clippy, tests, docs, dependency policy, governance parsing, authority mirror, allowlist, registry-target, and git diff checks pass on the final branch with truthful proof limitations.",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-19T10:27:04Z",
+      "branch": "codex/wp-ff-003-adversarial-remediation",
+      "base_sha": "f44e5747c59e2b42783a5ea323ac8368ad2b420c",
+      "head_sha": "f44e5747c59e2b42783a5ea323ac8368ad2b420c",
+      "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
+        ".GOV/id-registry.yaml",
+        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json",
+        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/refinement.json"
+      ],
+      "checks_run": [
+        "git branch --show-current: codex/wp-ff-003-adversarial-remediation",
+        "git rev-parse HEAD: f44e5747c59e2b42783a5ea323ac8368ad2b420c",
+        "git merge-base main HEAD: f44e5747c59e2b42783a5ea323ac8368ad2b420c",
+        "git status --porcelain=v2 --branch was clean before activation"
+      ],
+      "blockers": [],
+      "next_action": "Complete independent audits and reproduce each material finding before editing implementation."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Broad Phase 1 implementation readiness",
+      "yt-dlp replacement parity",
+      "Shipped clean-artifact behavior before a shipped member exists",
+      "Cross-platform behavior not exercised on this Windows host"
+    ]
+  },
+  "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/refinement.json",
+    "revision": {
+      "revises": "WP-FF-003-executable-gate-bootstrap-v1",
+      "preserved_acceptance_ids": [
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-001",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-002",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-003",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-004",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-005",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-006",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-007",
+        "WP-FF-003-executable-gate-bootstrap-v1-AC-008"
+      ],
+      "changed_requirements": [
+        "Fresh multi-lens independent adversarial evaluation",
+        "Primary-agent reproduction and remediation of confirmed findings",
+        "Post-remediation cleanup and full proof rerun"
+      ],
+      "supersession_effective_when": "WP-FF-003-executable-gate-bootstrap-v2 reaches VALIDATED"
+    },
+    "delegation": {
+      "authorized_by_operator": true,
+      "primary_agent_proof_review_required": true,
+      "lenses": [
+        "contract_policy_audit",
+        "hostile_state_audit",
+        "rust_quality_audit"
+      ]
+    },
+    "change_evidence": {
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Preserve every v1 acceptance requirement",
+          "Make every aggregate PASS fail closed",
+          "Keep product runtime independent from .GOV and build",
+          "Keep reports collision-safe, atomic, attributable, and truthful",
+          "Keep command failures and unavailable gates from becoming PASS"
+        ],
+        "risk_cases": [
+          "Validator trusts self-declared policy instead of independent inputs",
+          "Malformed, unknown, missing, or mismatched data is ignored",
+          "Fixture fails for the wrong reason",
+          "Hostile repository, path, Git, or tool state produces a false PASS",
+          "Report creation or command error is swallowed",
+          "Brittle parsing or duplicated logic diverges across gates"
+        ]
+      },
+      "review_gates": {
+        "scope_and_risk_coverage": "PENDING",
+        "reuse_deletion_dependency_simplification": "PENDING",
+        "post_simplification_complete_rerun": "PENDING"
+      },
+      "independent_findings": [],
+      "residual_uncertainty": []
+    }
+  }
+}

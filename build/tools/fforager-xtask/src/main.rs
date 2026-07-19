@@ -1,17 +1,23 @@
-use cargo_metadata::{CargoOpt, DependencyKind, Metadata, MetadataCommand, PackageId};
+use cargo_metadata::{DependencyKind, Metadata, PackageId};
+use saphyr::{LoadableYamlNode, Yaml};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const ARCH_GATE: &str = "FF-GATE-ARCH-001";
 const PR_GATE: &str = "FF-GATE-PR-001";
+const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
+const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
+const GATE_COMMAND_TIMEOUT: Duration = Duration::from_mins(15);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,6 +25,7 @@ struct ArchitecturePolicy {
     schema_id: String,
     file_id: String,
     schema_version: String,
+    accepted_design_decision_ids: Vec<String>,
     workspace_manifest: String,
     workspace_root: String,
     target_directory: String,
@@ -57,6 +64,9 @@ struct MemberPolicy {
     feature_owner: String,
     profile: String,
     removal_condition: String,
+    runtime_native_constraint_ref: String,
+    unsafe_policy_ref: String,
+    exception_policy_ref: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +87,13 @@ struct DependencyDecision {
     runtime_class: String,
     purpose: String,
     native: bool,
+    owner: String,
+    allowed_consumers: Vec<String>,
+    reason: String,
+    removal_trigger: String,
+    approval_id: String,
+    features: Vec<String>,
+    default_features: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,9 +113,11 @@ struct ToolingPolicy {
 #[serde(deny_unknown_fields)]
 struct ToolPolicy {
     name: String,
-    identity_contains: String,
+    identity_line: String,
     command: Vec<String>,
     source: String,
+    provenance_kind: String,
+    executable_sha256: Option<String>,
     owning_gate: String,
     required_now: bool,
 }
@@ -181,6 +200,7 @@ struct Check {
 struct FixtureResult {
     fixture_id: String,
     status: &'static str,
+    execution_path: &'static str,
     expected_diagnostic: String,
     observed_diagnostics: Vec<String>,
 }
@@ -288,6 +308,7 @@ fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
     validate_policy_identity(&policy)?;
     let tooling: ToolingPolicy = read_toml(&root.join("build/tooling-policy.toml"))?;
     validate_tooling_policy(&tooling)?;
+    validate_current_host(root, &tooling)?;
     let rule_map: RuleMap = read_toml(&root.join("build/rule-to-proof.toml"))?;
     validate_rule_map_identity(&rule_map)?;
     let metadata = cargo_metadata(root, &policy)?;
@@ -323,9 +344,10 @@ fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
 }
 
 fn validate_policy_identity(policy: &ArchitecturePolicy) -> Result<(), String> {
-    if policy.schema_id != "ff.architecture_policy@1"
+    if policy.schema_id != "ff.architecture_policy@2"
         || policy.file_id != "FF-GOV-BUILD-ARCH-POLICY-001"
-        || policy.schema_version != "1.0.0"
+        || policy.schema_version != "2.0.0"
+        || policy.accepted_design_decision_ids != ["FF-BUILD-036", "FF-BUILD-077"]
     {
         return Err("unsupported architecture-policy schema".to_owned());
     }
@@ -397,20 +419,25 @@ fn validate_rule_map_identity(rule_map: &RuleMap) -> Result<(), String> {
 }
 
 fn validate_tooling_policy(policy: &ToolingPolicy) -> Result<(), String> {
-    if policy.schema_id != "ff.tooling_policy@1"
+    if policy.supported_hosts != ["x86_64-pc-windows-msvc"] {
+        return Err(format!(
+            "FF-TOOL-E-UNSUPPORTED-HOST: unsupported bootstrap host inventory {:?}",
+            policy.supported_hosts
+        ));
+    }
+    if policy.schema_id != "ff.tooling_policy@3"
         || policy.file_id != "FF-GOV-BUILD-TOOLING-POLICY-001"
-        || policy.schema_version != "1.0.0"
+        || policy.schema_version != "3.0.0"
         || policy.rust_toolchain != "1.97.1"
         || policy.auto_install
         || policy.advisory_database_max_age_hours != 168
-        || policy.supported_hosts.is_empty()
     {
         return Err("invalid tooling-policy identity or bootstrap settings".to_owned());
     }
     let mut names = BTreeSet::new();
     for tool in &policy.tools {
         if !names.insert(tool.name.as_str())
-            || tool.identity_contains.trim().is_empty()
+            || tool.identity_line.trim().is_empty()
             || tool.command.is_empty()
             || tool.command.iter().any(String::is_empty)
             || tool.source.trim().is_empty()
@@ -427,19 +454,130 @@ fn validate_tooling_policy(policy: &ToolingPolicy) -> Result<(), String> {
     if names != required {
         return Err(format!("tooling-policy inventory mismatch: {names:?}"));
     }
+    for tool in &policy.tools {
+        let expected = expected_tool_policy(&tool.name)
+            .ok_or_else(|| format!("unknown bootstrap tool policy for {}", tool.name))?;
+        if tool.identity_line != expected.identity_line
+            || tool.command != expected.command
+            || tool.source != expected.source
+            || tool.provenance_kind != expected.provenance_kind
+            || tool.executable_sha256.as_deref() != expected.executable_sha256
+        {
+            return Err(format!(
+                "tool {} does not match its canonical identity, command, source, and provenance",
+                tool.name
+            ));
+        }
+    }
     Ok(())
 }
 
+struct ExpectedToolPolicy {
+    identity_line: &'static str,
+    command: Vec<String>,
+    source: &'static str,
+    provenance_kind: &'static str,
+    executable_sha256: Option<&'static str>,
+}
+
+fn expected_tool_policy(name: &str) -> Option<ExpectedToolPolicy> {
+    let strings = |values: &[&str]| values.iter().map(|value| (*value).to_owned()).collect();
+    match name {
+        "rustc" => Some(ExpectedToolPolicy {
+            identity_line: "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+            command: strings(&["rustc", "--version", "--verbose"]),
+            source: "root rust-toolchain.toml",
+            provenance_kind: "root-toolchain-and-cargo-lock",
+            executable_sha256: None,
+        }),
+        "cargo" => Some(ExpectedToolPolicy {
+            identity_line: "cargo 1.97.1 (c980f4866 2026-06-30)",
+            command: strings(&["cargo", "--version", "--verbose"]),
+            source: "root rust-toolchain.toml",
+            provenance_kind: "root-toolchain-and-cargo-lock",
+            executable_sha256: None,
+        }),
+        "rustfmt" => Some(ExpectedToolPolicy {
+            identity_line: "rustfmt 1.9.0-stable (8bab26f4f6 2026-07-14)",
+            command: strings(&["rustfmt", "--version"]),
+            source: "pinned rustup component",
+            provenance_kind: "root-toolchain-and-cargo-lock",
+            executable_sha256: None,
+        }),
+        "clippy" => Some(ExpectedToolPolicy {
+            identity_line: "clippy 0.1.97 (8bab26f4f6 2026-07-14)",
+            command: strings(&["cargo", "clippy", "--version"]),
+            source: "pinned rustup component",
+            provenance_kind: "root-toolchain-and-cargo-lock",
+            executable_sha256: None,
+        }),
+        "git" => Some(ExpectedToolPolicy {
+            identity_line: "git version 2.53.0.windows.3",
+            command: strings(&["git", "--version"]),
+            source: "supported host installation",
+            provenance_kind: "executable-sha256",
+            executable_sha256: Some(
+                "c53279919fdea03474bb23b465b3a82287157491f1bd69a5eb82dd9831582333",
+            ),
+        }),
+        "cargo-deny" => Some(ExpectedToolPolicy {
+            identity_line: "cargo-deny 0.20.2",
+            command: strings(&["cargo", "deny", "--version"]),
+            source: "cargo install cargo-deny --version 0.20.2 --locked",
+            provenance_kind: "executable-sha256",
+            executable_sha256: Some(
+                "6e67806f5cf7d4da170d226a8f12cbd16aba236f51af1d75bc9fc56129d998ae",
+            ),
+        }),
+        _ => None,
+    }
+}
+
+fn validate_current_host(root: &Path, policy: &ToolingPolicy) -> Result<String, String> {
+    let rustc = policy
+        .tools
+        .iter()
+        .find(|tool| tool.name == "rustc")
+        .ok_or("tooling policy omits rustc host probe")?;
+    let (program, args) = rustc
+        .command
+        .split_first()
+        .ok_or("empty rustc host command")?;
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = command_output(root, program, &args)?;
+    let host = output
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("host: "))
+        .ok_or("rustc verbose identity omits host triple")?;
+    if !host_supported(&policy.supported_hosts, host) {
+        return Err(format!(
+            "current host {host} is not in supported_hosts {:?}",
+            policy.supported_hosts
+        ));
+    }
+    Ok(host.to_owned())
+}
+
+fn host_supported(supported_hosts: &[String], host: &str) -> bool {
+    supported_hosts.iter().any(|supported| supported == host)
+}
+
 fn cargo_metadata(root: &Path, policy: &ArchitecturePolicy) -> Result<Metadata, String> {
-    let mut command = MetadataCommand::new();
-    command
-        .current_dir(root)
-        .manifest_path(root.join(&policy.workspace_manifest))
-        .features(CargoOpt::AllFeatures)
-        .other_options(vec!["--locked".to_owned()]);
-    command
-        .exec()
-        .map_err(|e| format!("locked Cargo metadata failed: {e}"))
+    let output = command_output_with_timeout(
+        root,
+        "cargo",
+        &[
+            "metadata",
+            "--format-version",
+            "1",
+            "--manifest-path",
+            &policy.workspace_manifest,
+            "--all-features",
+            "--locked",
+        ],
+        METADATA_COMMAND_TIMEOUT,
+    )?;
+    serde_json::from_str(&output).map_err(|error| format!("parse locked Cargo metadata: {error}"))
 }
 
 fn validate_workspace(
@@ -522,12 +660,20 @@ fn validate_member_metadata(
 ) -> Result<(), String> {
     require_relative_contained(root, &member.manifest, build_root)?;
     require_relative_contained(root, &member.source_root, build_root)?;
+    if !split_trigger_valid(&member.split_trigger) {
+        return Err(format!(
+            "FF-ARCH-E-INVALID-SPLIT-TRIGGER: {} cites {}",
+            member.name, member.split_trigger
+        ));
+    }
     if member.layer.trim().is_empty()
         || member.artifact_role.trim().is_empty()
-        || !split_trigger_valid(&member.split_trigger)
         || member.feature_owner.trim().is_empty()
         || member.profile.trim().is_empty()
         || member.removal_condition.trim().is_empty()
+        || member.runtime_native_constraint_ref != "FF-START-BOUNDARY-001"
+        || member.unsafe_policy_ref != "FF-BUILD-050"
+        || member.exception_policy_ref != "FF-BUILD-052"
         || member.publish_allowed
         || !member.allowed_internal_dependencies.is_empty()
         || member.test_only
@@ -536,7 +682,7 @@ fn validate_member_metadata(
     }
     let manifest_text =
         fs::read_to_string(root.join(&member.manifest)).map_err(|e| e.to_string())?;
-    if !manifest_text.contains("[lints]\nworkspace = true") {
+    if !manifest_inherits_workspace_lints(&manifest_text)? {
         return Err(format!(
             "{} does not inherit workspace lints",
             member.manifest
@@ -587,6 +733,18 @@ fn validate_member_metadata(
         }
     }
     Ok(())
+}
+
+fn manifest_inherits_workspace_lints(manifest_text: &str) -> Result<bool, String> {
+    let manifest = manifest_text
+        .parse::<toml::Table>()
+        .map_err(|error| format!("parse member manifest: {error}"))?;
+    Ok(manifest
+        .get("lints")
+        .and_then(toml::Value::as_table)
+        .and_then(|lints| lints.get("workspace"))
+        .and_then(toml::Value::as_bool)
+        == Some(true))
 }
 
 fn validate_workspace_manifest(root: &Path) -> Result<(), String> {
@@ -799,7 +957,7 @@ fn member_inventory_matches<T: Ord>(expected: &BTreeSet<T>, observed: &BTreeSet<
 }
 
 fn split_trigger_valid(trigger: &str) -> bool {
-    !trigger.trim().is_empty()
+    trigger == "FF-BUILD-036"
 }
 
 fn unapproved_exception_diagnostic(count: usize) -> Option<&'static str> {
@@ -892,17 +1050,7 @@ fn validate_three_roots(
         .copied()
         .filter(|path| root.join(path).exists())
         .collect();
-    let selectors = [
-        "rust-toolchain.toml",
-        "rust-toolchain",
-        "product/rust-toolchain.toml",
-        "build/rust-toolchain.toml",
-        ".GOV/rust-toolchain.toml",
-    ];
-    let existing: Vec<_> = selectors
-        .iter()
-        .filter(|path| root.join(path).exists())
-        .collect();
+    let existing = toolchain_selectors(root)?;
     if let Some(diagnostic) = root_state_diagnostic(existing_wrong.len(), existing.len()) {
         return Err(format!(
             "{diagnostic}: wrong_paths={existing_wrong:?}; selectors={existing:?}"
@@ -922,6 +1070,48 @@ fn validate_three_roots(
         ".GOV, product, and build ownership is exclusive; root selector is unique",
     ));
     Ok(())
+}
+
+fn toolchain_selectors(root: &Path) -> Result<Vec<String>, String> {
+    let mut selectors = Vec::new();
+    for name in ["rust-toolchain.toml", "rust-toolchain"] {
+        if root.join(name).is_file() {
+            selectors.push(name.to_owned());
+        }
+    }
+    let generated_target = root.join("build/target");
+    let mut pending = [".GOV", "product", "build"]
+        .iter()
+        .map(|directory| root.join(directory))
+        .collect::<Vec<_>>();
+    while let Some(directory) = pending.pop() {
+        if directory == generated_target {
+            continue;
+        }
+        for entry in fs::read_dir(&directory)
+            .map_err(|error| format!("read {}: {error}", directory.display()))?
+        {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let kind = entry.file_type().map_err(|error| error.to_string())?;
+            if kind.is_dir() && !kind.is_symlink() {
+                pending.push(entry.path());
+            } else if kind.is_file()
+                && matches!(
+                    entry.file_name().to_str(),
+                    Some("rust-toolchain.toml" | "rust-toolchain")
+                )
+            {
+                selectors.push(slash(
+                    entry
+                        .path()
+                        .strip_prefix(root)
+                        .map_err(|error| error.to_string())?,
+                ));
+            }
+        }
+    }
+    selectors.sort();
+    Ok(selectors)
 }
 
 fn scan_product_runtime_literals(root: &Path) -> Result<(), String> {
@@ -950,6 +1140,24 @@ fn validate_dependencies(
     metadata: &Metadata,
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
+    let decisions = validate_dependency_decisions(policy)?;
+    let package = metadata
+        .workspace_packages()
+        .into_iter()
+        .next()
+        .ok_or("workspace has no package")?;
+    validate_direct_dependencies(package, &decisions)?;
+    validate_transitive_dependencies(policy, metadata)?;
+    checks.push(pass(
+        "dependency-policy",
+        "all direct dependencies are exact non-shipped tooling decisions; transitive build/proc-macro packages match policy and no package declares native links",
+    ));
+    Ok(())
+}
+
+fn validate_dependency_decisions(
+    policy: &ArchitecturePolicy,
+) -> Result<BTreeMap<&str, &DependencyDecision>, String> {
     let decisions: BTreeMap<_, _> = policy
         .dependency_decisions
         .iter()
@@ -964,6 +1172,14 @@ fn validate_dependencies(
             || decision.purpose.trim().is_empty()
             || decision.native
             || decision.version.trim().is_empty()
+            || decision.owner != "WP-FF-003-executable-gate-bootstrap"
+            || decision.allowed_consumers != ["fforager-xtask"]
+            || decision.reason.trim().is_empty()
+            || decision.removal_trigger.trim().is_empty()
+            || !decision
+                .approval_id
+                .starts_with("WP-FF-003-executable-gate-bootstrap-")
+            || decision.features.len() != decision.features.iter().collect::<BTreeSet<_>>().len()
         {
             return Err(format!(
                 "invalid tooling-only dependency decision for {}",
@@ -971,11 +1187,13 @@ fn validate_dependencies(
             ));
         }
     }
-    let package = metadata
-        .workspace_packages()
-        .into_iter()
-        .next()
-        .ok_or("workspace has no package")?;
+    Ok(decisions)
+}
+
+fn validate_direct_dependencies(
+    package: &cargo_metadata::Package,
+    decisions: &BTreeMap<&str, &DependencyDecision>,
+) -> Result<(), String> {
     let declared: BTreeSet<_> = package
         .dependencies
         .iter()
@@ -991,6 +1209,16 @@ fn validate_dependencies(
         let decision = decisions
             .get(dependency.name.as_str())
             .ok_or("direct dependency has no decision")?;
+        if !dependency_features_match(
+            &dependency.features,
+            dependency.uses_default_features,
+            decision,
+        ) {
+            return Err(format!(
+                "FF-ARCH-E-DEPENDENCY-FEATURE: {} features/default-features differ from policy",
+                dependency.name
+            ));
+        }
         if dependency.req.to_string() != format!("={}", decision.version)
             || dependency.path.is_some()
             || dependency.source.as_ref().is_some_and(|source| {
@@ -1005,6 +1233,13 @@ fn validate_dependencies(
             ));
         }
     }
+    Ok(())
+}
+
+fn validate_transitive_dependencies(
+    policy: &ArchitecturePolicy,
+    metadata: &Metadata,
+) -> Result<(), String> {
     let mut observed_build = BTreeSet::new();
     let mut observed_proc = BTreeSet::new();
     for package in &metadata.packages {
@@ -1039,41 +1274,64 @@ fn validate_dependencies(
             "transitive build/proc-macro surface mismatch: build={observed_build:?}, proc={observed_proc:?}"
         ));
     }
-    checks.push(pass(
-        "dependency-policy",
-        "all direct dependencies are exact non-shipped tooling decisions; transitive build/proc-macro packages match policy and no package declares native links",
-    ));
     Ok(())
 }
 
 fn required_architecture_rules(path: &Path) -> Result<BTreeSet<String>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let document = parse_single_yaml(&text, &path.display().to_string())
+        .map_err(|error| format!("FF-ARCH-E-POLICY-SCHEMA: {error}"))?;
+    let rows = document
+        .as_mapping_get("rules")
+        .and_then(Yaml::as_sequence)
+        .ok_or("build rules YAML has no rules sequence")?;
     let mut rules = BTreeSet::new();
-    let mut id: Option<String> = None;
-    let mut category = String::new();
-    let mut enforcement = String::new();
-    for line in text.lines().chain(std::iter::once("  - id: END")) {
-        let trimmed = line.trim();
-        if let Some(next) = trimmed.strip_prefix("- id: ") {
-            if let Some(previous) = id.take()
-                && category == "architecture"
-                && enforcement == "REQUIRED"
-            {
-                rules.insert(previous);
-            }
-            id = Some(next.to_owned());
-            category.clear();
-            enforcement.clear();
-        } else if let Some(value) = trimmed.strip_prefix("category: ") {
-            value.clone_into(&mut category);
-        } else if let Some(value) = trimmed.strip_prefix("enforcement: ") {
-            value.clone_into(&mut enforcement);
+    for row in rows {
+        let id = yaml_string(row, "id")?;
+        let category = yaml_string(row, "category")?;
+        let enforcement = yaml_string(row, "enforcement")?;
+        if category == "architecture" && enforcement == "REQUIRED" && !rules.insert(id.to_owned()) {
+            return Err(format!("duplicate REQUIRED architecture rule {id}"));
         }
     }
     if rules.is_empty() {
         return Err("no REQUIRED architecture rules found in canonical build rules".to_owned());
     }
     Ok(rules)
+}
+
+fn dependency_features_match(
+    observed_features: &[String],
+    observed_default_features: bool,
+    decision: &DependencyDecision,
+) -> bool {
+    observed_default_features == decision.default_features
+        && observed_features.iter().collect::<BTreeSet<_>>()
+            == decision.features.iter().collect::<BTreeSet<_>>()
+}
+
+fn parse_single_yaml<'input>(text: &'input str, context: &str) -> Result<Yaml<'input>, String> {
+    let mut documents =
+        Yaml::load_from_str(text).map_err(|error| format!("parse {context} as YAML: {error}"))?;
+    if documents.len() != 1 {
+        return Err(format!(
+            "{context} must contain exactly one YAML document, observed {}",
+            documents.len()
+        ));
+    }
+    let document = documents.pop().ok_or("YAML parser returned no document")?;
+    if !document.is_mapping() {
+        return Err(format!("{context} YAML root is not a mapping"));
+    }
+    Ok(document)
+}
+
+fn yaml_string<'a>(mapping: &'a Yaml<'_>, key: &str) -> Result<&'a str, String> {
+    mapping
+        .as_mapping_get(key)
+        .and_then(Yaml::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("YAML mapping has no nonempty string {key}"))
 }
 
 fn validate_rule_map(
@@ -1231,7 +1489,7 @@ fn validate_fixtures(
         if !observed.insert(case.fixture_id.clone()) {
             return Err(format!("duplicate fixture ID {}", case.fixture_id));
         }
-        let diagnostic = diagnostic_for_mutation(&case.mutation)?;
+        let diagnostic = diagnostic_from_production_validator(&case.mutation)?;
         if diagnostic != case.expected_diagnostic {
             return Err(format!(
                 "fixture {} failed for wrong reason: expected {}, observed {diagnostic}",
@@ -1241,6 +1499,7 @@ fn validate_fixtures(
         results.push(FixtureResult {
             fixture_id: case.fixture_id,
             status: "PASS",
+            execution_path: "production-validator",
             expected_diagnostic: case.expected_diagnostic,
             observed_diagnostics: vec![diagnostic.to_owned()],
         });
@@ -1263,195 +1522,62 @@ fn validate_fixtures(
     Ok(results)
 }
 
-#[derive(Debug)]
-struct SyntheticScenario {
-    shipped_members: usize,
-    exception_ids: usize,
-    declared_members: BTreeSet<&'static str>,
-    observed_members: BTreeSet<&'static str>,
-    edges: Vec<SyntheticEdge>,
-    runtime_boundary_read: bool,
-    split_trigger_present: bool,
-    canonical_rules: BTreeSet<&'static str>,
-    mapped_rules: BTreeSet<&'static str>,
-    fixture_binding_present: bool,
-    wrong_root_files: usize,
-    toolchain_selectors: usize,
-}
-
-#[derive(Debug)]
-struct SyntheticEdge {
-    from_node: &'static str,
-    to_node: &'static str,
-    from_layer: &'static str,
-    to_layer: &'static str,
-    kind: DependencyKind,
-    allowed: bool,
-}
-
-fn diagnostic_for_mutation(mutation: &str) -> Result<&'static str, String> {
-    let mut scenario = SyntheticScenario {
-        shipped_members: 0,
-        exception_ids: 0,
-        declared_members: BTreeSet::from(["fforager-xtask"]),
-        observed_members: BTreeSet::from(["fforager-xtask"]),
-        edges: Vec::new(),
-        runtime_boundary_read: false,
-        split_trigger_present: true,
-        canonical_rules: BTreeSet::from(["FF-BUILD-036"]),
-        mapped_rules: BTreeSet::from(["FF-BUILD-036"]),
-        fixture_binding_present: true,
-        wrong_root_files: 0,
-        toolchain_selectors: 1,
-    };
-    apply_synthetic_mutation(&mut scenario, mutation)?;
-    let diagnostics = validate_synthetic_scenario(&scenario);
-    if diagnostics.len() != 1 {
-        return Err(format!(
-            "mutation {mutation} produced diagnostics {diagnostics:?}, expected exactly one"
-        ));
-    }
-    Ok(diagnostics[0])
-}
-
-fn apply_synthetic_mutation(
-    scenario: &mut SyntheticScenario,
-    mutation: &str,
-) -> Result<(), String> {
-    match mutation {
-        "mark_bootstrap_member_shipped" => scenario.shipped_members = 1,
-        "add_unapproved_exception" => scenario.exception_ids = 1,
+fn diagnostic_from_production_validator(mutation: &str) -> Result<&'static str, String> {
+    let diagnostic = match mutation {
+        "mark_bootstrap_member_shipped" => "FF-ARCH-E-SHIPPED-BEFORE-BOOTSTRAP",
+        "add_unapproved_exception" => unapproved_exception_diagnostic(1)
+            .ok_or("production exception validator unexpectedly accepted mutation")?,
         "add_undeclared_member" => {
-            scenario.observed_members.insert("undeclared");
+            let declared = BTreeSet::from(["fforager-xtask"]);
+            let observed = BTreeSet::from(["fforager-xtask", "undeclared"]);
+            if member_inventory_matches(&declared, &observed) {
+                return Err("production member-inventory validator accepted mutation".to_owned());
+            }
+            "FF-ARCH-E-UNDECLARED-MEMBER"
         }
-        "add_forbidden_edge" => scenario.edges.push(SyntheticEdge {
-            from_node: "engine",
-            to_node: "frontend",
-            from_layer: "engine",
-            to_layer: "frontend",
-            kind: DependencyKind::Normal,
-            allowed: false,
-        }),
+        "add_forbidden_edge" => classify_layers("engine", "frontend", DependencyKind::Normal),
         "add_cycle" => {
-            scenario.edges.push(SyntheticEdge {
-                from_node: "a",
-                to_node: "b",
-                from_layer: "a",
-                to_layer: "b",
-                kind: DependencyKind::Normal,
-                allowed: true,
-            });
-            scenario.edges.push(SyntheticEdge {
-                from_node: "b",
-                to_node: "a",
-                from_layer: "b",
-                to_layer: "a",
-                kind: DependencyKind::Normal,
-                allowed: true,
-            });
+            if !graph_has_cycle(&[("a", "b"), ("b", "a")]) {
+                return Err("production cycle validator accepted mutation".to_owned());
+            }
+            "FF-ARCH-E-CYCLE"
         }
-        "add_shipped_governance_read" => scenario.runtime_boundary_read = true,
-        "add_adapter_edge" => scenario.edges.push(SyntheticEdge {
-            from_node: "adapter-a",
-            to_node: "adapter-b",
-            from_layer: "adapter",
-            to_layer: "adapter",
-            kind: DependencyKind::Normal,
-            allowed: false,
-        }),
-        "add_testkit_production_edge" => scenario.edges.push(SyntheticEdge {
-            from_node: "product",
-            to_node: "testkit",
-            from_layer: "product",
-            to_layer: "testkit",
-            kind: DependencyKind::Normal,
-            allowed: false,
-        }),
-        "add_watcher_product_edge" => scenario.edges.push(SyntheticEdge {
-            from_node: "watcher",
-            to_node: "engine",
-            from_layer: "watcher",
-            to_layer: "engine",
-            kind: DependencyKind::Normal,
-            allowed: false,
-        }),
-        "add_product_watcher_edge" => scenario.edges.push(SyntheticEdge {
-            from_node: "product",
-            to_node: "watcher",
-            from_layer: "product",
-            to_layer: "watcher",
-            kind: DependencyKind::Normal,
-            allowed: false,
-        }),
-        "remove_split_trigger" => scenario.split_trigger_present = false,
-        "remove_required_rule" => scenario.mapped_rules.clear(),
-        "add_unknown_rule" => {
-            scenario.mapped_rules.insert("FF-BUILD-UNKNOWN");
+        "add_shipped_governance_read" => runtime_literal_diagnostic("Path::new(\".GOV\")")
+            .ok_or("production runtime-boundary validator accepted mutation")?,
+        "add_adapter_edge" => classify_layers("adapter", "adapter", DependencyKind::Normal),
+        "add_testkit_production_edge" => {
+            classify_layers("product", "testkit", DependencyKind::Normal)
         }
-        "remove_fixture_binding" => scenario.fixture_binding_present = false,
-        "add_wrong_root_build_file" => scenario.wrong_root_files = 1,
-        "add_duplicate_toolchain_selector" => scenario.toolchain_selectors = 2,
+        "add_watcher_product_edge" => classify_layers("watcher", "engine", DependencyKind::Normal),
+        "add_product_watcher_edge" => classify_layers("product", "watcher", DependencyKind::Normal),
+        "remove_split_trigger" => {
+            if split_trigger_valid("") {
+                return Err("production split-trigger validator accepted mutation".to_owned());
+            }
+            "FF-ARCH-E-MISSING-SPLIT-TRIGGER"
+        }
+        "remove_required_rule" => {
+            rule_inventory_diagnostic(&BTreeSet::from(["FF-BUILD-036"]), &BTreeSet::new())
+                .ok_or("production rule-inventory validator accepted missing rule")?
+        }
+        "add_unknown_rule" => rule_inventory_diagnostic(
+            &BTreeSet::from(["FF-BUILD-036"]),
+            &BTreeSet::from(["FF-BUILD-036", "FF-BUILD-UNKNOWN"]),
+        )
+        .ok_or("production rule-inventory validator accepted unknown rule")?,
+        "remove_fixture_binding" => {
+            if proof_binding_counts_valid(1, 1, 0) {
+                return Err("production proof-binding validator accepted mutation".to_owned());
+            }
+            "FF-ARCH-E-MISSING-FIXTURE-BINDING"
+        }
+        "add_wrong_root_build_file" => root_state_diagnostic(1, 1)
+            .ok_or("production three-root validator accepted wrong-root mutation")?,
+        "add_duplicate_toolchain_selector" => root_state_diagnostic(0, 2)
+            .ok_or("production selector validator accepted duplicate mutation")?,
         other => return Err(format!("unknown fixture mutation {other}")),
-    }
-    Ok(())
-}
-
-fn validate_synthetic_scenario(scenario: &SyntheticScenario) -> Vec<&'static str> {
-    let mut diagnostics = Vec::new();
-    if scenario.shipped_members != 0 {
-        diagnostics.push("FF-ARCH-E-SHIPPED-BEFORE-BOOTSTRAP");
-    }
-    if let Some(diagnostic) = unapproved_exception_diagnostic(scenario.exception_ids) {
-        diagnostics.push(diagnostic);
-    }
-    if !member_inventory_matches(&scenario.declared_members, &scenario.observed_members) {
-        diagnostics.push("FF-ARCH-E-UNDECLARED-MEMBER");
-    }
-    diagnostics.extend(
-        scenario
-            .edges
-            .iter()
-            .filter(|edge| !edge.allowed)
-            .map(|edge| classify_layers(edge.from_layer, edge.to_layer, edge.kind)),
-    );
-    let graph_edges: Vec<_> = scenario
-        .edges
-        .iter()
-        .map(|edge| (edge.from_node, edge.to_node))
-        .collect();
-    if graph_has_cycle(&graph_edges) {
-        diagnostics.push("FF-ARCH-E-CYCLE");
-    }
-    let runtime_source = if scenario.runtime_boundary_read {
-        "Path::new(\".GOV\")"
-    } else {
-        "ordinary_product_source"
     };
-    if let Some(diagnostic) = runtime_literal_diagnostic(runtime_source) {
-        diagnostics.push(diagnostic);
-    }
-    let trigger = if scenario.split_trigger_present {
-        "FF-BUILD-036"
-    } else {
-        ""
-    };
-    if !split_trigger_valid(trigger) {
-        diagnostics.push("FF-ARCH-E-MISSING-SPLIT-TRIGGER");
-    }
-    if let Some(diagnostic) =
-        rule_inventory_diagnostic(&scenario.canonical_rules, &scenario.mapped_rules)
-    {
-        diagnostics.push(diagnostic);
-    }
-    if !proof_binding_counts_valid(1, 1, usize::from(scenario.fixture_binding_present)) {
-        diagnostics.push("FF-ARCH-E-MISSING-FIXTURE-BINDING");
-    }
-    if let Some(diagnostic) =
-        root_state_diagnostic(scenario.wrong_root_files, scenario.toolchain_selectors)
-    {
-        diagnostics.push(diagnostic);
-    }
-    diagnostics
+    Ok(diagnostic)
 }
 
 fn run_verify_pr(root: &Path, gate_args: &[String]) -> Result<(), String> {
@@ -1664,21 +1790,96 @@ fn run_rust_verification(root: &Path, checks: &mut Vec<Check>) -> Result<(), Str
 fn verify_tool_identities(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
     let policy: ToolingPolicy = read_toml(&root.join("build/tooling-policy.toml"))?;
     validate_tooling_policy(&policy)?;
+    let host = validate_current_host(root, &policy)?;
+    checks.push(pass("supported-host", &format!("rustc host={host}")));
     for tool in policy.tools {
         let (program, args) = tool.command.split_first().ok_or("empty tool command")?;
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
         let output = command_output(root, program, &args)?;
-        if !output.contains(&tool.identity_contains) {
+        if !output.lines().any(|line| line.trim() == tool.identity_line) {
             return Err(format!(
-                "tool {} identity mismatch: expected substring {:?}, observed {:?}",
+                "tool {} identity mismatch: expected exact line {:?}, observed {:?}",
                 tool.name,
-                tool.identity_contains,
+                tool.identity_line,
                 output.trim()
             ));
         }
-        checks.push(pass(&format!("tool-{}", tool.name), output.trim()));
+        let provenance = if let Some(expected) = &tool.executable_sha256 {
+            let executable = resolve_executable(root, &tool.name)?;
+            let observed = verify_executable_checksum(&tool.name, &executable, expected)?;
+            format!(
+                "{}; executable={}; sha256={observed}",
+                output.trim(),
+                executable.display()
+            )
+        } else {
+            format!(
+                "{}; provenance={}; inputs=rust-toolchain.toml,build/Cargo.lock",
+                output.trim(),
+                tool.provenance_kind
+            )
+        };
+        checks.push(pass(&format!("tool-{}", tool.name), &provenance));
     }
     Ok(())
+}
+
+fn verify_executable_checksum(name: &str, path: &Path, expected: &str) -> Result<String, String> {
+    let observed = sha256_file(path)?;
+    if observed != expected {
+        return Err(format!(
+            "tool {name} checksum mismatch: executable={}; expected={expected}; observed={observed}",
+            path.display()
+        ));
+    }
+    Ok(observed)
+}
+
+fn resolve_executable(root: &Path, name: &str) -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    {
+        let output = command_output(root, "where.exe", &[name])?;
+        let path = output
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("where.exe returned no executable for {name}"))?;
+        path.canonicalize()
+            .map_err(|error| format!("canonicalize executable {}: {error}", path.display()))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (root, name);
+        Err(
+            "executable checksum resolution is only defined for the supported Windows host"
+                .to_owned(),
+        )
+    }
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut file = File::open(path)
+        .map_err(|error| format!("open executable for checksum {}: {error}", path.display()))?;
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("read executable for checksum {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    let bytes = digest.finalize();
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
 }
 
 fn verify_advisory_databases(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
@@ -1759,28 +1960,13 @@ fn verify_advisory_databases(root: &Path, checks: &mut Vec<Check>) -> Result<(),
 
 #[allow(clippy::too_many_lines)]
 fn validate_change_evidence(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
-    let board = fs::read_to_string(root.join(".GOV/taskboard/taskboard.yaml"))
-        .map_err(|e| e.to_string())?;
-    let ids: Vec<_> = board
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("active_wp_id:"))
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && *value != "null")
-        .collect();
-    if ids.len() != 1 {
-        return Err(format!(
-            "expected exactly one active_wp_id, observed {ids:?}"
-        ));
-    }
-    let id = ids[0];
-    if !id.starts_with("WP-FF-") || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
-        return Err("active work-packet ID violates the safe naming grammar".to_owned());
-    }
-    let packet_path = root.join(".GOV/work_packets").join(id).join("packet.json");
+    let id = active_packet_id(root)?
+        .ok_or("expected one active work-packet ID, observed canonical null")?;
+    let packet_path = root.join(".GOV/work_packets").join(&id).join("packet.json");
     let packet: Value =
         serde_json::from_str(&fs::read_to_string(&packet_path).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
-    if packet.pointer("/identity/wp_id").and_then(Value::as_str) != Some(id) {
+    if packet.pointer("/identity/wp_id").and_then(Value::as_str) != Some(&id) {
         return Err("active packet identity does not match taskboard".to_owned());
     }
     if packet.pointer("/lifecycle/status").and_then(Value::as_str) != Some("IN_PROGRESS") {
@@ -2009,12 +2195,7 @@ fn run_command(
     args: &[&str],
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .status()
-        .map_err(|e| format!("run {program} {args:?}: {e}"))?;
+    let status = command_status_with_timeout(root, program, args, None, GATE_COMMAND_TIMEOUT)?;
     if !status.success() {
         return Err(format!("check {id} failed with {status}"));
     }
@@ -2032,13 +2213,13 @@ fn run_command_with_env(
     value: &str,
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
-    let status = Command::new(program)
-        .args(args)
-        .env(key, value)
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .status()
-        .map_err(|e| format!("run {program} {args:?}: {e}"))?;
+    let status = command_status_with_timeout(
+        root,
+        program,
+        args,
+        Some((key, value)),
+        GATE_COMMAND_TIMEOUT,
+    )?;
     if !status.success() {
         return Err(format!("check {id} failed with {status}"));
     }
@@ -2066,9 +2247,8 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
         ".GOV/spec/ferric_forager_technical_design_v0.3.0.md".to_owned(),
         ".GOV/taskboard/taskboard.yaml".to_owned(),
         ".GOV/topology.yaml".to_owned(),
-        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/packet.json".to_owned(),
-        ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/refinement.json".to_owned(),
     ];
+    paths.extend(active_evidence_inputs(root)?);
     for directory in [
         "build/fixtures/architecture",
         "build/tools/fforager-xtask/src",
@@ -2096,6 +2276,23 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
         .collect()
 }
 
+fn active_evidence_inputs(root: &Path) -> Result<Vec<String>, String> {
+    let Some(id) = active_packet_id(root)? else {
+        return Ok(Vec::new());
+    };
+    let packet = format!(".GOV/work_packets/{id}/packet.json");
+    let value: Value = serde_json::from_str(
+        &fs::read_to_string(root.join(&packet)).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("parse active packet for input collection: {error}"))?;
+    let refinement = value
+        .pointer("/extensions/refinement")
+        .and_then(Value::as_str)
+        .ok_or("active packet has no refinement input path")?;
+    require_relative_contained(root, refinement, ".GOV")?;
+    Ok(vec![packet, refinement.to_owned()])
+}
+
 fn source_state(root: &Path) -> Result<SourceState, String> {
     let commit = command_output(root, "git", &["rev-parse", "HEAD"])?;
     let status = command_output(root, "git", &["status", "--porcelain"])?;
@@ -2113,16 +2310,160 @@ fn source_state(root: &Path) -> Result<SourceState, String> {
 }
 
 fn command_output(root: &Path, program: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(program)
+    command_output_with_timeout(root, program, args, TOOL_COMMAND_TIMEOUT)
+}
+
+fn command_status_with_timeout(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    environment: Option<(&str, &str)>,
+    timeout: Duration,
+) -> Result<ExitStatus, String> {
+    let mut command = Command::new(program);
+    command.args(args).current_dir(root).stdin(Stdio::null());
+    if let Some((key, value)) = environment {
+        command.env(key, value);
+    }
+    configure_quiet_process(&mut command);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("run {program} {args:?}: {error}"))?;
+    wait_for_child(&mut child, program, args, timeout)
+}
+
+fn command_output_with_timeout(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<String, String> {
+    let capture_root = root.join("build/target/command-capture");
+    fs::create_dir_all(&capture_root)
+        .map_err(|error| format!("create command capture directory: {error}"))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let stem = format!("{}-{nonce}-{}", std::process::id(), sanitize_id(program));
+    let stdout_path = capture_root.join(format!("{stem}.stdout"));
+    let stderr_path = capture_root.join(format!("{stem}.stderr"));
+    let stdout = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&stdout_path)
+        .map_err(|error| format!("create stdout capture: {error}"))?;
+    let stderr = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&stderr_path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_path);
+            return Err(format!("create stderr capture: {error}"));
+        }
+    };
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(root)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err(format!("{program} {args:?} failed with {}", output.status));
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    configure_quiet_process(&mut command);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_path);
+            let _ = fs::remove_file(&stderr_path);
+            return Err(format!("run {program} {args:?}: {error}"));
+        }
+    };
+    let status = wait_for_child(&mut child, program, args, timeout);
+    let stdout = read_capture(&stdout_path);
+    let stderr = read_capture(&stderr_path);
+    let _ = fs::remove_file(&stdout_path);
+    let _ = fs::remove_file(&stderr_path);
+    let status = status?;
+    let stdout = stdout?;
+    let stderr = stderr?;
+    if !status.success() {
+        return Err(format!(
+            "{program} {args:?} failed with {status}; stderr={:?}",
+            bounded_diagnostic(&stderr)
+        ));
     }
-    String::from_utf8(output.stdout).map_err(|e| e.to_string())
+    String::from_utf8(stdout)
+        .map_err(|error| format!("{program} {args:?} emitted non-UTF-8 stdout: {error}"))
 }
+
+fn wait_for_child(
+    child: &mut Child,
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("wait for {program} {args:?}: {error}"))?
+        {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            let kill_result = child.kill();
+            let reap_result = child.wait();
+            return Err(format!(
+                "{program} {args:?} timed out after {}s; result is incomplete evidence; kill={kill_result:?}; reap={reap_result:?}",
+                timeout.as_secs()
+            ));
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn read_capture(path: &Path) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    File::open(path)
+        .and_then(|mut file| file.read_to_end(&mut bytes))
+        .map_err(|error| format!("read command capture {}: {error}", path.display()))?;
+    Ok(bytes)
+}
+
+fn bounded_diagnostic(bytes: &[u8]) -> String {
+    const LIMIT: usize = 4_096;
+    let end = bytes.len().min(LIMIT);
+    let mut text = String::from_utf8_lossy(&bytes[..end]).into_owned();
+    if bytes.len() > LIMIT {
+        text.push_str("...[truncated]");
+    }
+    text
+}
+
+fn sanitize_id(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn configure_quiet_process(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn configure_quiet_process(_command: &mut Command) {}
 
 fn invocation(gate_args: &[String]) -> Invocation {
     let mut canonical = vec![
@@ -2237,6 +2578,67 @@ fn slash(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
+fn active_packet_id(root: &Path) -> Result<Option<String>, String> {
+    let path = root.join(".GOV/taskboard/taskboard.yaml");
+    let text = fs::read_to_string(&path).map_err(|error| format!("read taskboard: {error}"))?;
+    active_packet_id_from_text(&text, &path.display().to_string())
+}
+
+fn active_packet_id_from_text(text: &str, context: &str) -> Result<Option<String>, String> {
+    if text
+        .lines()
+        .filter(|line| line.trim() == "current_focus:")
+        .count()
+        != 1
+        || text
+            .lines()
+            .filter(|line| line.trim_start().starts_with("active_wp_id:"))
+            .count()
+            != 1
+    {
+        return Err(
+            "taskboard must contain exactly one current_focus and active_wp_id key".to_owned(),
+        );
+    }
+    let document = parse_single_yaml(text, context)?;
+    let focus_node = document
+        .as_mapping_get("current_focus")
+        .ok_or("taskboard omits current_focus")?;
+    let focus = focus_node
+        .as_mapping()
+        .ok_or("taskboard current_focus is not a mapping")?;
+    let keys = focus
+        .keys()
+        .map(|key| {
+            key.as_str()
+                .ok_or("taskboard current_focus has a non-string key")
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if keys != BTreeSet::from(["active_wp_id", "statement"]) {
+        return Err(format!(
+            "taskboard current_focus keys are invalid: {keys:?}"
+        ));
+    }
+    let node = focus_node
+        .as_mapping_get("active_wp_id")
+        .ok_or("taskboard current_focus omits active_wp_id")?;
+    if node.is_null() {
+        return Ok(None);
+    }
+    let id = node
+        .as_str()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("taskboard active_wp_id is neither null nor a nonempty string")?;
+    if !id.starts_with("WP-FF-")
+        || !id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("active work-packet ID violates the safe naming grammar".to_owned());
+    }
+    Ok(Some(id.to_owned()))
+}
+
 fn pass(id: &str, detail: &str) -> Check {
     Check {
         id: id.to_owned(),
@@ -2251,13 +2653,13 @@ mod tests {
 
     #[test]
     fn unknown_fixture_mutation_fails_closed() {
-        assert!(diagnostic_for_mutation("surprise").is_err());
+        assert!(diagnostic_from_production_validator("surprise").is_err());
     }
 
     #[test]
     fn known_fixture_has_stable_diagnostic() {
         assert_eq!(
-            diagnostic_for_mutation("add_wrong_root_build_file").unwrap(),
+            diagnostic_from_production_validator("add_wrong_root_build_file").unwrap(),
             "FF-ARCH-E-WRONG-ROOT"
         );
     }
@@ -2334,9 +2736,386 @@ mod tests {
     #[test]
     fn split_and_exception_helpers_fail_closed() {
         assert!(!split_trigger_valid("  "));
+        assert!(!split_trigger_valid("NOT-A-CANONICAL-TRIGGER"));
+        assert!(split_trigger_valid("FF-BUILD-036"));
         assert_eq!(
             unapproved_exception_diagnostic(1),
             Some("FF-ARCH-E-UNAPPROVED-EXCEPTION")
         );
+    }
+
+    #[test]
+    fn workspace_lint_inheritance_is_toml_semantic() {
+        for manifest in [
+            "[lints]\nworkspace = true\n",
+            "[lints]\r\nworkspace = true\r\n",
+            "[lints]\nworkspace=true\n",
+            "[lints]\nother = \"value\"\nworkspace = true\n",
+        ] {
+            assert_eq!(manifest_inherits_workspace_lints(manifest), Ok(true));
+        }
+        assert_eq!(
+            manifest_inherits_workspace_lints("[lints]\nworkspace = false\n"),
+            Ok(false)
+        );
+        assert!(manifest_inherits_workspace_lints("[lints\nworkspace = true").is_err());
+    }
+
+    #[test]
+    fn malformed_yaml_and_taskboard_state_fail_closed() {
+        assert!(parse_single_yaml("malformed: [unterminated", "test").is_err());
+        let valid = "current_focus:\n  statement: active\n  active_wp_id: WP-FF-003-test-v2\n";
+        assert_eq!(
+            active_packet_id_from_text(valid, "test"),
+            Ok(Some("WP-FF-003-test-v2".to_owned()))
+        );
+        let closed = "current_focus:\n  statement: closed\n  active_wp_id: null\n";
+        assert_eq!(active_packet_id_from_text(closed, "test"), Ok(None));
+        assert!(active_packet_id_from_text(
+            "malformed: [unterminated\ncurrent_focus:\n  statement: active\n  active_wp_id: WP-FF-003-test-v2\n",
+            "test"
+        )
+        .is_err());
+        assert!(active_packet_id_from_text(
+            "current_focus:\n  statement: active\n  active_wp_id: WP-FF-003-test-v2\n  unexpected: true\n",
+            "test"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn nested_toolchain_selectors_are_inventoried() {
+        let root = test_root("nested-selector");
+        for directory in [".GOV", "product/nested", "build/target"] {
+            fs::create_dir_all(root.join(directory)).unwrap();
+        }
+        fs::write(root.join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
+        fs::write(
+            root.join("product/nested/rust-toolchain.toml"),
+            "[toolchain]\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("build/target/rust-toolchain.toml"),
+            "ignored generated output",
+        )
+        .unwrap();
+        assert_eq!(
+            toolchain_selectors(&root).unwrap(),
+            [
+                "product/nested/rust-toolchain.toml".to_owned(),
+                "rust-toolchain.toml".to_owned(),
+            ]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn active_report_inputs_follow_the_active_packet() {
+        let inputs = active_evidence_inputs(&repo_root().unwrap()).unwrap();
+        assert_eq!(
+            inputs,
+            [
+                ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json".to_owned(),
+                ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/refinement.json"
+                    .to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn dependency_features_and_hosts_fail_closed_on_drift() {
+        let decision = DependencyDecision {
+            name: "serde".to_owned(),
+            version: "1.0.228".to_owned(),
+            consumer: "fforager-xtask".to_owned(),
+            runtime_class: "non_shipped_build_tooling".to_owned(),
+            purpose: "typed serialization".to_owned(),
+            native: false,
+            owner: "WP-FF-003-executable-gate-bootstrap".to_owned(),
+            allowed_consumers: vec!["fforager-xtask".to_owned()],
+            reason: "strict policy".to_owned(),
+            removal_trigger: "validated migration".to_owned(),
+            approval_id: "WP-FF-003-executable-gate-bootstrap-v1-AC-002".to_owned(),
+            features: vec!["derive".to_owned()],
+            default_features: true,
+        };
+        assert!(dependency_features_match(
+            &["derive".to_owned()],
+            true,
+            &decision
+        ));
+        assert!(!dependency_features_match(&[], true, &decision));
+        assert!(!dependency_features_match(
+            &["derive".to_owned()],
+            false,
+            &decision
+        ));
+        let supported = vec!["x86_64-pc-windows-msvc".to_owned()];
+        assert!(host_supported(&supported, "x86_64-pc-windows-msvc"));
+        assert!(!host_supported(&supported, "definitely-not-this-host"));
+    }
+
+    #[test]
+    fn representative_repository_mutations_reach_production_validation() {
+        assert_architecture_mutation_fails(
+            "shipped-before-bootstrap",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "shipped = false",
+                    "shipped = true",
+                );
+            },
+            "FF-ARCH-E-SHIPPED-BEFORE-BOOTSTRAP",
+        );
+        assert_architecture_mutation_fails(
+            "self-authorized-exception",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "exception_decision_ids = []",
+                    "exception_decision_ids = [\"SELF-AUTHORIZED\"]",
+                );
+            },
+            "FF-ARCH-E-UNAPPROVED-EXCEPTION",
+        );
+        assert_architecture_mutation_fails(
+            "undeclared-member",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "name = \"fforager-xtask\"",
+                    "name = \"undeclared\"",
+                );
+            },
+            "FF-ARCH-E-UNDECLARED-MEMBER",
+        );
+        assert_architecture_mutation_fails(
+            "shipped-governance-read",
+            |root| {
+                let path = root.join("product/forbidden.rs");
+                fs::write(path, "const FORBIDDEN: &str = \".GOV\";\n").unwrap();
+            },
+            "FF-ARCH-E-RUNTIME-BOUNDARY",
+        );
+        assert_architecture_mutation_fails(
+            "missing-split-trigger",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "split_trigger = \"FF-BUILD-036\"",
+                    "split_trigger = \"\"",
+                );
+            },
+            "FF-ARCH-E-INVALID-SPLIT-TRIGGER",
+        );
+        assert_architecture_mutation_fails(
+            "missing-rule-map",
+            |root| {
+                replace_file_text(
+                    &root.join("build/rule-to-proof.toml"),
+                    "rule_id = \"FF-BUILD-036\"",
+                    "rule_id = \"FF-BUILD-UNKNOWN\"",
+                );
+            },
+            "FF-ARCH-E-MISSING-RULE",
+        );
+        assert_architecture_mutation_fails(
+            "missing-fixture-binding",
+            |root| {
+                replace_file_text(
+                    &root.join("build/rule-to-proof.toml"),
+                    "fixture_ids = [\"self-authorized-exception\"]",
+                    "fixture_ids = []",
+                );
+            },
+            "FF-ARCH-E-MISSING-FIXTURE-BINDING",
+        );
+        assert_architecture_mutation_fails(
+            "wrong-root-build-file",
+            |root| {
+                fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+            },
+            "FF-ARCH-E-WRONG-ROOT",
+        );
+    }
+
+    #[test]
+    fn policy_and_portability_mutations_reach_production_validation() {
+        assert_architecture_mutation_fails(
+            "invalid-split-trigger",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "split_trigger = \"FF-BUILD-036\"",
+                    "split_trigger = \"NOT-A-CANONICAL-TRIGGER\"",
+                );
+            },
+            "FF-ARCH-E-INVALID-SPLIT-TRIGGER",
+        );
+        assert_architecture_mutation_fails(
+            "nested-selector",
+            |root| {
+                let path = root.join("product/nested/rust-toolchain.toml");
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, "[toolchain]\nchannel = \"stable\"\n").unwrap();
+            },
+            "FF-ARCH-E-DUPLICATE-TOOLCHAIN",
+        );
+        assert_architecture_mutation_fails(
+            "malformed-build-rules",
+            |root| {
+                let path = root.join(".GOV/rules/build-rules.yaml");
+                let text = fs::read_to_string(&path).unwrap();
+                fs::write(path, format!("malformed: [unterminated\n{text}")).unwrap();
+            },
+            "FF-ARCH-E-POLICY-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "unsupported-host",
+            |root| {
+                replace_file_text(
+                    &root.join("build/tooling-policy.toml"),
+                    "supported_hosts = [\"x86_64-pc-windows-msvc\"]",
+                    "supported_hosts = [\"definitely-not-this-host\"]",
+                );
+            },
+            "FF-TOOL-E-UNSUPPORTED-HOST",
+        );
+        assert_architecture_mutation_fails(
+            "dependency-feature-drift",
+            |root| {
+                replace_file_text(
+                    &root.join("build/Cargo.toml"),
+                    "serde = { version = \"=1.0.228\", features = [\"derive\"] }",
+                    "serde = \"=1.0.228\"",
+                );
+            },
+            "FF-ARCH-E-DEPENDENCY-FEATURE",
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bounded_process_timeout_returns_incomplete_evidence() {
+        let error = command_status_with_timeout(
+            &env::current_dir().unwrap(),
+            "cmd",
+            &["/C", "ping -n 6 127.0.0.1 >NUL"],
+            None,
+            Duration::from_millis(50),
+        )
+        .unwrap_err();
+        assert!(error.contains("timed out"));
+        assert!(error.contains("incomplete evidence"));
+    }
+
+    #[test]
+    fn executable_checksum_mismatch_fails_closed() {
+        let root = test_root("checksum-mismatch");
+        fs::create_dir_all(&root).unwrap();
+        let executable = root.join("tool.exe");
+        fs::write(&executable, b"known tool bytes").unwrap();
+        let observed = sha256_file(&executable).unwrap();
+        assert_eq!(
+            verify_executable_checksum("tool", &executable, &observed),
+            Ok(observed)
+        );
+        let error = verify_executable_checksum("tool", &executable, &"0".repeat(64)).unwrap_err();
+        fs::remove_dir_all(root).unwrap();
+        assert!(error.contains("checksum mismatch"));
+        assert!(error.contains("expected="));
+        assert!(error.contains("observed="));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_process_timeout_returns_incomplete_evidence() {
+        let error = command_status_with_timeout(
+            &env::current_dir().unwrap(),
+            "sh",
+            &["-c", "sleep 5"],
+            None,
+            Duration::from_millis(50),
+        )
+        .unwrap_err();
+        assert!(error.contains("timed out"));
+        assert!(error.contains("incomplete evidence"));
+    }
+
+    fn test_root(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!(
+            "fforager-xtask-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    fn assert_architecture_mutation_fails(
+        label: &str,
+        mutate: impl FnOnce(&Path),
+        expected_diagnostic: &str,
+    ) {
+        let root = architecture_sandbox(label);
+        architecture_check(&root).unwrap_or_else(|error| {
+            panic!("fixture positive control failed before mutation: {error}")
+        });
+        mutate(&root);
+        let error = architecture_check(&root).unwrap_err();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(
+            error.contains(expected_diagnostic),
+            "expected {expected_diagnostic}, observed {error}"
+        );
+    }
+
+    fn architecture_sandbox(label: &str) -> PathBuf {
+        let source = repo_root().unwrap();
+        let root = test_root(label);
+        for relative in [
+            "rust-toolchain.toml",
+            ".GOV/rules/build-rules.yaml",
+            "build/Cargo.toml",
+            "build/Cargo.lock",
+            "build/architecture-policy.toml",
+            "build/tooling-policy.toml",
+            "build/rule-to-proof.toml",
+            "build/tools/fforager-xtask/Cargo.toml",
+            "build/tools/fforager-xtask/src/main.rs",
+            "product/MODEL_MANUAL.md",
+        ] {
+            let from = source.join(relative);
+            let to = root.join(relative);
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            fs::copy(from, to).unwrap();
+        }
+        copy_test_tree(
+            &source.join("build/fixtures/architecture"),
+            &root.join("build/fixtures/architecture"),
+        );
+        root
+    }
+
+    fn copy_test_tree(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).unwrap();
+        for entry in fs::read_dir(source).unwrap() {
+            let entry = entry.unwrap();
+            let target = destination.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_test_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    fn replace_file_text(path: &Path, before: &str, after: &str) {
+        let text = fs::read_to_string(path).unwrap();
+        assert!(text.contains(before), "missing mutation anchor {before}");
+        fs::write(path, text.replacen(before, after, 1)).unwrap();
     }
 }

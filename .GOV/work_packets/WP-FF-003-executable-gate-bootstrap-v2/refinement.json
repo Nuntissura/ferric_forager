@@ -6,8 +6,29 @@
   "operator_request": "Run evaluation tests on the just-implemented WP-FF-003 through different adversarial lenses, remediate findings, gaps, concerns, and risks, clean up code where needed, and use sub-agents to help.",
   "basis": {
     "preserved_refinement": ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v1/refinement.json",
-    "research_status": "REUSE_CURRENT_V1_RESEARCH",
-    "reason": "This revision validates and hardens the accepted Phase 0 implementation without selecting a new architecture, dependency, public contract, or product feature."
+    "research_status": "CURRENT_PRIMARY_SOURCES_CHECKED",
+    "reason": "The accepted architecture was retained. Current primary-source review selected saphyr 0.0.11 for fail-closed YAML 1.2 parsing and RustCrypto sha2 0.11.0 for executable SHA-256 proof; both are exact, pure-Rust, non-shipped build dependencies bound by Cargo.lock.",
+    "sources_checked": [
+      "https://docs.rs/saphyr/0.0.11/saphyr/",
+      "https://github.com/saphyr-rs/saphyr",
+      "https://docs.rs/sha2/0.11.0/sha2/",
+      "https://github.com/RustCrypto/hashes/tree/master/sha2"
+    ],
+    "selected_patterns": [
+      "Parse authoritative YAML structurally before reading governed values.",
+      "Bind host-installed executable identity to exact version, resolved invocation, supported host, and SHA-256.",
+      "Bind Rust components to the sole root toolchain selector and Cargo.lock input identity."
+    ],
+    "rejected_options": [
+      "Continue line scanning YAML, because malformed documents can retain matching text and fail open.",
+      "Write a project-local YAML parser or SHA-256 implementation, because mature pure-Rust libraries are smaller-risk and independently maintained.",
+      "Trust version output alone for host-installed executables, because FF-BUILD-047 requires a source/checksum or toolchain/lock identity."
+    ],
+    "risks_and_mitigations": [
+      "Dependency expansion is confined to the non-shipped xtask, exact-pinned, lockfile-bound, cargo-deny checked, and declared in architecture policy.",
+      "Executable checksums are intentionally host-specific; any tool update requires a dedicated validated policy change."
+    ],
+    "validation_plan": "Warnings-denied Clippy, focused unit and repository-mutation tests, cargo-deny, architecture-check, verify-pr, checksum mismatch counterfactual, malformed YAML counterfactual, and final Git/governance containment checks."
   },
   "scope_edges": {
     "preserve": [
@@ -21,7 +42,7 @@
       "Add focused regression tests and simplify safely"
     ],
     "non_goals": [
-      "New product features, shipped crates, dependencies, or broad readiness claims",
+      "New product features, shipped crates, runtime/native dependencies, or broad readiness claims",
       "Spec or architecture redesign"
     ]
   },

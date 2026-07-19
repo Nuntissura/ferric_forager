@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: WP-FF-005-versioned-core-contracts-v1 is active for the Phase 0B prerequisite contract and state-machine implementation.
-  active_wp_id: WP-FF-005-versioned-core-contracts-v1
+  statement: No work packet is active; await Operator activation of the next packet.
+  active_wp_id: null
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

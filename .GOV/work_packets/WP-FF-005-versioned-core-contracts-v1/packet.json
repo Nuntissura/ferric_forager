@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Define versioned core contracts and executable state-machine specifications",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-19T21:38:56Z"
+    "updated_at_utc": "2026-07-19T21:43:18Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -43,14 +43,14 @@
     "worktree_id": "WP-FF-005-versioned-core-contracts",
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
     "closure_commit": "acf5465518e94984848e7d1f725575a99daebd55",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "c4fe1a15baa3e427fe2c5ff727f49c824b246ee1"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Merge closure commit acf5465518e94984848e7d1f725575a99daebd55 and this MERGE_PENDING evidence record to main, then mechanically verify containment before VALIDATED.",
+    "next_action": "Await Operator selection before activating any later work-packet stub.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -188,10 +188,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T21:38:56Z",
-      "branch": "codex/versioned-core-contracts",
+      "recorded_at_utc": "2026-07-19T21:43:18Z",
+      "branch": "main",
       "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
-      "head_sha": "acf5465518e94984848e7d1f725575a99daebd55",
+      "head_sha": "c4fe1a15baa3e427fe2c5ff727f49c824b246ee1",
       "dirty_paths": [],
       "checks_run": [
         "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, WP-005 packet, topology, build rules, work-packet requirements/template, cited design anchors, and readiness matrix",
@@ -209,10 +209,13 @@
         "Clean closure FF-GATE-ARCH-001 report: build/reports/architecture-check-1784496901614013300-642088.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
         "Clean closure FF-GATE-RUNTIME-001 prerequisite-ceiling report: build/reports/runtime-truth-check-1784496945148219800-630752.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
         "Clean closure FF-GATE-DEEP-001 report: build/reports/verify-deep-1784497031416014200-644600.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
-        "Clean closure FF-GATE-PR-001 report: build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false."
+        "Clean closure FF-GATE-PR-001 report: build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Closure commit acf5465518e94984848e7d1f725575a99daebd55 and MERGE_PENDING evidence commit 8b392ddee71fb7383bd71d55c17b368c46543c67 are ancestors of main merge c4fe1a15baa3e427fe2c5ff727f49c824b246ee1.",
+        "Post-merge FF-GATE-ARCH-001 report build/reports/architecture-check-1784497344725306200-666080.json records a successful integrated architecture verdict.",
+        "Post-merge runtime-truth invocation returned expected closed-state error FF-RUNTIME-E-NO-ACTIVE-PACKET after active_wp_id was cleared."
       ],
       "blockers": [],
-      "next_action": "Commit this MERGE_PENDING evidence record, merge the branch to main, and prove closure/evidence containment before setting VALIDATED."
+      "next_action": "Await Operator selection before activating any later work-packet stub."
     }
   },
   "validation": {
@@ -230,7 +233,10 @@
       "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1784497031416014200-644600.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
       "PASS: FF-GATE-PR-001; build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
       "PASS: final independent adversarial implementation review across wire, core, gate, and closure surfaces",
-      "PASS: JSON parse and git diff --check"
+      "PASS: JSON parse and git diff --check",
+      "PASS: closure commit acf5465518e94984848e7d1f725575a99daebd55 and MERGE_PENDING evidence commit 8b392ddee71fb7383bd71d55c17b368c46543c67 are ancestors of main merge c4fe1a15baa3e427fe2c5ff727f49c824b246ee1",
+      "POST-MERGE: FF-GATE-ARCH-001 records a successful result in build/reports/architecture-check-1784497344725306200-666080.json",
+      "POST-MERGE EXPECTED CLOSED-STATE REJECTION: FF-RUNTIME-E-NO-ACTIVE-PACKET after taskboard active_wp_id was cleared"
     ],
     "not_proven": [
       "No Ferric execution capability or adapter behavior is proven",

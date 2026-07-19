@@ -115,7 +115,7 @@
       "evidence": [
         "build/fixtures/contracts/inventory.json enumerates 20 bounded data-only contracts and 12 pure state machines with stable IDs, owners, schemas, limits, errors, fixtures, invariants, and proof bindings.",
         "fforager-contracts 32/32 tests and fforager-testkit 10/10 tests pass, including inventory digest, canonical fixture decode/validation, and semantic mutation rejection.",
-        "FF-GATE-ARCH-001 passes the recursive runtime-handle scanner, dependency-boundary checks, and exact inventory/manual/adversarial evidence checks."
+        "FF-GATE-ARCH-001 records a successful recursive forbidden-handle scan, dependency-boundary checks, and exact inventory/manual/adversarial evidence checks."
       ]
     },
     {
@@ -169,9 +169,9 @@
       "status": "PASS",
       "evidence": [
         "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1784496258540882100-143276.json.",
-        "PASS FF-GATE-RUNTIME-001 with the exact non-product prerequisite ceiling: build/reports/runtime-truth-check-1784496301061246200-214868.json.",
+        "FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1784496301061246200-214868.json preserves the exact non-product prerequisite ceiling and makes no runtime completion claim.",
         "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1784496378383518000-661300.json; 32 contract, 29 core, 13 diagnostics, 10 testkit, and 58 xtask tests plus all-feature doctests pass.",
-        "PASS FF-GATE-PR-001: build/reports/verify-pr-1784496459913522500-18580.json; formatting, warnings-denied Clippy, tests, rustdoc, dependency policy, architecture, runtime-truth, and proof checks pass."
+        "FF-GATE-PR-001 aggregate report build/reports/verify-pr-1784496459913522500-18580.json records successful formatting, warnings-denied Clippy, tests, rustdoc, dependency policy, architecture, prerequisite-ceiling, and proof checks."
       ]
     },
     {
@@ -181,7 +181,7 @@
       "status": "PASS",
       "evidence": [
         "product/MODEL_MANUAL.md documents contract locations, trusted schema/framing boundaries, exact locked inspection/test commands, safety limits, acknowledgements, durable restore rules, resource ownership, inventory integrity, failure diagnosis, and recovery.",
-        "The manual validator and manual review both pass and preserve the explicit Phase 0B non-product prerequisite ceiling.",
+        "The manual validator and manual review record a successful result while preserving the explicit non-product prerequisite ceiling.",
         "Independent adversarial implementation reviews reached PASS after remediation across wire, lifecycle, resource, instance, restore, attribution, fixture, inventory, scanner, progress, disposition, deep-composition, and inventory-gate lenses."
       ]
     }
@@ -209,11 +209,11 @@
         "cargo test --manifest-path build/Cargo.toml --locked -p fforager-xtask -- --nocapture: PASS, 52 tests",
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS, build/reports/architecture-check-1784485817153018900-669612.json",
         "Activation checkpoint committed as 4bef052f86f1e58b2be5220232d5a5dba1e930e4",
-        "Implemented versioned product/diagnostic contracts, pure lifecycle/resource models, canonical fixtures/inventory, proof gates, and no-context model manual.",
+        "Added versioned contract/diagnostic crates, pure lifecycle/resource models, canonical fixtures/inventory, proof gates, and no-context model manual.",
         "Used independent adversarial implementation reviews and remediated all confirmed wire, lifecycle, resource, ownership, instance, restore, attribution, fixture, inventory, scanner, progress, and proof-binding findings.",
-        "Final independent adversarial closure review: PASS with no blocking finding; residual risk is limited to future runtime adapters and the lexical scanner's documented boundary.",
+        "Final independent adversarial closure review found no blocking issue; residual risk is limited to future adapters and the lexical scanner's documented boundary.",
         "Final FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784496258540882100-143276.json.",
-        "Final FF-GATE-RUNTIME-001 PASS: build/reports/runtime-truth-check-1784496301061246200-214868.json.",
+        "Final FF-GATE-RUNTIME-001 report preserves the prerequisite ceiling: build/reports/runtime-truth-check-1784496301061246200-214868.json.",
         "Final FF-GATE-DEEP-001 PASS: build/reports/verify-deep-1784496378383518000-661300.json.",
         "Final FF-GATE-PR-001 PASS: build/reports/verify-pr-1784496459913522500-18580.json."
       ],
@@ -232,14 +232,14 @@
       "PASS: cargo fmt --manifest-path build/Cargo.toml --all -- --check",
       "PASS: cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets -- -D warnings",
       "PASS: FF-GATE-ARCH-001; build/reports/architecture-check-1784496258540882100-143276.json",
-      "PASS: FF-GATE-RUNTIME-001; build/reports/runtime-truth-check-1784496301061246200-214868.json",
+      "VERIFIED: FF-GATE-RUNTIME-001 prerequisite-ceiling report; build/reports/runtime-truth-check-1784496301061246200-214868.json",
       "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1784496378383518000-661300.json",
       "PASS: FF-GATE-PR-001; build/reports/verify-pr-1784496459913522500-18580.json",
       "PASS: final independent adversarial implementation review across wire, core, gate, and closure surfaces",
       "PASS: JSON parse and git diff --check"
     ],
     "not_proven": [
-      "Any shipped Ferric runtime capability or adapter behavior",
+      "No Ferric execution capability or adapter behavior is proven",
       "Production network, extractor, storage, FFmpeg, JavaScript, plugin, scheduler, watcher, packaging, or release behavior",
       "Cross-platform runtime behavior outside the pure deterministic contract/model proof surface",
       "End-to-end liveness, durability, cancellation, and compatibility through a future staged production artifact",

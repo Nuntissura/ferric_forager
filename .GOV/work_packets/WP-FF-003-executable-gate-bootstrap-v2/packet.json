@@ -41,15 +41,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": "16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
+    "closure_commit": null,
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit and remotely back up the merge-pending evidence, merge the approved closure into main, then mechanically verify containment before VALIDATED.",
+    "next_action": "Regression-proof active-packet input binding across packet closure, then rerun clean-source architecture-check and verify-pr before restoring MERGE_PENDING.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -138,7 +138,7 @@
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-005",
       "requirement": "The pinned architecture-check and verify-pr commands, formatting, warnings-denied Clippy, tests, docs, dependency policy, governance parsing, authority mirror, allowlist, registry-target, and git diff checks pass on the final branch with truthful proof limitations.",
-      "status": "PASS",
+      "status": "PENDING",
       "evidence": [
         "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784459980344894600-641012.json",
         "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460029076241600-646424.json",

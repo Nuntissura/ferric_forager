@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Adversarially re-evaluate and remediate the compatibility inventory and corpus",
     "created_at_utc": "2026-07-19T14:34:48Z",
-    "updated_at_utc": "2026-07-19T15:18:00Z"
+    "updated_at_utc": "2026-07-19T15:19:14Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -39,9 +39,9 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/wp-ff-004-adversarial-remediation",
+      "head_sha": "0eb89a45d995b9230fc8a40ccce8c1f1e0004195",
+      "verified_at_utc": "2026-07-19T15:19:14Z"
     },
     "closure_commit": "9a39cc597da1fc646c628e64910dbfcf2a0f947e",
     "main_containment_status": "NOT_STARTED",

@@ -4,7 +4,7 @@ file_kind: model_manual
 updated_at: "2026-07-19"
 ---
 
-<topic id="phase-0-purpose" status="active" version="1" wp="WP-FF-003-executable-gate-bootstrap-v1" updated_at="2026-07-19">
+<topic id="phase-0-purpose" status="active" version="2" wp="WP-FF-003-executable-gate-bootstrap-v2" updated_at="2026-07-19">
 
 # Ferric Forager model manual
 
@@ -21,7 +21,7 @@ Shipped product runtime must not read or require `.GOV/` or `build/`. Build tool
 
 </topic>
 
-<topic id="phase-0-commands" status="active" version="1" wp="WP-FF-003-executable-gate-bootstrap-v1" ingestable="true" updated_at="2026-07-19">
+<topic id="phase-0-commands" status="active" version="2" wp="WP-FF-003-executable-gate-bootstrap-v2" ingestable="true" updated_at="2026-07-19">
 
 ## Start and run
 
@@ -32,23 +32,26 @@ cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- archite
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard
 ```
 
-`architecture-check` consumes `build/architecture-policy.toml`, `build/rule-to-proof.toml`, locked Cargo metadata, canonical architecture rules, governed source paths, and `build/fixtures/architecture/`. It emits a unique versioned JSON report under `build/reports/` and exits nonzero on mismatch.
+`architecture-check` consumes `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, locked Cargo metadata, parsed canonical YAML authority, governed source paths, and `build/fixtures/architecture/`. Its negative fixtures call production validator primitives, while focused tests apply representative mutations to isolated repository copies and invoke the composed production gate. It emits a unique versioned JSON report under `build/reports/` and exits nonzero on mismatch.
 
 `verify-pr` also validates the active packet change-evidence fields and runs tool preflight, formatting, compile profiles, Clippy, tests, docs, dependency policy, and the architecture checker. Doctests, clean shipped-artifact proof, and watcher proof are reported `NOT_APPLICABLE` until their trigger exists. Deep and release gates are `NOT_IMPLEMENTED`; neither state may be reported as PASS.
 
 </topic>
 
-<topic id="phase-0-safety-recovery" status="active" version="1" wp="WP-FF-003-executable-gate-bootstrap-v1" updated_at="2026-07-19">
+<topic id="phase-0-safety-recovery" status="active" version="2" wp="WP-FF-003-executable-gate-bootstrap-v2" updated_at="2026-07-19">
 
 ## Inputs, outputs, safety, and recovery
 
 Inputs are committed policies, the locked workspace, the active packet, the canonical build rules, governed Rust source, and negative fixtures. Generated outputs are confined to `build/target/` and `build/reports/`; both are non-shipped.
 
-The gate runner never auto-installs or upgrades tools, never uses a shell to compose child commands, and refuses to run outside the repository root. Project-owned TOML schemas reject unknown keys. Unknown rule IDs, missing proof mappings, missing or unreferenced fixtures, duplicate toolchain selectors, wrong-root build files, undeclared workspace members, and runtime boundary literals fail closed.
+The gate runner never auto-installs or upgrades tools, never uses a shell to compose child commands, and refuses to run outside the repository root. Every child process is bounded; a timeout kills and reaps the child and reports incomplete evidence instead of PASS. Project-owned TOML schemas reject unknown keys, and governance YAML must parse as one structurally valid document before any value is consumed. Tool identity checks require exact output and supported-host policy; host-installed Git and cargo-deny executables also require the pinned SHA-256 digest. Unknown rule IDs, missing proof mappings, missing or unreferenced fixtures, duplicate or nested toolchain selectors, wrong-root build files, undeclared workspace members, and runtime boundary literals fail closed.
 
 Common failures and recovery:
 
 - Tool version mismatch: install the exact root-selected Rust toolchain/components and the tooling-policy version of `cargo-deny`, then rerun.
+- Tool checksum mismatch: resolve the executable selected by `PATH`, compare it with `build/tooling-policy.toml`, and treat any intended tool update as a dedicated validated policy change.
+- External command timeout: inspect the named command and environment; its evidence is incomplete, so fix the hang or resource stall and rerun the full gate.
+- Governance YAML parse or shape failure: repair the canonical YAML structure; do not bypass parsing with lexical matching.
 - `--locked` failure: do not remove `--locked`; reconcile `build/Cargo.toml` and intentionally regenerate `build/Cargo.lock`.
 - Wrong current directory: return to the repository root and rerun the canonical command.
 - Policy or fixture mismatch: use the stable diagnostic in stderr/report, correct the canonical policy or implementation, and rerun the same gate.

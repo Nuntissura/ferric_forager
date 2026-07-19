@@ -1,6 +1,7 @@
-schema_id = "ff.architecture_policy@1"
+schema_id = "ff.architecture_policy@2"
 file_id = "FF-GOV-BUILD-ARCH-POLICY-001"
-schema_version = "1.0.0"
+schema_version = "2.0.0"
+accepted_design_decision_ids = ["FF-BUILD-036", "FF-BUILD-077"]
 workspace_manifest = "build/Cargo.toml"
 workspace_root = "build"
 target_directory = "build/target"
@@ -17,7 +18,7 @@ internal_edge_default = "deny"
 forbidden_layer_edges = ["engine->frontend", "engine->adapter", "engine->watcher", "adapter->adapter", "product->watcher", "watcher->engine", "normal_or_build:product->testkit"]
 forbidden_product_runtime_roots = [".GOV", "build"]
 allowed_runtime_or_native_dependencies = ["FFmpeg", "ffprobe"]
-approved_transitive_build_packages = ["camino@1.2.4", "proc-macro2@1.0.106", "quote@1.0.46", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "zmij@1.0.23"]
+approved_transitive_build_packages = ["camino@1.2.4", "libc@0.2.186", "num-traits@0.2.19", "proc-macro2@1.0.107", "quote@1.0.47", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "zmij@1.0.23"]
 approved_transitive_proc_macros = ["serde_derive@1.0.228", "thiserror-impl@2.0.19"]
 
 [[members]]
@@ -34,6 +35,9 @@ split_trigger = "FF-BUILD-036"
 feature_owner = "WP-FF-003-executable-gate-bootstrap-v1"
 profile = "phase0_bootstrap"
 removal_condition = "Replace only through a versioned gate-runner migration that preserves all report and proof contracts."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
 
 [[dependency_decisions]]
 name = "cargo_metadata"
@@ -42,6 +46,13 @@ consumer = "fforager-xtask"
 runtime_class = "non_shipped_build_tooling"
 purpose = "Consume Cargo metadata format 1 without a brittle hand-written JSON parser."
 native = false
+owner = "WP-FF-003-executable-gate-bootstrap"
+allowed_consumers = ["fforager-xtask"]
+reason = "The official structured Cargo graph surface avoids lossy cargo-tree text parsing."
+removal_trigger = "Cargo exposes an equally stable std-only metadata interface or the gate runner is replaced through a validated migration."
+approval_id = "WP-FF-003-executable-gate-bootstrap-v1-AC-002"
+features = []
+default_features = false
 
 [[dependency_decisions]]
 name = "serde"
@@ -50,6 +61,13 @@ consumer = "fforager-xtask"
 runtime_class = "non_shipped_build_tooling"
 purpose = "Strict typed policy and report serialization."
 native = false
+owner = "WP-FF-003-executable-gate-bootstrap"
+allowed_consumers = ["fforager-xtask"]
+reason = "Typed deny-unknown-fields schemas are required for fail-closed project policy parsing."
+removal_trigger = "All governed policy and report surfaces are removed or migrate to an equally strict approved serializer."
+approval_id = "WP-FF-003-executable-gate-bootstrap-v1-AC-002"
+features = ["derive"]
+default_features = true
 
 [[dependency_decisions]]
 name = "serde_json"
@@ -58,6 +76,43 @@ consumer = "fforager-xtask"
 runtime_class = "non_shipped_build_tooling"
 purpose = "Parse Cargo, packet, and report JSON."
 native = false
+owner = "WP-FF-003-executable-gate-bootstrap"
+allowed_consumers = ["fforager-xtask"]
+reason = "Cargo metadata, packet contracts, and gate reports use JSON as their accepted machine-readable format."
+removal_trigger = "Every governed JSON producer and consumer migrates through a versioned accepted contract."
+approval_id = "WP-FF-003-executable-gate-bootstrap-v1-AC-002"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "saphyr"
+version = "0.0.11"
+consumer = "fforager-xtask"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Parse governance YAML fail-closed before consuming build rules or active task state."
+native = false
+owner = "WP-FF-003-executable-gate-bootstrap"
+allowed_consumers = ["fforager-xtask"]
+reason = "A maintained YAML 1.2 parser is safer and smaller than inventing a project-local parser for authoritative governance files."
+removal_trigger = "Governance authority migrates away from YAML or Rust gains an approved equivalent parser already present in the workspace."
+approval_id = "WP-FF-003-executable-gate-bootstrap-v2-AC-003"
+features = []
+default_features = false
+
+[[dependency_decisions]]
+name = "sha2"
+version = "0.11.0"
+consumer = "fforager-xtask"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Verify SHA-256 identities for host-installed validation executables."
+native = false
+owner = "WP-FF-003-executable-gate-bootstrap"
+allowed_consumers = ["fforager-xtask"]
+reason = "FF-BUILD-047 requires exact checksum evidence for tools not owned by the pinned Rust toolchain or workspace lockfile."
+removal_trigger = "All validation executables are supplied through an independently verified toolchain or a standard-library SHA-256 implementation becomes available."
+approval_id = "WP-FF-003-executable-gate-bootstrap-v2-AC-003"
+features = []
+default_features = false
 
 [[dependency_decisions]]
 name = "toml"
@@ -66,3 +121,10 @@ consumer = "fforager-xtask"
 runtime_class = "non_shipped_build_tooling"
 purpose = "Strict parsing of project-owned TOML policy."
 native = false
+owner = "WP-FF-003-executable-gate-bootstrap"
+allowed_consumers = ["fforager-xtask"]
+reason = "Cargo and project build policies use TOML and must be parsed semantically rather than through lexical matching."
+removal_trigger = "All governed TOML policy migrates through a versioned accepted contract."
+approval_id = "WP-FF-003-executable-gate-bootstrap-v1-AC-002"
+features = []
+default_features = true

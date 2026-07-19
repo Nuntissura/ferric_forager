@@ -414,6 +414,7 @@ pub enum CreditError {
     UnknownClaim(u64),
     ClaimAlreadyReleased(u64),
     ClaimOwnerMismatch,
+    ReceivedBytesRequireClaim,
     PositionRegressed,
     WrittenAheadOfReceived,
     DurableAheadOfWritten,
@@ -437,6 +438,15 @@ struct ByteClaim {
     owner: OwnerId,
     bytes: u64,
     consumed: u64,
+}
+
+/// Auditable ownership and consumption state for one live byte claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CreditAttribution {
+    pub claim_id: u64,
+    pub owner: OwnerId,
+    pub bytes: u64,
+    pub consumed: u64,
 }
 
 impl ByteCreditLedger {
@@ -510,12 +520,12 @@ impl ByteCreditLedger {
         Ok(())
     }
 
-    /// Release exactly one byte claim.
+    /// Release exactly one byte claim and return its final attribution receipt.
     ///
     /// # Errors
     ///
     /// Returns an error for an unknown, duplicate, or differently owned claim.
-    pub fn release(&mut self, id: u64, owner: OwnerId) -> Result<(), CreditError> {
+    pub fn release(&mut self, id: u64, owner: OwnerId) -> Result<CreditAttribution, CreditError> {
         let Some(claim) = self.active.get(&id).copied() else {
             return self.missing_claim(id);
         };
@@ -535,10 +545,63 @@ impl ByteCreditLedger {
             .checked_sub(unused)
             .ok_or(CreditError::ArithmeticOverflow)?;
         self.active.remove(&id);
+        Ok(CreditAttribution {
+            claim_id: id,
+            owner: claim.owner,
+            bytes: claim.bytes,
+            consumed: claim.consumed,
+        })
+    }
+
+    /// Consume received bytes from exactly one owned claim.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown, released, differently owned, regressing,
+    /// or insufficient claim. Failure does not mutate accounting.
+    pub fn receive(
+        &mut self,
+        id: u64,
+        owner: OwnerId,
+        received_bytes: u64,
+    ) -> Result<(), CreditError> {
+        if received_bytes < self.position.received_bytes {
+            return Err(CreditError::PositionRegressed);
+        }
+        let Some(claim) = self.active.get(&id).copied() else {
+            return self.missing_claim(id);
+        };
+        if claim.owner != owner {
+            return Err(CreditError::ClaimOwnerMismatch);
+        }
+        let newly_received = received_bytes
+            .checked_sub(self.position.received_bytes)
+            .ok_or(CreditError::PositionRegressed)?;
+        let available = claim
+            .bytes
+            .checked_sub(claim.consumed)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        if newly_received > available {
+            let credited = self
+                .position
+                .received_bytes
+                .checked_add(available)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            return Err(CreditError::UncreditedBytes {
+                received: received_bytes,
+                credited,
+            });
+        }
+        let consumed = claim
+            .consumed
+            .checked_add(newly_received)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        self.active.insert(id, ByteClaim { consumed, ..claim });
+        self.position.received_bytes = received_bytes;
         Ok(())
     }
 
-    /// Advance received, written, and durable prefixes monotonically.
+    /// Advance validated and durable prefixes monotonically after owned receive.
     ///
     /// # Errors
     ///
@@ -550,58 +613,34 @@ impl ByteCreditLedger {
         {
             return Err(CreditError::PositionRegressed);
         }
+        if next.received_bytes != self.position.received_bytes {
+            return Err(CreditError::ReceivedBytesRequireClaim);
+        }
         if next.validated_bytes > next.received_bytes {
             return Err(CreditError::WrittenAheadOfReceived);
         }
         if next.durable_bytes > next.validated_bytes {
             return Err(CreditError::DurableAheadOfWritten);
         }
-        if next.received_bytes > self.credited_total {
-            return Err(CreditError::UncreditedBytes {
-                received: next.received_bytes,
-                credited: self.credited_total,
-            });
-        }
-        let newly_received = next
-            .received_bytes
-            .checked_sub(self.position.received_bytes)
-            .ok_or(CreditError::PositionRegressed)?;
-        let available = self.active.values().try_fold(0_u64, |sum, claim| {
-            let remaining = claim.bytes.checked_sub(claim.consumed)?;
-            sum.checked_add(remaining)
-        });
-        if available.is_none_or(|available| newly_received > available) {
-            let credited = available
-                .and_then(|available| self.position.received_bytes.checked_add(available))
-                .unwrap_or(self.position.received_bytes);
-            return Err(CreditError::UncreditedBytes {
-                received: next.received_bytes,
-                credited,
-            });
-        }
-        let mut remaining = newly_received;
-        for claim in self.active.values_mut() {
-            if remaining == 0 {
-                break;
-            }
-            let available = claim
-                .bytes
-                .checked_sub(claim.consumed)
-                .ok_or(CreditError::ArithmeticOverflow)?;
-            let consumed = available.min(remaining);
-            claim.consumed = claim
-                .consumed
-                .checked_add(consumed)
-                .ok_or(CreditError::ArithmeticOverflow)?;
-            remaining = remaining
-                .checked_sub(consumed)
-                .ok_or(CreditError::ArithmeticOverflow)?;
-        }
-        if remaining != 0 {
-            return Err(CreditError::ArithmeticOverflow);
-        }
         self.position = next;
         Ok(())
+    }
+
+    /// Return the live claim attribution used to audit owner-bound consumption.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown or released claim.
+    pub fn attribution(&self, id: u64) -> Result<CreditAttribution, CreditError> {
+        let Some(claim) = self.active.get(&id).copied() else {
+            return self.missing_claim(id);
+        };
+        Ok(CreditAttribution {
+            claim_id: id,
+            owner: claim.owner,
+            bytes: claim.bytes,
+            consumed: claim.consumed,
+        })
     }
 
     #[must_use]
@@ -783,7 +822,10 @@ mod tests {
     #[test]
     fn durable_position_is_monotonic_and_never_ahead_of_written() {
         let mut credits = ByteCreditLedger::new(u64::MAX, 1);
-        assert!(credits.claim(OwnerId(1), u64::MAX).is_ok());
+        let claim = credits
+            .claim(OwnerId(1), u64::MAX)
+            .expect("maximum claim must fit");
+        assert!(credits.receive(claim, OwnerId(1), u64::MAX).is_ok());
         assert!(
             credits
                 .advance(DurabilityPosition {
@@ -810,7 +852,8 @@ mod tests {
             Err(CreditError::PositionRegressed)
         ));
         let mut invalid = ByteCreditLedger::new(1, 1);
-        assert!(invalid.claim(OwnerId(1), 1).is_ok());
+        let claim = invalid.claim(OwnerId(1), 1).expect("claim must fit");
+        assert!(invalid.receive(claim, OwnerId(1), 1).is_ok());
         assert!(matches!(
             invalid.advance(DurabilityPosition {
                 received_bytes: 1,
@@ -831,16 +874,13 @@ mod tests {
 
     #[test]
     fn durability_rejects_bytes_that_were_never_credited() {
-        let mut credits = ByteCreditLedger::new(0, 0);
+        let mut credits = ByteCreditLedger::new(1, 1);
+        let claim = credits.claim(OwnerId(1), 1).expect("claim must fit");
         assert!(matches!(
-            credits.advance(DurabilityPosition {
-                received_bytes: u64::MAX,
-                validated_bytes: u64::MAX,
-                durable_bytes: u64::MAX,
-            }),
+            credits.receive(claim, OwnerId(1), u64::MAX),
             Err(CreditError::UncreditedBytes {
                 received: u64::MAX,
-                credited: 0
+                credited: 1
             })
         ));
         assert_eq!(credits.position(), DurabilityPosition::default());
@@ -850,17 +890,18 @@ mod tests {
     fn released_unused_credit_cannot_authorize_receive() {
         let mut credits = ByteCreditLedger::new(10, 1);
         let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
-        assert!(credits.release(claim, OwnerId(1)).is_ok());
-        assert!(matches!(
-            credits.advance(DurabilityPosition {
-                received_bytes: 1,
-                validated_bytes: 0,
-                durable_bytes: 0,
-            }),
-            Err(CreditError::UncreditedBytes {
-                received: 1,
-                credited: 0
+        assert_eq!(
+            credits.release(claim, OwnerId(1)),
+            Ok(CreditAttribution {
+                claim_id: claim,
+                owner: OwnerId(1),
+                bytes: 10,
+                consumed: 0,
             })
+        );
+        assert!(matches!(
+            credits.receive(claim, OwnerId(1), 1),
+            Err(CreditError::ClaimAlreadyReleased(id)) if id == claim
         ));
         assert!(credits.verify().is_ok());
     }
@@ -869,6 +910,7 @@ mod tests {
     fn consumed_credit_survives_release_but_unused_remainder_does_not() {
         let mut credits = ByteCreditLedger::new(10, 1);
         let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
+        assert!(credits.receive(claim, OwnerId(1), 4).is_ok());
         assert!(
             credits
                 .advance(DurabilityPosition {
@@ -878,7 +920,15 @@ mod tests {
                 })
                 .is_ok()
         );
-        assert!(credits.release(claim, OwnerId(1)).is_ok());
+        assert_eq!(
+            credits.release(claim, OwnerId(1)),
+            Ok(CreditAttribution {
+                claim_id: claim,
+                owner: OwnerId(1),
+                bytes: 10,
+                consumed: 4,
+            })
+        );
         assert!(
             credits
                 .advance(DurabilityPosition {
@@ -894,11 +944,41 @@ mod tests {
                 validated_bytes: 4,
                 durable_bytes: 4,
             }),
-            Err(CreditError::UncreditedBytes {
-                received: 5,
-                credited: 4
-            })
+            Err(CreditError::ReceivedBytesRequireClaim)
         ));
+        assert!(credits.verify().is_ok());
+    }
+
+    #[test]
+    fn receive_requires_exact_claim_owner_and_records_attribution() {
+        let mut credits = ByteCreditLedger::new(10, 2);
+        let first = credits.claim(OwnerId(1), 5).expect("first claim");
+        let second = credits.claim(OwnerId(2), 5).expect("second claim");
+        let before = credits.clone();
+        assert!(matches!(
+            credits.receive(first, OwnerId(2), 3),
+            Err(CreditError::ClaimOwnerMismatch)
+        ));
+        assert_eq!(credits, before, "wrong-owner receive must be atomic");
+        assert!(credits.receive(second, OwnerId(2), 3).is_ok());
+        assert_eq!(
+            credits.attribution(first),
+            Ok(CreditAttribution {
+                claim_id: first,
+                owner: OwnerId(1),
+                bytes: 5,
+                consumed: 0,
+            })
+        );
+        assert_eq!(
+            credits.attribution(second),
+            Ok(CreditAttribution {
+                claim_id: second,
+                owner: OwnerId(2),
+                bytes: 5,
+                consumed: 3,
+            })
+        );
         assert!(credits.verify().is_ok());
     }
 

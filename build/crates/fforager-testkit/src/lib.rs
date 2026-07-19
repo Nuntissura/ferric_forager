@@ -153,6 +153,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn inventory_is_unique_complete_and_references_existing_fixtures() {
         let bytes = read_fixture("inventory.json").expect("inventory must load");
         let inventory: serde_json::Value =
@@ -187,6 +188,210 @@ mod tests {
                 );
             }
         }
+        let canonical_contracts = [
+            (
+                "FF-CONTRACT-IDENTITY-001",
+                "ItemId|RepresentationId|TrackId|AssetId|DerivedOutputId",
+                "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase",
+            ),
+            (
+                "FF-CONTRACT-SOURCE-GRAPH-001",
+                "SourceGraph",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-ACQUISITION-001",
+                "AcquisitionSource|FragmentDescriptor",
+                "testkit::tests::canonical_public_contract_fixtures_decode_and_validate",
+            ),
+            (
+                "FF-CONTRACT-OUTPUT-SINK-001",
+                "OutputSinkSpec|SinkSemantics|PlayerTransport|BackpressureMode",
+                "testkit::tests::canonical_public_contract_fixtures_decode_and_validate",
+            ),
+            (
+                "FF-CONTRACT-TRISTATE-001",
+                "TriState<T>",
+                "contracts::graph::tests::round_trip_preserves_tri_state",
+            ),
+            (
+                "FF-CONTRACT-EXTENSION-001",
+                "ExtensionMap",
+                "contracts::identity::tests::extensions_require_namespace_and_budget",
+            ),
+            (
+                "FF-CONTRACT-CONFIG-001",
+                "ConfigEnvelope",
+                "testkit::tests::canonical_public_contract_fixtures_decode_and_validate",
+            ),
+            (
+                "FF-CONTRACT-EVENT-001",
+                "EventEnvelope|EventCriticality|Sensitivity",
+                "testkit::tests::canonical_public_contract_fixtures_decode_and_validate",
+            ),
+            (
+                "FF-CONTRACT-ERROR-001",
+                "ErrorEnvelope|ErrorCode",
+                "testkit::tests::canonical_public_contract_fixtures_decode_and_validate",
+            ),
+            (
+                "FF-CONTRACT-CANCELLATION-001",
+                "CancellationRequest|CancellationAcknowledgement|CancellationOutcome",
+                "testkit::tests::canonical_public_contract_fixtures_decode_and_validate",
+            ),
+            (
+                "FF-CONTRACT-PROCESS-001",
+                "ProcessEnvelope",
+                "testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind",
+            ),
+            (
+                "FF-CONTRACT-PLUGIN-IPC-001",
+                "PluginMessage",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-JS-WORKER-001",
+                "JavaScriptWorkerMessage",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-FRAMING-001",
+                "FrameDecoder|ProcessConformance",
+                "testkit::tests::shared_framing_harness_covers_partial_oversized_and_unknown_kind",
+            ),
+            (
+                "FF-CONTRACT-DURABILITY-001",
+                "JournalRecord|DurabilityPosition|CommitPrepared|CommitRenamed|ArchiveCommitted|ArchiveCandidate",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-FILESYSTEM-001",
+                "FilesystemCapability|RootedPath",
+                "contracts::storage::tests::unsupported_path_confinement_fails_closed",
+            ),
+            (
+                "FF-CONTRACT-DIAGNOSTIC-ENVELOPE-001",
+                "DiagnosticEnvelope|CrashEnvelope|DiagnosticAck",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001",
+                "ProtocolOffer|SequenceTracker",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001",
+                "LifecycleSnapshot|HealthSnapshot|WatcherState",
+                "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
+            ),
+            (
+                "FF-CONTRACT-RESOURCE-VECTOR-001",
+                "ResourceVector|ResourceLedger|ByteCreditLedger|CreditAttribution",
+                "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution",
+            ),
+        ];
+        assert_eq!(entries.len(), canonical_contracts.len());
+        for (id, rust_type, proof_id) in canonical_contracts {
+            let row = entries
+                .iter()
+                .find(|row| row["id"] == id)
+                .unwrap_or_else(|| panic!("missing canonical contract {id}"));
+            assert_eq!(row["rust_type"], rust_type, "{id} rust_type drift");
+            assert_eq!(row["proof_id"], proof_id, "{id} proof_id drift");
+        }
+
+        let canonical_states = [
+            (
+                "FF-STATE-JOB-CANCEL-001",
+                "JobQueued|JobRunning|JobCancelling|JobVerifying|JobSucceeded|JobFailed|JobCancelled",
+                "verification intent cannot directly produce success|trace is bounded",
+                "core::lifecycle::tests::success_and_durable_prefixes_require_effect_acknowledgements",
+            ),
+            (
+                "FF-STATE-SOURCE-REDIRECT-001",
+                "SourceNew|SourceResolving|SourceRedirecting|SourceResolved|SourceFailed|SourceCancelled",
+                "redirect resolution is explicit",
+                "core::lifecycle::tests::every_named_lifecycle_has_a_success_path",
+            ),
+            (
+                "FF-STATE-ADMISSION-001",
+                "AdmissionWaiting|AdmissionGranted|AdmissionReleased|AdmissionCancelled",
+                "vector grants are atomic|capacity never underflows",
+                "core::resource::tests::atomic_zero_exact_one_over_and_release_identity",
+            ),
+            (
+                "FF-STATE-FRAGMENT-DURABILITY-001",
+                "BytesEmpty|BytesReceived|BytesWriting|BytesWritten|BytesSynchronizing|BytesDurable|BytesFailed|BytesCancelled",
+                "write and synchronization effects require correlated acknowledgement|durable never exceeds validated or received|positions never regress|released unused credits cannot authorize receive|received-byte consumption is attributable to one claim owner",
+                "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution",
+            ),
+            (
+                "FF-STATE-LIVE-001",
+                "LiveStarting|LiveRefreshing|LiveStreaming|LiveStopped|LiveFailed|LiveCancelled",
+                "drain precedes stop",
+                "core::lifecycle::tests::every_named_lifecycle_has_a_success_path",
+            ),
+            (
+                "FF-STATE-SINK-001",
+                "SinkPending|SinkActive|SinkDraining|SinkCompleted|SinkDropped|SinkFailed|SinkCancelled",
+                "partial output cannot be archived",
+                "core::lifecycle::tests::failure_and_restart_preserve_diagnostics_and_reset_safely",
+            ),
+            (
+                "FF-STATE-FFMPEG-001",
+                "FfmpegPrepared|FfmpegSpawned|FfmpegRunning|FfmpegReaping|FfmpegCancelling|FfmpegExited|FfmpegFailed|FfmpegCancelled",
+                "process effects are explicit",
+                "core::lifecycle::tests::cancellation_paths_are_explicit_and_release_or_drain",
+            ),
+            (
+                "FF-STATE-JS-WORKER-001",
+                "JavascriptIdle|JavascriptAssigned|JavascriptRunning|JavascriptRecycling|JavascriptQuarantined|JavascriptCompleted|JavascriptCancelled",
+                "terminal response is unique",
+                "core::lifecycle::tests::illegal_transitions_are_typed_and_do_not_mutate_or_trace",
+            ),
+            (
+                "FF-STATE-PLUGIN-IPC-001",
+                "PluginDisconnected|PluginHandshaking|PluginReady|PluginInFlight|PluginDraining|PluginStopped|PluginFailed",
+                "negotiation precedes invoke",
+                "core::lifecycle::tests::cancellation_paths_are_explicit_and_release_or_drain",
+            ),
+            (
+                "FF-STATE-COMMIT-ARCHIVE-001",
+                "CommitWorking|CommitPreparing|CommitPrepared|CommitRenaming|CommitRenamed|CommitArchiving|CommitArchived|CommitCleaning|CommitCleaned|CommitReconciling|CommitVerifyingPrepared|CommitVerifyingRenamed|CommitVerifyingArchived|CommitVerifyingCleaned|CommitCancelling|CommitReconciled|CommitInconsistent|CommitCancelled",
+                "archive requires acknowledged rename|restart verification is acknowledged before archive or cleanup|restart never invents success|effect intent advances only after matching effect and generation acknowledgement|only enumerated durable prefixes can be restored",
+                "core::lifecycle::tests::transient_restore_and_stale_or_wrong_acknowledgements_are_rejected",
+            ),
+            (
+                "FF-STATE-FILESYSTEM-CAPABILITY-001",
+                "FilesystemUnknown|FilesystemProbing|FilesystemConfined|FilesystemDegraded|FilesystemUnsupported|FilesystemCancelled",
+                "degraded never claims confinement",
+                "core::lifecycle::tests::degraded_filesystem_never_claims_confinement",
+            ),
+            (
+                "FF-STATE-WATCHER-001",
+                "WatcherStarting|WatcherReady|WatcherServing|WatcherDegraded|WatcherStale|WatcherDraining|WatcherStopped",
+                "readiness and producer canary are separate",
+                "core::lifecycle::tests::cancellation_paths_are_explicit_and_release_or_drain",
+            ),
+        ];
+        assert_eq!(states.len(), canonical_states.len());
+        for (id, expected_states, expected_invariants, proof_id) in canonical_states {
+            let row = states
+                .iter()
+                .find(|row| row["id"] == id)
+                .unwrap_or_else(|| panic!("missing canonical state machine {id}"));
+            assert_eq!(
+                json_strings(&row["states"]),
+                expected_states,
+                "{id} state drift"
+            );
+            assert_eq!(
+                json_strings(&row["invariants"]),
+                expected_invariants,
+                "{id} invariant drift"
+            );
+            assert_eq!(row["proof_id"], proof_id, "{id} proof_id drift");
+        }
         for required_id in [
             "FF-CONTRACT-ACQUISITION-001",
             "FF-CONTRACT-OUTPUT-SINK-001",
@@ -197,6 +402,16 @@ mod tests {
         ] {
             assert!(ids.contains(required_id), "inventory omits {required_id}");
         }
+    }
+
+    fn json_strings(value: &serde_json::Value) -> String {
+        value
+            .as_array()
+            .expect("canonical field must be an array")
+            .iter()
+            .map(|value| value.as_str().expect("canonical item must be a string"))
+            .collect::<Vec<_>>()
+            .join("|")
     }
 
     #[test]
@@ -465,11 +680,16 @@ mod tests {
                 .expect("scenario case is required");
             let kind = machine_kind(machine_name).expect("registered machine kind");
             let events = scenario["events"].as_array().expect("events are required");
-            let mut model = StateMachine::new(kind, events.len().saturating_add(1));
+            let mut model =
+                StateMachine::new(kind, events.len().saturating_mul(2).saturating_add(2));
             for event in events {
                 let event = lifecycle_event(event.as_str().unwrap_or_default())
                     .expect("registered lifecycle event");
-                assert!(model.apply(event).is_ok());
+                if event == Event::Acknowledge {
+                    acknowledge_pending(&mut model);
+                } else {
+                    assert!(model.apply(event).is_ok());
+                }
             }
             if case == "invalid" {
                 let prior_state = model.state();
@@ -555,6 +775,7 @@ mod tests {
         let claim = credits
             .claim(OwnerId(1), claim_bytes)
             .expect("claim must fit");
+        assert!(credits.receive(claim, OwnerId(1), received).is_ok());
         assert!(
             credits
                 .advance(DurabilityPosition {
@@ -571,10 +792,27 @@ mod tests {
                 validated_bytes: received,
                 durable_bytes: received,
             }),
-            Err(CreditError::UncreditedBytes { credited, .. })
-                if credited == credit_fixture["credited_after_release"].as_u64().unwrap_or_default()
+            Err(CreditError::ReceivedBytesRequireClaim)
         ));
         assert!(credits.verify().is_ok());
+    }
+
+    fn acknowledge_pending(model: &mut StateMachine) {
+        let pending = model.pending_acknowledgements().to_vec();
+        assert!(
+            !pending.is_empty(),
+            "fixture acknowledgement requires an effect"
+        );
+        for acknowledgement in pending {
+            assert!(
+                model
+                    .apply(Event::EffectAcknowledged {
+                        effect: acknowledgement.effect,
+                        generation: acknowledgement.generation,
+                    })
+                    .is_ok()
+            );
+        }
     }
 
     fn resource_vector(value: &serde_json::Value) -> ResourceVector {

@@ -130,7 +130,13 @@ pub enum Event {
     Drain,
     Spawn,
     Reap,
+    /// Legacy uncorrelated acknowledgement marker. Applying it is always invalid.
+    /// Callers must use [`Event::EffectAcknowledged`].
     Acknowledge,
+    EffectAcknowledged {
+        effect: EffectIntent,
+        generation: u64,
+    },
     Recycle,
     Quarantine,
     Prepare,
@@ -200,6 +206,17 @@ pub enum TransitionError {
         kind: MachineKind,
         state: State,
     },
+    StateIsNotDurable {
+        kind: MachineKind,
+        state: State,
+    },
+    InvalidRestorationGeneration,
+    EffectGenerationExhausted,
+    UnexpectedAcknowledgement {
+        effect: EffectIntent,
+        generation: u64,
+        expected: Vec<EffectAcknowledgement>,
+    },
     InvalidTransition {
         kind: MachineKind,
         state: State,
@@ -221,6 +238,13 @@ pub struct Transition {
     pub effects: Vec<EffectIntent>,
 }
 
+/// Correlation token for one effect completion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EffectAcknowledgement {
+    pub effect: EffectIntent,
+    pub generation: u64,
+}
+
 /// One bounded, deterministic state machine instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateMachine {
@@ -228,6 +252,8 @@ pub struct StateMachine {
     state: State,
     trace_limit: usize,
     trace: Vec<Transition>,
+    pending_acknowledgements: Vec<EffectAcknowledgement>,
+    next_effect_generation: u64,
 }
 
 impl StateMachine {
@@ -238,6 +264,8 @@ impl StateMachine {
             state: initial(kind),
             trace_limit,
             trace: Vec::new(),
+            pending_acknowledgements: Vec::new(),
+            next_effect_generation: 1,
         }
     }
 
@@ -245,20 +273,30 @@ impl StateMachine {
     ///
     /// # Errors
     ///
-    /// Returns an error when `state` does not belong to `kind`.
+    /// Returns an error when `state` does not belong to `kind`, is transient,
+    /// or the caller does not provide a nonzero persisted generation seed.
     pub fn from_state(
         kind: MachineKind,
         state: State,
         trace_limit: usize,
+        next_effect_generation: u64,
     ) -> Result<Self, TransitionError> {
         if !belongs(kind, state) {
             return Err(TransitionError::StateDoesNotBelongToMachine { kind, state });
+        }
+        if !is_durable_state(kind, state) {
+            return Err(TransitionError::StateIsNotDurable { kind, state });
+        }
+        if next_effect_generation == 0 {
+            return Err(TransitionError::InvalidRestorationGeneration);
         }
         Ok(Self {
             kind,
             state,
             trace_limit,
             trace: Vec::new(),
+            pending_acknowledgements: Vec::new(),
+            next_effect_generation,
         })
     }
 
@@ -272,6 +310,11 @@ impl StateMachine {
         &self.trace
     }
 
+    #[must_use]
+    pub fn pending_acknowledgements(&self) -> &[EffectAcknowledgement] {
+        &self.pending_acknowledgements
+    }
+
     /// Apply one event atomically, recording it only after validation.
     ///
     /// # Errors
@@ -283,7 +326,50 @@ impl StateMachine {
                 limit: self.trace_limit,
             });
         }
+        let mut remaining_acknowledgements = self.pending_acknowledgements.clone();
+        if let Event::EffectAcknowledged { effect, generation } = event {
+            let Some(index) = remaining_acknowledgements.iter().position(|expected| {
+                expected.effect == effect && expected.generation == generation
+            }) else {
+                return Err(TransitionError::UnexpectedAcknowledgement {
+                    effect,
+                    generation,
+                    expected: self.pending_acknowledgements.clone(),
+                });
+            };
+            remaining_acknowledgements.remove(index);
+            if !remaining_acknowledgements.is_empty() {
+                let record = Transition {
+                    previous: self.state,
+                    event,
+                    next: self.state,
+                    effects: Vec::new(),
+                };
+                self.pending_acknowledgements = remaining_acknowledgements;
+                self.trace.push(record);
+                let index = self.trace.len() - 1;
+                return self
+                    .trace
+                    .get(index)
+                    .ok_or(TransitionError::ReplayMismatch { index });
+            }
+        }
         let (next, effects) = transition(self.kind, self.state, event)?;
+        let required = acknowledgement_effects(next, &effects);
+        let next_generation = if required.is_empty() {
+            self.next_effect_generation
+        } else {
+            self.next_effect_generation
+                .checked_add(1)
+                .ok_or(TransitionError::EffectGenerationExhausted)?
+        };
+        let pending_acknowledgements = required
+            .into_iter()
+            .map(|effect| EffectAcknowledgement {
+                effect,
+                generation: self.next_effect_generation,
+            })
+            .collect();
         let record = Transition {
             previous: self.state,
             event,
@@ -291,6 +377,8 @@ impl StateMachine {
             effects,
         };
         self.state = next;
+        self.pending_acknowledgements = pending_acknowledgements;
+        self.next_effect_generation = next_generation;
         self.trace.push(record);
         let index = self.trace.len() - 1;
         self.trace
@@ -459,6 +547,119 @@ fn belongs(kind: MachineKind, state: State) -> bool {
     )
 }
 
+#[allow(clippy::too_many_lines)]
+fn is_durable_state(kind: MachineKind, state: State) -> bool {
+    matches!(
+        (kind, state),
+        (
+            MachineKind::JobCancellation,
+            State::JobQueued | State::JobSucceeded | State::JobFailed | State::JobCancelled
+        ) | (
+            MachineKind::SourceRedirect,
+            State::SourceNew | State::SourceResolved | State::SourceFailed | State::SourceCancelled
+        ) | (
+            MachineKind::AtomicAdmission,
+            State::AdmissionWaiting | State::AdmissionReleased | State::AdmissionCancelled
+        ) | (
+            MachineKind::ByteCreditDurability,
+            State::BytesEmpty
+                | State::BytesReceived
+                | State::BytesWritten
+                | State::BytesDurable
+                | State::BytesFailed
+                | State::BytesCancelled
+        ) | (
+            MachineKind::Live,
+            State::LiveStarting
+                | State::LiveStreaming
+                | State::LiveStopped
+                | State::LiveFailed
+                | State::LiveCancelled
+        ) | (
+            MachineKind::Sink,
+            State::SinkPending
+                | State::SinkActive
+                | State::SinkCompleted
+                | State::SinkDropped
+                | State::SinkFailed
+                | State::SinkCancelled
+        ) | (
+            MachineKind::Ffmpeg,
+            State::FfmpegPrepared
+                | State::FfmpegExited
+                | State::FfmpegFailed
+                | State::FfmpegCancelled
+        ) | (
+            MachineKind::JavascriptWorker,
+            State::JavascriptIdle
+                | State::JavascriptQuarantined
+                | State::JavascriptCompleted
+                | State::JavascriptCancelled
+        ) | (
+            MachineKind::PluginIpc,
+            State::PluginDisconnected
+                | State::PluginReady
+                | State::PluginStopped
+                | State::PluginFailed
+        ) | (
+            MachineKind::CommitArchiveReconciliation,
+            State::CommitWorking
+                | State::CommitPrepared
+                | State::CommitRenamed
+                | State::CommitArchived
+                | State::CommitCleaned
+                | State::CommitReconciled
+                | State::CommitInconsistent
+                | State::CommitCancelled
+        ) | (
+            MachineKind::FilesystemCapability,
+            State::FilesystemUnknown
+                | State::FilesystemConfined
+                | State::FilesystemDegraded
+                | State::FilesystemUnsupported
+                | State::FilesystemCancelled
+        ) | (
+            MachineKind::Watcher,
+            State::WatcherStarting
+                | State::WatcherReady
+                | State::WatcherServing
+                | State::WatcherDegraded
+                | State::WatcherStale
+                | State::WatcherStopped
+        )
+    )
+}
+
+fn acknowledgement_effects(state: State, emitted: &[EffectIntent]) -> Vec<EffectIntent> {
+    let required: &[EffectIntent] = match state {
+        State::JobCancelling => &[EffectIntent::RequestCancellation],
+        State::JobVerifying
+        | State::CommitReconciling
+        | State::CommitVerifyingArchived
+        | State::CommitVerifyingCleaned => &[EffectIntent::VerifyArchiveOutputPair],
+        State::BytesWriting => &[EffectIntent::ValidateAndWrite],
+        State::BytesSynchronizing => &[EffectIntent::SynchronizeData],
+        State::FfmpegReaping => &[EffectIntent::ReapProcess],
+        State::FfmpegCancelling => &[EffectIntent::TerminateProcess],
+        State::JavascriptRecycling => &[EffectIntent::RecycleWorker],
+        State::PluginDraining => &[EffectIntent::ClosePluginChannel],
+        State::CommitPreparing => &[EffectIntent::ValidateOutput, EffectIntent::SynchronizeData],
+        State::CommitRenaming => &[EffectIntent::RenameOutput],
+        State::CommitArchiving => &[EffectIntent::InsertArchiveRow],
+        State::CommitCleaning => &[EffectIntent::RemoveTemporaryState],
+        State::CommitVerifyingPrepared => &[EffectIntent::RevalidatePreparedOutput],
+        State::CommitVerifyingRenamed => &[EffectIntent::VerifyFinalArtifact],
+        State::CommitCancelling => &[EffectIntent::DrainInFlightEffect],
+        State::WatcherDraining => &[EffectIntent::FlushWatcher],
+        _ => &[],
+    };
+    required
+        .iter()
+        .copied()
+        .filter(|effect| emitted.contains(effect))
+        .collect()
+}
+
 fn transition(
     kind: MachineKind,
     state: State,
@@ -496,14 +697,14 @@ fn job(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (State::JobRunning | State::JobVerifying, Event::Cancel) => {
             step(State::JobCancelling, &[EffectIntent::RequestCancellation])
         }
-        (State::JobCancelling, Event::Acknowledge) => {
+        (State::JobCancelling, Event::EffectAcknowledged { .. }) => {
             step(State::JobCancelled, &[EffectIntent::ReleaseResources])
         }
         (State::JobRunning, Event::Reconcile) => step(
             State::JobVerifying,
             &[EffectIntent::VerifyArchiveOutputPair],
         ),
-        (State::JobVerifying, Event::Acknowledge) => {
+        (State::JobVerifying, Event::EffectAcknowledged { .. }) => {
             step(State::JobSucceeded, &[EffectIntent::ReleaseResources])
         }
         (State::JobRunning | State::JobCancelling | State::JobVerifying, Event::Fail) => step(
@@ -564,11 +765,13 @@ fn bytes(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (State::BytesReceived, Event::Validate) => {
             step(State::BytesWriting, &[EffectIntent::ValidateAndWrite])
         }
-        (State::BytesWriting, Event::Acknowledge) => step(State::BytesWritten, &[]),
+        (State::BytesWriting, Event::EffectAcknowledged { .. }) => step(State::BytesWritten, &[]),
         (State::BytesWritten, Event::PersistDurably) => {
             step(State::BytesSynchronizing, &[EffectIntent::SynchronizeData])
         }
-        (State::BytesSynchronizing, Event::Acknowledge) => step(State::BytesDurable, &[]),
+        (State::BytesSynchronizing, Event::EffectAcknowledged { .. }) => {
+            step(State::BytesDurable, &[])
+        }
         (
             State::BytesEmpty
             | State::BytesReceived
@@ -654,10 +857,11 @@ fn ffmpeg(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (State::FfmpegRunning, Event::Complete) => {
             step(State::FfmpegReaping, &[EffectIntent::ReapProcess])
         }
-        (State::FfmpegReaping, Event::Acknowledge) => {
+        (State::FfmpegReaping, Event::EffectAcknowledged { .. }) => {
             step(State::FfmpegExited, &[EffectIntent::ReleaseResources])
         }
-        (State::FfmpegPrepared, Event::Cancel) | (State::FfmpegCancelling, Event::Acknowledge) => {
+        (State::FfmpegPrepared, Event::Cancel)
+        | (State::FfmpegCancelling, Event::EffectAcknowledged { .. }) => {
             step(State::FfmpegCancelled, &[EffectIntent::ReleaseResources])
         }
         (State::FfmpegSpawned | State::FfmpegRunning, Event::Cancel) => step(
@@ -685,7 +889,9 @@ fn javascript(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> 
         (State::JavascriptRunning, Event::Recycle) => {
             step(State::JavascriptRecycling, &[EffectIntent::RecycleWorker])
         }
-        (State::JavascriptRecycling, Event::Acknowledge) => step(State::JavascriptIdle, &[]),
+        (State::JavascriptRecycling, Event::EffectAcknowledged { .. }) => {
+            step(State::JavascriptIdle, &[])
+        }
         (State::JavascriptAssigned | State::JavascriptRunning, Event::Quarantine) => step(
             State::JavascriptQuarantined,
             &[
@@ -719,7 +925,9 @@ fn plugin(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             State::PluginHandshaking | State::PluginReady | State::PluginInFlight,
             Event::Drain | Event::Cancel,
         ) => step(State::PluginDraining, &[EffectIntent::ClosePluginChannel]),
-        (State::PluginDraining, Event::Acknowledge) => step(State::PluginStopped, &[]),
+        (State::PluginDraining, Event::EffectAcknowledged { .. }) => {
+            step(State::PluginStopped, &[])
+        }
         (
             State::PluginHandshaking
             | State::PluginReady
@@ -746,32 +954,38 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             State::CommitPreparing,
             &[EffectIntent::ValidateOutput, EffectIntent::SynchronizeData],
         ),
-        (State::CommitPreparing | State::CommitVerifyingPrepared, Event::Acknowledge) => {
-            step(State::CommitPrepared, &[])
-        }
+        (
+            State::CommitPreparing | State::CommitVerifyingPrepared,
+            Event::EffectAcknowledged { .. },
+        ) => step(State::CommitPrepared, &[]),
         (State::CommitPrepared, Event::Rename) => {
             step(State::CommitRenaming, &[EffectIntent::RenameOutput])
         }
-        (State::CommitRenaming | State::CommitVerifyingRenamed, Event::Acknowledge) => {
-            step(State::CommitRenamed, &[])
-        }
+        (
+            State::CommitRenaming | State::CommitVerifyingRenamed,
+            Event::EffectAcknowledged { .. },
+        ) => step(State::CommitRenamed, &[]),
         (State::CommitRenamed, Event::Archive) => {
             step(State::CommitArchiving, &[EffectIntent::InsertArchiveRow])
         }
-        (State::CommitArchiving | State::CommitVerifyingArchived, Event::Acknowledge) => {
-            step(State::CommitArchived, &[])
-        }
+        (
+            State::CommitArchiving | State::CommitVerifyingArchived,
+            Event::EffectAcknowledged { .. },
+        ) => step(State::CommitArchived, &[]),
         (State::CommitArchived, Event::Cleanup) => {
             step(State::CommitCleaning, &[EffectIntent::RemoveTemporaryState])
         }
-        (State::CommitCleaning | State::CommitVerifyingCleaned, Event::Acknowledge) => {
-            step(State::CommitCleaned, &[])
-        }
+        (
+            State::CommitCleaning | State::CommitVerifyingCleaned,
+            Event::EffectAcknowledged { .. },
+        ) => step(State::CommitCleaned, &[]),
         (State::CommitCleaned, Event::Reconcile) => step(
             State::CommitReconciling,
             &[EffectIntent::VerifyArchiveOutputPair],
         ),
-        (State::CommitReconciling, Event::Acknowledge) => step(State::CommitReconciled, &[]),
+        (State::CommitReconciling, Event::EffectAcknowledged { .. }) => {
+            step(State::CommitReconciled, &[])
+        }
         (State::CommitPrepared, Event::Restart | Event::Reconcile) => step(
             State::CommitVerifyingPrepared,
             &[EffectIntent::RevalidatePreparedOutput],
@@ -826,7 +1040,7 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
                 EffectIntent::DrainInFlightEffect,
             ],
         ),
-        (State::CommitCancelling, Event::Acknowledge) => {
+        (State::CommitCancelling, Event::EffectAcknowledged { .. }) => {
             step(State::CommitCancelled, &[EffectIntent::ReleaseResources])
         }
         _ => None,
@@ -893,7 +1107,9 @@ fn watcher(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
             | State::WatcherStale,
             Event::Drain | Event::Cancel,
         ) => step(State::WatcherDraining, &[EffectIntent::FlushWatcher]),
-        (State::WatcherDraining, Event::Acknowledge) => step(State::WatcherStopped, &[]),
+        (State::WatcherDraining, Event::EffectAcknowledged { .. }) => {
+            step(State::WatcherStopped, &[])
+        }
         (State::WatcherDegraded | State::WatcherStale | State::WatcherStopped, Event::Restart) => {
             step(State::WatcherStarting, &[EffectIntent::PreserveDiagnostics])
         }
@@ -905,10 +1121,29 @@ fn watcher(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
 mod tests {
     use super::*;
 
+    fn acknowledge_all(model: &mut StateMachine) {
+        let pending = model.pending_acknowledgements().to_vec();
+        assert!(!pending.is_empty(), "ack marker requires pending effects");
+        for acknowledgement in pending {
+            assert!(
+                model
+                    .apply(Event::EffectAcknowledged {
+                        effect: acknowledgement.effect,
+                        generation: acknowledgement.generation,
+                    })
+                    .is_ok()
+            );
+        }
+    }
+
     fn run(kind: MachineKind, events: &[Event], expected: State) -> StateMachine {
-        let mut model = StateMachine::new(kind, events.len());
+        let mut model = StateMachine::new(kind, events.len().saturating_mul(2).saturating_add(2));
         for event in events {
-            assert!(model.apply(*event).is_ok());
+            if *event == Event::Acknowledge {
+                acknowledge_all(&mut model);
+            } else {
+                assert!(model.apply(*event).is_ok());
+            }
         }
         assert_eq!(model.state(), expected);
         model
@@ -1015,7 +1250,7 @@ mod tests {
         ];
         for (kind, events, expected) in cases {
             let model = run(*kind, events, *expected);
-            let replay = StateMachine::replay(*kind, events.len(), model.trace());
+            let replay = StateMachine::replay(*kind, model.trace().len(), model.trace());
             assert!(matches!(replay, Ok(replayed) if replayed.state() == *expected));
         }
     }
@@ -1221,7 +1456,7 @@ mod tests {
         ];
         for (state, verifying, required) in prefixes {
             let model =
-                StateMachine::from_state(MachineKind::CommitArchiveReconciliation, state, 2);
+                StateMachine::from_state(MachineKind::CommitArchiveReconciliation, state, 3, 100);
             let Ok(mut model) = model else {
                 return Err("commit prefix must belong to commit model".to_owned());
             };
@@ -1229,7 +1464,7 @@ mod tests {
             assert!(matches!(result, Ok(record) if record.effects == [required]));
             assert_eq!(model.state(), verifying);
             assert_ne!(model.state(), State::CommitReconciled);
-            assert!(model.apply(Event::Acknowledge).is_ok());
+            acknowledge_all(&mut model);
             assert_eq!(model.state(), state);
         }
         Ok(())
@@ -1242,10 +1477,10 @@ mod tests {
         assert!(job.apply(Event::Reconcile).is_ok());
         assert_eq!(job.state(), State::JobVerifying);
         assert_ne!(job.state(), State::JobSucceeded);
-        assert!(job.apply(Event::Acknowledge).is_ok());
+        acknowledge_all(&mut job);
         assert_eq!(job.state(), State::JobSucceeded);
 
-        let mut commit = StateMachine::new(MachineKind::CommitArchiveReconciliation, 10);
+        let mut commit = StateMachine::new(MachineKind::CommitArchiveReconciliation, 11);
         for (request, pending, acknowledged) in [
             (
                 Event::Prepare,
@@ -1268,7 +1503,7 @@ mod tests {
             assert!(commit.apply(request).is_ok());
             assert_eq!(commit.state(), pending);
             assert_ne!(commit.state(), acknowledged);
-            assert!(commit.apply(Event::Acknowledge).is_ok());
+            acknowledge_all(&mut commit);
             assert_eq!(commit.state(), acknowledged);
         }
 
@@ -1276,11 +1511,11 @@ mod tests {
         assert!(bytes.apply(Event::Receive).is_ok());
         assert!(bytes.apply(Event::Validate).is_ok());
         assert_eq!(bytes.state(), State::BytesWriting);
-        assert!(bytes.apply(Event::Acknowledge).is_ok());
+        acknowledge_all(&mut bytes);
         assert_eq!(bytes.state(), State::BytesWritten);
         assert!(bytes.apply(Event::PersistDurably).is_ok());
         assert_eq!(bytes.state(), State::BytesSynchronizing);
-        assert!(bytes.apply(Event::Acknowledge).is_ok());
+        acknowledge_all(&mut bytes);
         assert_eq!(bytes.state(), State::BytesDurable);
 
         let mut cancelling = StateMachine::new(MachineKind::CommitArchiveReconciliation, 3);
@@ -1291,8 +1526,12 @@ mod tests {
         assert_eq!(cancel.next, State::CommitCancelling);
         assert!(cancel.effects.contains(&EffectIntent::DrainInFlightEffect));
         assert!(!cancel.effects.contains(&EffectIntent::ReleaseResources));
+        let pending = cancelling.pending_acknowledgements()[0];
         let acknowledged = cancelling
-            .apply(Event::Acknowledge)
+            .apply(Event::EffectAcknowledged {
+                effect: pending.effect,
+                generation: pending.generation,
+            })
             .expect("drain acknowledgement completes cancellation");
         assert!(
             acknowledged
@@ -1312,7 +1551,7 @@ mod tests {
         assert_eq!(model.state(), State::CommitWorking);
         assert!(model.trace().is_empty());
         assert!(matches!(
-            StateMachine::from_state(MachineKind::Watcher, State::JobQueued, 1),
+            StateMachine::from_state(MachineKind::Watcher, State::JobQueued, 1, 1),
             Err(TransitionError::StateDoesNotBelongToMachine { .. })
         ));
     }
@@ -1367,6 +1606,7 @@ mod tests {
             MachineKind::FilesystemCapability,
             State::FilesystemDegraded,
             1,
+            1,
         );
         let Ok(mut model) = model else {
             return assert!(matches!(
@@ -1378,5 +1618,45 @@ mod tests {
             model.apply(Event::Confine),
             Err(TransitionError::InvalidTransition { .. })
         ));
+    }
+
+    #[test]
+    fn transient_restore_and_stale_or_wrong_acknowledgements_are_rejected() {
+        assert!(matches!(
+            StateMachine::from_state(
+                MachineKind::CommitArchiveReconciliation,
+                State::CommitRenaming,
+                4,
+                40,
+            ),
+            Err(TransitionError::StateIsNotDurable { .. })
+        ));
+
+        let mut model = StateMachine::new(MachineKind::CommitArchiveReconciliation, 8);
+        assert!(model.apply(Event::Prepare).is_ok());
+        let stale = model.pending_acknowledgements()[0];
+        assert!(model.apply(Event::Cancel).is_ok());
+        let cancellation = model.pending_acknowledgements()[0];
+        assert_ne!(stale.generation, cancellation.generation);
+        assert!(matches!(
+            model.apply(Event::EffectAcknowledged {
+                effect: stale.effect,
+                generation: stale.generation,
+            }),
+            Err(TransitionError::UnexpectedAcknowledgement { .. })
+        ));
+        assert!(matches!(
+            model.apply(Event::EffectAcknowledged {
+                effect: EffectIntent::RenameOutput,
+                generation: cancellation.generation,
+            }),
+            Err(TransitionError::UnexpectedAcknowledgement { .. })
+        ));
+        assert!(matches!(
+            model.apply(Event::Acknowledge),
+            Err(TransitionError::InvalidTransition { .. })
+        ));
+        assert_eq!(model.state(), State::CommitCancelling);
+        assert_eq!(model.pending_acknowledgements(), &[cancellation]);
     }
 }

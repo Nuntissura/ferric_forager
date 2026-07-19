@@ -2812,13 +2812,31 @@ mod tests {
 
     #[test]
     fn active_report_inputs_follow_the_active_packet() {
-        let inputs = active_evidence_inputs(&repo_root().unwrap()).unwrap();
+        let root = test_root("active-report-inputs");
+        let packet_id = "WP-FF-003-test-v2";
+        let packet_root = root.join(".GOV/work_packets").join(packet_id);
+        fs::create_dir_all(root.join(".GOV/taskboard")).unwrap();
+        fs::create_dir_all(&packet_root).unwrap();
+        fs::write(
+            root.join(".GOV/taskboard/taskboard.yaml"),
+            format!("current_focus:\n  statement: active test\n  active_wp_id: {packet_id}\n"),
+        )
+        .unwrap();
+        fs::write(
+            packet_root.join("packet.json"),
+            format!(
+                "{{\"extensions\":{{\"refinement\":\".GOV/work_packets/{packet_id}/refinement.json\"}}}}"
+            ),
+        )
+        .unwrap();
+        fs::write(packet_root.join("refinement.json"), "{}\n").unwrap();
+        let inputs = active_evidence_inputs(&root).unwrap();
+        fs::remove_dir_all(root).unwrap();
         assert_eq!(
             inputs,
             [
-                ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json".to_owned(),
-                ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/refinement.json"
-                    .to_owned(),
+                format!(".GOV/work_packets/{packet_id}/packet.json"),
+                format!(".GOV/work_packets/{packet_id}/refinement.json"),
             ]
         );
     }

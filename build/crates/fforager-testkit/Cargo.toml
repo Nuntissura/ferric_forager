@@ -1,0 +1,15 @@
+[package]
+name = "fforager-testkit"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fforager-contracts = { path = "../../../product/crates/fforager-contracts" }
+fforager-diagnostics-contract = { path = "../../../product/crates/fforager-diagnostics-contract" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

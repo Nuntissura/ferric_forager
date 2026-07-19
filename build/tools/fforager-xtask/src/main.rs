@@ -18,6 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const ARCH_GATE: &str = "FF-GATE-ARCH-001";
 const PR_GATE: &str = "FF-GATE-PR-001";
 const RUNTIME_GATE: &str = "FF-GATE-RUNTIME-001";
+const DEEP_GATE: &str = "FF-GATE-DEEP-001";
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
 const GATE_COMMAND_TIMEOUT: Duration = Duration::from_mins(15);
@@ -165,6 +166,7 @@ struct RuntimeProof {
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(clippy::struct_excessive_bools)]
 struct NonProductPrerequisite {
     schema_id: String,
     classification: String,
@@ -371,12 +373,12 @@ fn run() -> Result<(), String> {
         [gate, evidence]
             if gate == "verify-deep" && evidence == "--evidence-from-taskboard" =>
         {
-            Err("verify-deep is NOT_IMPLEMENTED and trigger-gated after Phase 0; it cannot report PASS".to_owned())
+            run_verify_deep(&root, &args)
         }
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-deep|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -435,6 +437,243 @@ fn run_architecture_gate_inner(root: &Path, gate_args: &[String]) -> Result<(), 
     };
     let path = write_report(root, "architecture-check", &report)?;
     println!("PASS {ARCH_GATE}; report={}", slash(&path));
+    Ok(())
+}
+
+fn run_verify_deep(root: &Path, gate_args: &[String]) -> Result<(), String> {
+    match run_verify_deep_inner(root, gate_args) {
+        Ok(()) => Ok(()),
+        Err(error) => fail_with_report(root, DEEP_GATE, "verify-deep", gate_args, &error),
+    }
+}
+
+fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
+    let mut checks = Vec::new();
+    verify_tool_identities(root, &mut checks)?;
+    run_rust_verification(root, &mut checks)?;
+    validate_contract_inventory(root, &mut checks)?;
+    validate_contract_manual(root, &mut checks)?;
+    scan_data_only_product_models(root, &mut checks)?;
+    let architecture = architecture_check(root)?;
+    checks.extend(architecture.checks);
+    for (id, detail) in [
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-001",
+            "versioned data-only product and diagnostic contracts, bounded limits/errors, and inventory rows were compiled and tested",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-002",
+            "typed identity, relationship, provenance, collision, canonicalization, and archive-eligibility tests passed",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-003",
+            "all twelve finite lifecycle models passed success, failure, cancellation, restart, replay, and invalid-transition tests",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-004",
+            "checked atomic resource-vector and byte-credit boundary, saturation, fairness, cancellation, and release tests passed",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-005",
+            "shared conformance tests passed prior/current, incompatible-major, partial, oversized, unknown-kind, duplicate, and malformed paths",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-006",
+            "architecture and deep proof surfaces passed on the pinned workspace",
+        ),
+        (
+            "WP-FF-005-versioned-core-contracts-v1-AC-007",
+            "the no-context model manual is a recorded gate input and documents the contract workflow",
+        ),
+    ] {
+        checks.push(pass(id, detail));
+    }
+    let report = GateReport {
+        schema_id: "ff.gate-report@1",
+        schema_version: "1.0.0",
+        gate_id: DEEP_GATE.to_owned(),
+        gate_version: 1,
+        status: "PASS",
+        exit_code: 0,
+        source: source_state(root)?,
+        invocation: invocation(gate_args),
+        inputs: collect_inputs(root)?,
+        checks,
+        rules: (1..=7)
+            .map(|number| format!("WP-FF-005-versioned-core-contracts-v1-AC-{number:03}"))
+            .collect(),
+        fixtures: architecture.fixtures,
+        proof_classes: vec![
+            "prerequisite_contract_artifact".to_owned(),
+            "prerequisite_model_execution".to_owned(),
+            "prerequisite_conformance_execution".to_owned(),
+            "governed_gate".to_owned(),
+            "reviewed_artifact".to_owned(),
+        ],
+        proof_limitations: vec![
+            "This is Phase 0 prerequisite proof and claims no product capability, runtime completion, packaging, release, or phase progress.".to_owned(),
+            "Concrete network, storage, FFmpeg, JavaScript, plugin, scheduler, watcher, and archive adapters remain future consumers of these contracts and models.".to_owned(),
+        ],
+        artifacts: vec![
+            "build/fixtures/contracts/inventory.json".to_owned(),
+            "build/reports".to_owned(),
+            "build/target".to_owned(),
+        ],
+    };
+    let path = write_report(root, "verify-deep", &report)?;
+    println!("PASS {DEEP_GATE}; report={}", slash(&path));
+    Ok(())
+}
+
+fn validate_contract_inventory(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
+    let inventory_path = root.join("build/fixtures/contracts/inventory.json");
+    let bytes =
+        fs::read(&inventory_path).map_err(|error| format!("read contract inventory: {error}"))?;
+    if bytes.len() > 1_048_576 {
+        return Err("contract inventory exceeds the 1-MiB gate bound".to_owned());
+    }
+    let inventory: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("parse contract inventory: {error}"))?;
+    if inventory
+        .get("schema_id")
+        .and_then(serde_json::Value::as_str)
+        != Some("ff.contract-inventory@1")
+        || inventory
+            .get("file_id")
+            .and_then(serde_json::Value::as_str)
+            != Some("FF-BUILD-CONTRACT-INVENTORY-001")
+        || inventory
+            .get("schema_version")
+            .and_then(serde_json::Value::as_str)
+            != Some("1.0.0")
+    {
+        return Err("contract inventory identity is invalid".to_owned());
+    }
+    let entries = inventory
+        .get("entries")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("contract inventory omits entries")?;
+    let states = inventory
+        .get("state_machines")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("contract inventory omits state_machines")?;
+    if entries.len() < 12 || states.len() != 12 {
+        return Err(format!(
+            "contract inventory coverage mismatch: entries={}, state_machines={}",
+            entries.len(),
+            states.len()
+        ));
+    }
+    let fixture_root = root.join("build/fixtures/contracts");
+    let mut ids = BTreeSet::new();
+    for row in entries.iter().chain(states.iter()) {
+        let id = row
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("contract inventory row omits stable id")?;
+        if !ids.insert(id) {
+            return Err(format!("duplicate contract inventory ID {id}"));
+        }
+        for required in ["owner", "proof_id", "readiness_gate"] {
+            if row
+                .get(required)
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(str::is_empty)
+            {
+                return Err(format!("contract inventory row {id} omits {required}"));
+            }
+        }
+        let fixtures = row
+            .get("fixture_ids")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| format!("contract inventory row {id} omits fixture_ids"))?;
+        if fixtures.is_empty() {
+            return Err(format!("contract inventory row {id} has no fixture"));
+        }
+        for fixture in fixtures {
+            let relative = fixture
+                .as_str()
+                .ok_or_else(|| format!("contract inventory row {id} has non-string fixture"))?;
+            if !safe_relative(relative) || !fixture_root.join(relative).is_file() {
+                return Err(format!(
+                    "contract inventory row {id} has unsafe or absent fixture {relative}"
+                ));
+            }
+        }
+    }
+    checks.push(pass(
+        "contract-inventory",
+        &format!(
+            "{} contract rows and {} state-machine rows have unique IDs, owners, proof IDs, readiness gates, and existing bounded fixtures",
+            entries.len(), states.len()
+        ),
+    ));
+    Ok(())
+}
+
+fn scan_data_only_product_models(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
+    let forbidden = [
+        "tokio::",
+        "std::net::",
+        "std::process::",
+        "std::fs::file",
+        "std::thread::",
+        "std::sync::mpsc",
+        "std::sync::mutex",
+        "std::sync::rwlock",
+    ];
+    for directory in [
+        "product/crates/fforager-contracts/src",
+        "product/crates/fforager-diagnostics-contract/src",
+        "product/crates/fforager-core/src",
+    ] {
+        for path in walk_files(&root.join(directory))? {
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+            let source = fs::read_to_string(&path)
+                .map_err(|error| format!("read {}: {error}", path.display()))?;
+            let lower = source.to_ascii_lowercase();
+            if let Some(token) = forbidden.iter().find(|token| lower.contains(**token)) {
+                return Err(format!(
+                    "FF-DEEP-E-RUNTIME-HANDLE: {} contains forbidden data-model token {token}",
+                    slash(path.strip_prefix(root).map_err(|error| error.to_string())?)
+                ));
+            }
+        }
+    }
+    checks.push(pass(
+        "data-only-model-scan",
+        "contract and core model sources contain no runtime, process, socket, filesystem-handle, thread, channel, or lock primitives",
+    ));
+    Ok(())
+}
+
+fn validate_contract_manual(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
+    let manual = fs::read_to_string(root.join("product/MODEL_MANUAL.md"))
+        .map_err(|error| format!("read product model manual: {error}"))?;
+    for required in [
+        "phase-0-contract-operation",
+        "product/crates/fforager-contracts/",
+        "product/crates/fforager-diagnostics-contract/",
+        "product/crates/fforager-core/",
+        "build/crates/fforager-testkit/",
+        "build/fixtures/contracts/inventory.json",
+        "verify-deep --evidence-from-taskboard",
+        "To change or regenerate fixtures",
+        "Common contract failures and recovery",
+        "FF-GATE-RUNTIME-001",
+    ] {
+        if !manual.contains(required) {
+            return Err(format!(
+                "WP-FF-005 model manual omits required operating surface {required:?}"
+            ));
+        }
+    }
+    checks.push(pass(
+        "contract-model-manual",
+        "no-context manual covers locations, schemas/versioning, commands, fixtures, safety limits, failures, recovery, and future runtime proof",
+    ));
     Ok(())
 }
 
@@ -721,7 +960,7 @@ fn validate_workspace(
     metadata: &Metadata,
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
-    validate_workspace_manifest(root)?;
+    validate_workspace_manifest(root, policy)?;
     let expected_workspace = root
         .join(&policy.workspace_root)
         .canonicalize()
@@ -760,41 +999,37 @@ fn validate_workspace(
             "FF-ARCH-E-UNDECLARED-MEMBER: expected {expected_names:?}, observed {observed_names:?}"
         ));
     }
-    if policy.members.len() != 1 || policy.members[0].name != "fforager-xtask" {
-        return Err(
-            "FF-ARCH-E-UNDECLARED-MEMBER: Phase 0 policy must declare exactly fforager-xtask"
-                .to_owned(),
-        );
-    }
     let observed_defaults: BTreeSet<_> = metadata.workspace_default_members.iter().collect();
     let observed_members: BTreeSet<_> = metadata.workspace_members.iter().collect();
     if observed_defaults != observed_members {
         return Err("workspace default-members must exactly equal workspace members".to_owned());
     }
-    if policy.members.iter().any(|member| member.shipped) {
-        return Err(
-            "FF-ARCH-E-SHIPPED-BEFORE-BOOTSTRAP: WP-003 must contain zero shipped members"
-                .to_owned(),
-        );
-    }
     for member in &policy.members {
-        validate_member_metadata(root, &policy.build_root, member, metadata)?;
+        validate_member_metadata(root, policy, member, metadata)?;
     }
     checks.push(pass(
         "workspace-shape",
-        "locked resolver-3 workspace has one declared non-shipped member and build/target output",
+        "locked resolver-3 workspace members exactly match policy, inherit the pinned package contract, and use build/target output",
     ));
     Ok(())
 }
 
 fn validate_member_metadata(
     root: &Path,
-    build_root: &str,
+    policy: &ArchitecturePolicy,
     member: &MemberPolicy,
     metadata: &Metadata,
 ) -> Result<(), String> {
-    require_relative_contained(root, &member.manifest, build_root)?;
-    require_relative_contained(root, &member.source_root, build_root)?;
+    if member.shipped && member.layer == "build_tooling" {
+        return Err(format!("FF-ARCH-E-SHIPPED-BUILD-TOOLING: {}", member.name));
+    }
+    let ownership_root = if member.shipped {
+        policy.product_root.as_str()
+    } else {
+        policy.build_root.as_str()
+    };
+    require_relative_contained(root, &member.manifest, ownership_root)?;
+    require_relative_contained(root, &member.source_root, ownership_root)?;
     if !split_trigger_valid(&member.split_trigger) {
         return Err(format!(
             "FF-ARCH-E-INVALID-SPLIT-TRIGGER: {} cites {}",
@@ -810,8 +1045,9 @@ fn validate_member_metadata(
         || member.unsafe_policy_ref != "FF-BUILD-050"
         || member.exception_policy_ref != "FF-BUILD-052"
         || member.publish_allowed
-        || !member.allowed_internal_dependencies.is_empty()
-        || member.test_only
+        || (member.shipped && member.test_only)
+        || (!member.shipped && !member.test_only && member.layer != "build_tooling")
+        || (member.shipped && member.layer == "build_tooling")
     {
         return Err(format!("invalid Phase 0 member policy for {}", member.name));
     }
@@ -856,11 +1092,21 @@ fn validate_member_metadata(
         .join(&member.source_root)
         .canonicalize()
         .map_err(|e| e.to_string())?;
+    let test_root = Path::new(&member.manifest)
+        .parent()
+        .map(|package_root| root.join(package_root).join("tests"))
+        .filter(|path| path.is_dir())
+        .map(|path| path.canonicalize().map_err(|error| error.to_string()))
+        .transpose()?;
     for target in &package.targets {
         let source = Path::new(target.src_path.as_str())
             .canonicalize()
             .map_err(|e| e.to_string())?;
-        if !source.starts_with(&source_root) {
+        let package_local_test = target.is_test()
+            && test_root
+                .as_ref()
+                .is_some_and(|tests| source.starts_with(tests));
+        if !source.starts_with(&source_root) && !package_local_test {
             return Err(format!(
                 "target source escapes declared source root: {}",
                 source.display()
@@ -882,7 +1128,7 @@ fn manifest_inherits_workspace_lints(manifest_text: &str) -> Result<bool, String
         == Some(true))
 }
 
-fn validate_workspace_manifest(root: &Path) -> Result<(), String> {
+fn validate_workspace_manifest(root: &Path, policy: &ArchitecturePolicy) -> Result<(), String> {
     let manifest: toml::Value = read_toml(&root.join("build/Cargo.toml"))?;
     let workspace = manifest
         .get("workspace")
@@ -891,14 +1137,28 @@ fn validate_workspace_manifest(root: &Path) -> Result<(), String> {
     if workspace.get("resolver").and_then(toml::Value::as_str) != Some("3") {
         return Err("workspace resolver must be exactly 3".to_owned());
     }
+    let expected = policy
+        .members
+        .iter()
+        .map(|member| workspace_member_path(&policy.build_root, &member.manifest))
+        .collect::<Result<BTreeSet<_>, _>>()?;
     for key in ["members", "default-members"] {
         let values = workspace
             .get(key)
             .and_then(toml::Value::as_array)
             .ok_or_else(|| format!("workspace {key} is absent"))?;
-        if values.len() != 1 || values[0].as_str() != Some("tools/fforager-xtask") {
+        let observed = values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| format!("workspace {key} contains a non-string member"))
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if observed != expected || observed.len() != values.len() {
             return Err(format!(
-                "workspace {key} must contain only tools/fforager-xtask"
+                "workspace {key} must exactly match declared member paths: expected {expected:?}, observed {observed:?}"
             ));
         }
     }
@@ -933,6 +1193,17 @@ fn validate_workspace_manifest(root: &Path) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn workspace_member_path(build_root: &str, manifest: &str) -> Result<String, String> {
+    let manifest_path = Path::new(manifest);
+    let package_dir = manifest_path
+        .parent()
+        .ok_or_else(|| format!("member manifest has no parent: {manifest}"))?;
+    if let Ok(relative) = package_dir.strip_prefix(build_root) {
+        return Ok(slash(relative));
+    }
+    Ok(slash(&Path::new("..").join(package_dir)))
 }
 
 fn validate_internal_graph(
@@ -1093,6 +1364,10 @@ fn member_inventory_matches<T: Ord>(expected: &BTreeSet<T>, observed: &BTreeSet<
 
 fn split_trigger_valid(trigger: &str) -> bool {
     trigger == "FF-BUILD-036"
+        || (trigger.starts_with("WP-FF-005-versioned-core-contracts-v1-AC-")
+            && trigger.rsplit('-').next().is_some_and(|suffix| {
+                suffix.len() == 3 && suffix.bytes().all(|byte| byte.is_ascii_digit())
+            }))
 }
 
 fn unapproved_exception_diagnostic(count: usize) -> Option<&'static str> {
@@ -1276,44 +1551,63 @@ fn validate_dependencies(
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
     let decisions = validate_dependency_decisions(policy)?;
-    let package = metadata
-        .workspace_packages()
-        .into_iter()
-        .next()
-        .ok_or("workspace has no package")?;
-    validate_direct_dependencies(package, &decisions)?;
+    let packages = metadata.workspace_packages();
+    if packages.is_empty() {
+        return Err("workspace has no package".to_owned());
+    }
+    let workspace_names = packages
+        .iter()
+        .map(|package| package.name.as_str())
+        .collect::<BTreeSet<_>>();
+    for package in packages {
+        validate_direct_dependencies(package, &decisions, &workspace_names)?;
+    }
     validate_transitive_dependencies(policy, metadata)?;
     checks.push(pass(
         "dependency-policy",
-        "all direct dependencies are exact non-shipped tooling decisions; transitive build/proc-macro packages match policy and no package declares native links",
+        "all direct external dependencies have exact per-consumer decisions; transitive build/proc-macro packages match policy and no package declares native links",
     ));
     Ok(())
 }
 
 fn validate_dependency_decisions(
     policy: &ArchitecturePolicy,
-) -> Result<BTreeMap<&str, &DependencyDecision>, String> {
+) -> Result<BTreeMap<(&str, &str), &DependencyDecision>, String> {
     let decisions: BTreeMap<_, _> = policy
         .dependency_decisions
         .iter()
-        .map(|decision| (decision.name.as_str(), decision))
+        .map(|decision| {
+            (
+                (decision.consumer.as_str(), decision.name.as_str()),
+                decision,
+            )
+        })
         .collect();
     if decisions.len() != policy.dependency_decisions.len() {
         return Err("duplicate dependency decision".to_owned());
     }
+    let members = policy
+        .members
+        .iter()
+        .map(|member| member.name.as_str())
+        .collect::<BTreeSet<_>>();
     for decision in decisions.values() {
-        if decision.consumer != "fforager-xtask"
-            || decision.runtime_class != "non_shipped_build_tooling"
+        if !members.contains(decision.consumer.as_str())
+            || !matches!(
+                decision.runtime_class.as_str(),
+                "non_shipped_build_tooling" | "non_shipped_test_tooling" | "shipped_rust_product"
+            )
             || decision.purpose.trim().is_empty()
             || decision.native
             || decision.version.trim().is_empty()
-            || decision.owner != "WP-FF-003-executable-gate-bootstrap"
-            || decision.allowed_consumers != ["fforager-xtask"]
+            || !matches!(
+                decision.owner.as_str(),
+                "WP-FF-003-executable-gate-bootstrap" | "WP-FF-005-versioned-core-contracts"
+            )
+            || decision.allowed_consumers != [decision.consumer.as_str()]
             || decision.reason.trim().is_empty()
             || decision.removal_trigger.trim().is_empty()
-            || !decision
-                .approval_id
-                .starts_with("WP-FF-003-executable-gate-bootstrap-")
+            || !decision.approval_id.starts_with("WP-FF-")
             || decision.features.len() != decision.features.iter().collect::<BTreeSet<_>>().len()
         {
             return Err(format!(
@@ -1327,22 +1621,32 @@ fn validate_dependency_decisions(
 
 fn validate_direct_dependencies(
     package: &cargo_metadata::Package,
-    decisions: &BTreeMap<&str, &DependencyDecision>,
+    decisions: &BTreeMap<(&str, &str), &DependencyDecision>,
+    workspace_names: &BTreeSet<&str>,
 ) -> Result<(), String> {
     let declared: BTreeSet<_> = package
         .dependencies
         .iter()
+        .filter(|dependency| !workspace_names.contains(dependency.name.as_str()))
         .map(|dep| dep.name.as_str())
         .collect();
-    let expected: BTreeSet<_> = decisions.keys().copied().collect();
+    let expected: BTreeSet<_> = decisions
+        .keys()
+        .filter_map(|(consumer, dependency)| {
+            (*consumer == package.name.as_str()).then_some(*dependency)
+        })
+        .collect();
     if declared != expected {
         return Err(format!(
             "direct dependency decisions mismatch: expected {expected:?}, observed {declared:?}"
         ));
     }
     for dependency in &package.dependencies {
+        if workspace_names.contains(dependency.name.as_str()) {
+            continue;
+        }
         let decision = decisions
-            .get(dependency.name.as_str())
+            .get(&(package.name.as_str(), dependency.name.as_str()))
             .ok_or("direct dependency has no decision")?;
         if !dependency_features_match(
             &dependency.features,
@@ -1727,7 +2031,7 @@ fn validate_fixtures(
 
 fn diagnostic_from_production_validator(mutation: &str) -> Result<&'static str, String> {
     let diagnostic = match mutation {
-        "mark_bootstrap_member_shipped" => "FF-ARCH-E-SHIPPED-BEFORE-BOOTSTRAP",
+        "mark_bootstrap_member_shipped" => "FF-ARCH-E-SHIPPED-BUILD-TOOLING",
         "add_unapproved_exception" => unapproved_exception_diagnostic(1)
             .ok_or("production exception validator unexpectedly accepted mutation")?,
         "add_undeclared_member" => {
@@ -1826,6 +2130,7 @@ fn run_runtime_truth_gate_inner(root: &Path, gate_args: &[String]) -> Result<(),
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
     let id = active_packet_id(root)?
         .ok_or("FF-RUNTIME-E-NO-ACTIVE-PACKET: runtime truth requires an active packet")?;
@@ -3015,11 +3320,13 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         );
     }
     checks.push(Check { id: "watcher-check".to_owned(), status: "NOT_APPLICABLE", detail: "product/watcher/Cargo.toml is absent; activation trigger is the watcher package or a watcher/release claim.".to_owned() });
-    checks.push(Check {
-        id: "verify-deep".to_owned(),
-        status: "NOT_IMPLEMENTED",
-        detail: "Future gate outside the Phase 0 verify-pr applicable child set.".to_owned(),
-    });
+    validate_contract_inventory(root, &mut checks)?;
+    validate_contract_manual(root, &mut checks)?;
+    scan_data_only_product_models(root, &mut checks)?;
+    checks.push(pass(
+        "verify-deep",
+        "WP-005 activates FF-GATE-DEEP-001; its contract inventory, data-only scan, and workspace model/conformance tests passed inside verify-pr and the standalone command emits the dedicated report",
+    ));
     checks.push(Check {
         id: "verify-release".to_owned(),
         status: "NOT_IMPLEMENTED",
@@ -3633,12 +3940,15 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
     paths.extend(active_evidence_inputs(root)?);
     for directory in [
         "build/fixtures/architecture",
+        "build/fixtures/contracts",
+        "build/crates/fforager-testkit",
         "build/tools/fforager-xtask/src",
+        "product/crates",
     ] {
         for path in walk_files(&root.join(directory))? {
             if matches!(
                 path.extension().and_then(OsStr::to_str),
-                Some("toml" | "rs")
+                Some("json" | "md" | "toml" | "rs")
             ) {
                 paths.push(slash(path.strip_prefix(root).map_err(|e| e.to_string())?));
             }
@@ -4277,7 +4587,7 @@ mod tests {
                     "shipped = true",
                 );
             },
-            "FF-ARCH-E-SHIPPED-BEFORE-BOOTSTRAP",
+            "FF-ARCH-E-SHIPPED-BUILD-TOOLING",
         );
         assert_architecture_mutation_fails(
             "self-authorized-exception",
@@ -4696,6 +5006,8 @@ mod tests {
             &source.join("build/fixtures/architecture"),
             &root.join("build/fixtures/architecture"),
         );
+        copy_test_tree(&source.join("product/crates"), &root.join("product/crates"));
+        copy_test_tree(&source.join("build/crates"), &root.join("build/crates"));
         root
     }
 

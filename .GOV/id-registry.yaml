@@ -79,6 +79,8 @@ registered_files:
     path: build/tooling-policy.toml
   - id: FF-GOV-BUILD-RULE-PROOF-001
     path: build/rule-to-proof.toml
+  - id: FF-BUILD-CONTRACT-INVENTORY-001
+    path: build/fixtures/contracts/inventory.json
   - id: FF-PRODUCT-MODEL-MANUAL-001
     path: product/MODEL_MANUAL.md
   - id: WP-FF-001-governance-workflow-v1

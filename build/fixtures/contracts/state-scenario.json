@@ -1,0 +1,1 @@
+{"schema_id":"ff.state-scenario@1","initial_state":"idle","events":["start","cancel"],"expected_state":"cancelled"}

@@ -97,6 +97,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "fforager-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fforager-core"
+version = "0.1.0"
+dependencies = [
+ "fforager-contracts",
+]
+
+[[package]]
+name = "fforager-diagnostics-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fforager-testkit"
+version = "0.1.0"
+dependencies = [
+ "fforager-contracts",
+ "fforager-diagnostics-contract",
+ "serde_json",
+]
+
+[[package]]
 name = "fforager-xtask"
 version = "0.1.0"
 dependencies = [

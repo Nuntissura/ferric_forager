@@ -1,0 +1,1 @@
+{"schema_id":"ff.resource-scenario@1","capacity":{"items":1,"bytes":4096},"requests":[{"items":1,"bytes":4096},{"items":1,"bytes":1}],"expected":["admitted","queued"]}

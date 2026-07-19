@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Require production-runtime truth for product and phase completion",
     "created_at_utc": "2026-07-19T15:00:31Z",
-    "updated_at_utc": "2026-07-19T15:53:28Z"
+    "updated_at_utc": "2026-07-19T15:57:58Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -39,15 +39,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "75dbeb495694955f6a0ff786f7bcb47b73d5bbeb",
+    "main_containment_status": "MERGE_PENDING",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Run complete canonical verification, commit the validated implementation, merge it to main, and prove containment.",
+    "next_action": "Merge closure commit 75dbeb495694955f6a0ff786f7bcb47b73d5bbeb to main, prove ancestry, then mark the packet VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -133,24 +133,11 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T15:53:28Z",
+      "recorded_at_utc": "2026-07-19T15:57:58Z",
       "branch": "codex/wp-ff-012-runtime-truth",
       "base_sha": "a5a6a3a78e3aefcbd463294bbbab5e4ec2f58728",
-      "head_sha": "80bab5df83ace90680b8296728735bb53c214b72",
-      "dirty_paths": [
-        ".GOV/codex.yaml",
-        ".GOV/id-registry.yaml",
-        ".GOV/rules/build-rules.yaml",
-        ".GOV/spec/ferric_forager_technical_design_v0.3.0.md",
-        ".GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json",
-        ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
-        ".GOV/topology.yaml",
-        ".GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/packet.json",
-        "build/rule-to-proof.toml",
-        "build/tools/fforager-xtask/src/main.rs",
-        "build/fixtures/architecture/runtime-*/case.toml",
-        "product/MODEL_MANUAL.md"
-      ],
+      "head_sha": "75dbeb495694955f6a0ff786f7bcb47b73d5bbeb",
+      "dirty_paths": [],
       "checks_run": [
         "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, active WP-FF-004 packet, topology, build rules, work-packet requirements/template, design phase anchors, readiness matrix, verifier implementation, and ID registry",
         "Verified AGENTS.md and CLAUDE.md are byte-identical",
@@ -168,7 +155,7 @@
         "Parsed changed JSON, checked allowed paths, registry ranges, authority mirror, and git diff whitespace"
       ],
       "blockers": [],
-      "next_action": "Commit the validated implementation, record the closure SHA, merge it to main, and prove containment."
+      "next_action": "Commit this MERGE_PENDING evidence update, merge the work branch to main, and prove closure ancestry."
     }
   },
   "validation": {
@@ -178,7 +165,7 @@
       "PASS: cargo test --manifest-path build/Cargo.toml --locked --workspace with 34 tests",
       "PASS: FF-GATE-ARCH-001 with eight runtime negative fixtures",
       "PASS: FF-GATE-RUNTIME-001 governance-only path with policy and negative-fixture proof classes",
-      "PASS: FF-GATE-PR-001 canonical aggregate validation",
+      "PASS: FF-GATE-PR-001 canonical aggregate validation; clean report build/reports/verify-pr-1784476660642163000-656176.json is bound to commit 75dbeb495694955f6a0ff786f7bcb47b73d5bbeb with dirty=false and 29 checks",
       "PASS: changed JSON parse, allowed-path diff, ID registry, AGENTS/CLAUDE mirror, and git diff --check"
     ],
     "not_proven": [

@@ -39,6 +39,82 @@ runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
 unsafe_policy_ref = "FF-BUILD-050"
 exception_policy_ref = "FF-BUILD-052"
 
+[[members]]
+name = "fforager-contracts"
+manifest = "product/crates/fforager-contracts/Cargo.toml"
+source_root = "product/crates/fforager-contracts/src"
+layer = "contracts"
+artifact_role = "shipped_versioned_wire_contracts"
+shipped = true
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = []
+split_trigger = "WP-FF-005-versioned-core-contracts-v1-AC-001"
+feature_owner = "WP-FF-005-versioned-core-contracts-v1"
+profile = "phase0_prerequisite_contracts"
+removal_condition = "Replace only through a versioned contract migration with retained prior-version fixtures and conformance proof."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
+name = "fforager-diagnostics-contract"
+manifest = "product/crates/fforager-diagnostics-contract/Cargo.toml"
+source_root = "product/crates/fforager-diagnostics-contract/src"
+layer = "contracts"
+artifact_role = "shipped_bounded_diagnostic_contracts"
+shipped = true
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = []
+split_trigger = "WP-FF-005-versioned-core-contracts-v1-AC-001"
+feature_owner = "WP-FF-005-versioned-core-contracts-v1"
+profile = "phase0_prerequisite_contracts"
+removal_condition = "Replace only through a versioned diagnostic migration preserving bounded payload and prior-version conformance proof."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
+name = "fforager-core"
+manifest = "product/crates/fforager-core/Cargo.toml"
+source_root = "product/crates/fforager-core/src"
+layer = "engine"
+artifact_role = "shipped_deterministic_core_models"
+shipped = true
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = [{ package = "fforager-contracts", kinds = ["normal"], optional = false }]
+split_trigger = "WP-FF-005-versioned-core-contracts-v1-AC-003"
+feature_owner = "WP-FF-005-versioned-core-contracts-v1"
+profile = "phase0_prerequisite_contracts"
+removal_condition = "Replace only through a versioned deterministic-model migration with state, resource, durability, and replay proof."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
+name = "fforager-testkit"
+manifest = "build/crates/fforager-testkit/Cargo.toml"
+source_root = "build/crates/fforager-testkit/src"
+layer = "testkit"
+artifact_role = "non_shipped_contract_conformance_harness"
+shipped = false
+test_only = true
+publish_allowed = false
+allowed_internal_dependencies = [
+  { package = "fforager-contracts", kinds = ["normal"], optional = false },
+  { package = "fforager-diagnostics-contract", kinds = ["normal"], optional = false },
+  { package = "fforager-core", kinds = ["normal"], optional = false },
+]
+split_trigger = "WP-FF-005-versioned-core-contracts-v1-AC-005"
+feature_owner = "WP-FF-005-versioned-core-contracts-v1"
+profile = "phase0_prerequisite_contracts"
+removal_condition = "Remove only after every framed protocol consumer has equivalent shared prior/current and negative-path conformance proof."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
 [[dependency_decisions]]
 name = "cargo_metadata"
 version = "0.23.1"
@@ -53,6 +129,81 @@ removal_trigger = "Cargo exposes an equally stable std-only metadata interface o
 approval_id = "WP-FF-003-executable-gate-bootstrap-v1-AC-002"
 features = []
 default_features = false
+
+[[dependency_decisions]]
+name = "serde_json"
+version = "1.0.150"
+consumer = "fforager-testkit"
+runtime_class = "non_shipped_test_tooling"
+purpose = "Load and validate canonical contract inventory and cross-version JSON fixtures."
+native = false
+owner = "WP-FF-005-versioned-core-contracts"
+allowed_consumers = ["fforager-testkit"]
+reason = "The conformance harness must replay the same JSON artifacts used by shipped contract readers."
+removal_trigger = "All registered wire contracts migrate away from JSON through accepted compatibility fixtures."
+approval_id = "WP-FF-005-versioned-core-contracts-v1-AC-005"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "serde"
+version = "1.0.228"
+consumer = "fforager-contracts"
+runtime_class = "shipped_rust_product"
+purpose = "Serialize and deserialize explicit versioned wire DTOs."
+native = false
+owner = "WP-FF-005-versioned-core-contracts"
+allowed_consumers = ["fforager-contracts"]
+reason = "The contract boundary requires a mature typed serializer with deny-unknown-fields and exact pinned behavior."
+removal_trigger = "All versioned wire contracts migrate through accepted fixtures to an equally strict serializer."
+approval_id = "WP-FF-005-versioned-core-contracts-v1-AC-001"
+features = ["derive"]
+default_features = true
+
+[[dependency_decisions]]
+name = "serde_json"
+version = "1.0.150"
+consumer = "fforager-contracts"
+runtime_class = "shipped_rust_product"
+purpose = "Encode and decode bounded JSON wire envelopes and fixture payloads."
+native = false
+owner = "WP-FF-005-versioned-core-contracts"
+allowed_consumers = ["fforager-contracts"]
+reason = "The accepted WP-005 wire fixtures and framing contract use JSON payloads."
+removal_trigger = "The wire format migrates through a versioned compatibility plan and retained prior-version fixtures."
+approval_id = "WP-FF-005-versioned-core-contracts-v1-AC-001"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "serde"
+version = "1.0.228"
+consumer = "fforager-diagnostics-contract"
+runtime_class = "shipped_rust_product"
+purpose = "Serialize and deserialize bounded versioned diagnostic DTOs."
+native = false
+owner = "WP-FF-005-versioned-core-contracts"
+allowed_consumers = ["fforager-diagnostics-contract"]
+reason = "Diagnostic producers and consumers require a shared strict typed contract."
+removal_trigger = "All diagnostic contracts migrate through accepted fixtures to an equally strict serializer."
+approval_id = "WP-FF-005-versioned-core-contracts-v1-AC-001"
+features = ["derive"]
+default_features = true
+
+[[dependency_decisions]]
+name = "serde_json"
+version = "1.0.150"
+consumer = "fforager-diagnostics-contract"
+runtime_class = "shipped_rust_product"
+purpose = "Encode and decode bounded diagnostic payloads and fixtures."
+native = false
+owner = "WP-FF-005-versioned-core-contracts"
+allowed_consumers = ["fforager-diagnostics-contract"]
+reason = "The accepted diagnostic wire representation and conformance fixtures use JSON."
+removal_trigger = "The diagnostic wire format migrates through a versioned compatibility plan and retained prior-version fixtures."
+approval_id = "WP-FF-005-versioned-core-contracts-v1-AC-001"
+features = []
+default_features = true
 
 [[dependency_decisions]]
 name = "serde"

@@ -1,6 +1,18 @@
 [workspace]
-members = ["tools/fforager-xtask"]
-default-members = ["tools/fforager-xtask"]
+members = [
+    "tools/fforager-xtask",
+    "../product/crates/fforager-contracts",
+    "../product/crates/fforager-diagnostics-contract",
+    "../product/crates/fforager-core",
+    "crates/fforager-testkit",
+]
+default-members = [
+    "tools/fforager-xtask",
+    "../product/crates/fforager-contracts",
+    "../product/crates/fforager-diagnostics-contract",
+    "../product/crates/fforager-core",
+    "crates/fforager-testkit",
+]
 resolver = "3"
 
 [workspace.package]

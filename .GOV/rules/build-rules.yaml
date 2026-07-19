@@ -382,11 +382,13 @@ rules:
 
   - id: FF-BUILD-078
     category: runtime_truth
-    statement: Product progress, capability completion, work-packet closure, and product-phase completion require operator-usable behavior executed through a shipped production entrypoint; compilation, tests, mocks, fixtures, reports, documentation, contracts, prototypes, scaffolding, and governance are supporting evidence only.
+    statement: Product progress, capability completion, product-runtime work-packet closure, and product-phase completion require operator-usable behavior executed through a shipped production entrypoint; compilation, tests, mocks, fixtures, reports, documentation, contracts, prototypes, scaffolding, governance, and explicitly classified Phase 0 prerequisite packets are supporting evidence only.
+    revision: 2
     enforcement: REQUIRED
   - id: FF-BUILD-079
     category: runtime_truth
-    statement: Before product implementation begins, the active packet MUST define at least one strict black-box runtime scenario with production build identity, shipped entrypoint, representative input, actual production boundaries, expected outputs and side effects, failure oracle, timeout, and operator-visible result.
+    statement: Before product runtime implementation begins, an active packet with scope.product_impact RUNTIME MUST define at least one strict black-box runtime scenario with production build identity, shipped entrypoint, representative input, actual production boundaries, expected outputs and side effects, failure oracle, timeout, and operator-visible result; a design-authorized PREREQUISITE packet instead carries an exact committed zero-progress prerequisite declaration.
+    revision: 2
     enforcement: REQUIRED
   - id: FF-BUILD-080
     category: runtime_truth
@@ -402,7 +404,8 @@ rules:
     enforcement: REQUIRED
   - id: FF-BUILD-083
     category: runtime_truth
-    statement: Product infrastructure, contracts, scaffolding, and test machinery MUST be delivered in the same closure unit as the first production runtime behavior that consumes them and MUST NOT independently close a product packet or phase.
+    statement: Product infrastructure, contracts, scaffolding, and test machinery MUST normally be delivered in the same closure unit as the first production runtime behavior that consumes them; a design-authorized Phase 0 packet with scope.product_impact PREREQUISITE may close only bounded prerequisite acceptance, MUST report zero product/capability/runtime/packaging/release/phase progress, and MUST be consumed and re-proven by the first production runtime slice.
+    revision: 2
     enforcement: REQUIRED
   - id: FF-BUILD-084
     category: runtime_truth
@@ -414,7 +417,8 @@ rules:
     enforcement: REQUIRED
   - id: FF-BUILD-086
     category: runtime_truth
-    statement: Product-affecting verification MUST return BLOCKED or FAIL, never PASS or NOT_APPLICABLE, when the production artifact, required dependency, representative input, production boundary, observable, negative path, or runtime receipt is absent or mismatched.
+    statement: Verification of a packet with scope.product_impact RUNTIME MUST return BLOCKED or FAIL, never PASS or NOT_APPLICABLE, when the production artifact, required dependency, representative input, production boundary, observable, negative path, or runtime receipt is absent or mismatched; PREREQUISITE verification may PASS only its bounded prerequisite evidence and explicit zero-progress ceiling.
+    revision: 2
     enforcement: REQUIRED
   - id: FF-BUILD-087
     category: runtime_truth
@@ -422,5 +426,6 @@ rules:
     enforcement: REQUIRED
   - id: FF-BUILD-088
     category: runtime_truth
-    statement: Code unreachable from a current accepted production entrypoint is experimental rather than implemented product behavior and MUST be removed or explicitly prevented from advancing product, packet, or phase status.
+    statement: Code unreachable from a current accepted production entrypoint is not implemented product behavior; it MUST be removed or classified as non-product experimental or design-authorized Phase 0 prerequisite work, and prerequisite code may advance only its named prerequisite packet while remaining unable to advance product, capability, runtime, packaging, release, or phase status until consumed and re-proven.
+    revision: 2
     enforcement: REQUIRED

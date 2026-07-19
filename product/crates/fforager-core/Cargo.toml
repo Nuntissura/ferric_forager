@@ -1,0 +1,17 @@
+[package]
+name = "fforager-core"
+version = "0.1.0"
+workspace = "../../../build"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+fforager-contracts = { version = "0.1.0", path = "../fforager-contracts" }
+
+[lints]
+workspace = true

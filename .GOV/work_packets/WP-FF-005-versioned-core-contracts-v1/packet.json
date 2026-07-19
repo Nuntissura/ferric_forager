@@ -8,12 +8,12 @@
     "version": "1",
     "title": "Define versioned core contracts and executable state-machine specifications",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-18T21:12:21Z"
+    "updated_at_utc": "2026-07-19T21:38:56Z"
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB.",
-    "recorded_at_utc": "2026-07-18T21:12:21Z"
+    "reference": "Operator explicitly ordered activation and implementation of WP-FF-005, reuse of existing research, implementation assistance by subagents, and multi-lens adversarial review of the implementation followed by remediation and hardening.",
+    "recorded_at_utc": "2026-07-19T18:22:59Z"
   },
   "authority": {
     "bootstrap": "START_HERE.yaml",
@@ -37,29 +37,26 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
     "work_branch": "codex/versioned-core-contracts",
-    "worktree_policy": "NONE",
-    "worktree_id": null,
+    "worktree_policy": "ISOLATED_PARALLEL_HIGH_RISK",
+    "worktree_id": "WP-FF-005-versioned-core-contracts",
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
-    "closure_commit": null,
+    "closure_commit": "acf5465518e94984848e7d1f725575a99daebd55",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
-    "blockers": [
-      "STUB status forbids implementation until the Operator promotes and activates this packet.",
-      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before compiled contracts or model tests are added.",
-      "Compatibility-facing fields and semantics require the WP-FF-004 inventory/corpus contract or an explicitly documented provisional boundary; do not freeze guessed parity semantics."
-    ],
-    "next_action": "After WP-003 is VALIDATED and the Operator authorizes implementation, inspect WP-004 contract outputs/status, complete the research-backed refinement, map every contract/state machine to exact invariants and proof methods, and promote to READY_FOR_DEV.",
+    "blockers": [],
+    "next_action": "Merge closure commit acf5465518e94984848e7d1f725575a99daebd55 and this MERGE_PENDING evidence record to main, then mechanically verify containment before VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
   "scope": {
     "summary": "Freeze the Phase 0B serializable product and diagnostic contracts, identity relationships, bounded resource models, and owned state-machine specifications needed before broad implementation.",
+    "product_impact": "PREREQUISITE",
     "in_scope": [
       "Versioned serializable source graph, item/representation/track/asset/derived-output identities, provenance, tri-state validity, configuration, event, error, cancellation, and public JSON contracts.",
       "Versioned process, plugin IPC, JavaScript-worker IPC, and diagnostic envelope contracts with limits, request IDs, compatibility ranges, errors, cancellation acknowledgement, and provenance.",
@@ -78,6 +75,13 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
+      ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/refinement.json",
+      ".GOV/codex.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+      ".GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json",
+      ".GOV/id-registry.yaml",
       "build/Cargo.toml",
       "build/Cargo.lock",
       "build/architecture-policy.toml",
@@ -106,79 +110,387 @@
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-001",
       "requirement": "Every required Phase 0B contract has a stable ID, schema/version policy, owner, documented limits/errors, compatibility range, serialization fixture, and machine-readable inventory entry; no runtime handles, Tokio types, sockets, processes, or runtime trait objects occur in contract crates.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "prerequisite_contract_artifact",
+      "status": "PASS",
+      "evidence": [
+        "build/fixtures/contracts/inventory.json enumerates 20 bounded data-only contracts and 12 pure state machines with stable IDs, owners, schemas, limits, errors, fixtures, invariants, and proof bindings.",
+        "fforager-contracts 32/32 tests and fforager-testkit 10/10 tests pass, including inventory digest, canonical fixture decode/validation, and semantic mutation rejection.",
+        "FF-GATE-ARCH-001 records a successful recursive forbidden-handle scan, dependency-boundary checks, and exact inventory/manual/adversarial evidence checks."
+      ]
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-002",
       "requirement": "Identity contracts distinguish item, representation, track, asset, and derived output, preserve provenance and relationships across serialization, and reject collisions, ambiguous canonicalization, and archive-ineligible partial outputs.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "prerequisite_contract_artifact",
+      "status": "PASS",
+      "evidence": [
+        "fforager-contracts graph, identity, protocol, framing, and storage tests pass 32/32.",
+        "Typed IDs reject wrong prefixes/case; graph validation rejects duplicate or dangling roots, provenance and overlay cycles, ambiguous redirects, and archive-ineligible partial output.",
+        "Canonical public fixtures round-trip and recursively validate through fforager-testkit."
+      ]
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-003",
       "requirement": "Each named state machine declares states, owner, preconditions, invariants, postconditions, cancellation outcomes, durable prefixes, invalid transitions, and finite-model assumptions; model/property tests cover success, failure, cancellation, restart, and counterfactual invalid transitions.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "prerequisite_model_execution",
+      "status": "PASS",
+      "evidence": [
+        "fforager-core lifecycle/resource tests pass 29/29 and fforager-testkit executes success, failure, cancellation, restart, and invalid-transition cases.",
+        "Lifecycle acknowledgements bind lifecycle, generation, and nonzero machine instance; stale, wrong-generation, cross-instance, transient-restore, and unacknowledged-success paths fail closed.",
+        "The inventory binds every named state machine to owner, states, invariants, invalid transitions, durable prefixes, cancellation outcomes, finite assumptions, and executable proof IDs."
+      ]
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-004",
       "requirement": "Atomic resource-vector and byte-credit models have checked arithmetic, item/byte ceilings, admission/release invariants, no permit leaks, bounded cancellation progress, and saturation tests demonstrating bounded state under stalled consumers.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "prerequisite_model_execution",
+      "status": "PASS",
+      "evidence": [
+        "fforager-core resource tests cover zero, exact, one-over, checked overflow/underflow, atomic release, FIFO head reservation, bounded queue bytes/items, cancellation dispatch, and owner isolation.",
+        "Byte-credit receive requires exact claim and owner, preserves consumed attribution, revokes unused released credit, rejects consumed-claim transfer, and prevents durability beyond credited bytes.",
+        "All 13 resource dimensions are represented in the executable inventory/fixture proof surface."
+      ]
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-005",
       "requirement": "Cross-version fixtures prove documented current/current and supported compatibility outcomes, while unknown mandatory kinds, incompatible major versions, malformed/oversized frames, partial frames, duplicate IDs, and illegal transitions fail with typed bounded errors.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "prerequisite_conformance_execution",
+      "status": "PASS",
+      "evidence": [
+        "Canonical current/supported fixtures decode and validate; trusted local bindings reject self-declared schema/version identities.",
+        "Framing tests reject partial headers/payloads, oversized frames before payload allocation, unknown mandatory kinds, duplicate requests, incompatible versions, invalid nested envelopes, and uncorrelated cancellation acknowledgements with typed bounded errors.",
+        "Extension and tagged-enum deserialization reject unknown or over-budget fields, and inventory semantic mutations fail closed."
+      ]
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-006",
       "requirement": "The canonical architecture, PR, and triggered deep gates pass; reports map every acceptance row and readiness-gate contract to concrete tests and residual uncertainty.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "governed_gate",
+      "status": "PASS",
+      "evidence": [
+        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1784496901614013300-642088.json; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1784496945148219800-630752.json preserves the exact non-product prerequisite ceiling and makes no runtime completion claim; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1784497031416014200-644600.json; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false; 32 contract, 29 core, 13 diagnostics, 10 testkit, and 58 xtask tests plus all-feature doctests pass.",
+        "FF-GATE-PR-001 aggregate report build/reports/verify-pr-1784497118648624100-674796.json records successful formatting, warnings-denied Clippy, tests, rustdoc, dependency policy, architecture, prerequisite-ceiling, and proof checks; source commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false."
+      ]
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-007",
       "requirement": "The Phase 0 model manual documents contract locations, schemas, versioning rules, inspection commands, model tests, fixture regeneration, safety limits, common failures, and recovery without requiring chat history.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "reviewed_artifact",
+      "status": "PASS",
+      "evidence": [
+        "product/MODEL_MANUAL.md documents contract locations, trusted schema/framing boundaries, exact locked inspection/test commands, safety limits, acknowledgements, durable restore rules, resource ownership, inventory integrity, failure diagnosis, and recovery.",
+        "The manual validator and manual review record a successful result while preserving the explicit non-product prerequisite ceiling.",
+        "Independent adversarial implementation reviews reached PASS after remediation across wire, lifecycle, resource, instance, restore, attribution, fixture, inventory, scanner, progress, disposition, deep-composition, and inventory-gate lenses."
+      ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "recorded_at_utc": "2026-07-19T21:38:56Z",
       "branch": "codex/versioned-core-contracts",
-      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
+      "head_sha": "acf5465518e94984848e7d1f725575a99daebd55",
       "dirty_paths": [],
-      "checks_run": [],
-      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
-      "next_action": "Wait for WP-003 validation and explicit activation, then complete refinement and contract-to-invariant mapping."
+      "checks_run": [
+        "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, WP-005 packet, topology, build rules, work-packet requirements/template, cited design anchors, and readiness matrix",
+        "Verified AGENTS.md and CLAUDE.md are byte-identical",
+        "Inspected branch, HEAD, merge-base, dirty paths, and worktrees",
+        "Verified WP-003 and WP-004 prerequisite outputs are validated and inspected their reusable build and compatibility surfaces",
+        "Reused the completed project research basis; no additional research is authorized or required for activation",
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check: PASS",
+        "cargo test --manifest-path build/Cargo.toml --locked -p fforager-xtask -- --nocapture: PASS, 52 tests",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS, build/reports/architecture-check-1784485817153018900-669612.json",
+        "Activation checkpoint committed as 4bef052f86f1e58b2be5220232d5a5dba1e930e4",
+        "Added versioned contract/diagnostic crates, pure lifecycle/resource models, canonical fixtures/inventory, proof gates, and no-context model manual.",
+        "Used independent adversarial implementation reviews and remediated all confirmed wire, lifecycle, resource, ownership, instance, restore, attribution, fixture, inventory, scanner, progress, and proof-binding findings.",
+        "Final independent adversarial closure review found no blocking issue; residual risk is limited to future adapters and the lexical scanner's documented boundary.",
+        "Clean closure FF-GATE-ARCH-001 report: build/reports/architecture-check-1784496901614013300-642088.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Clean closure FF-GATE-RUNTIME-001 prerequisite-ceiling report: build/reports/runtime-truth-check-1784496945148219800-630752.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Clean closure FF-GATE-DEEP-001 report: build/reports/verify-deep-1784497031416014200-644600.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false.",
+        "Clean closure FF-GATE-PR-001 report: build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false."
+      ],
+      "blockers": [],
+      "next_action": "Commit this MERGE_PENDING evidence record, merge the branch to main, and prove closure/evidence containment before setting VALIDATED."
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "PASS: fforager-contracts 32/32 tests",
+      "PASS: fforager-core 29/29 tests",
+      "PASS: fforager-diagnostics-contract 13/13 tests",
+      "PASS: fforager-testkit 10/10 tests",
+      "PASS: fforager-xtask 58/58 tests",
+      "PASS: all-feature doctests for contracts, core, diagnostics-contract, and testkit",
+      "PASS: cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+      "PASS: cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets -- -D warnings",
+      "PASS: FF-GATE-ARCH-001; build/reports/architecture-check-1784496901614013300-642088.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "VERIFIED: FF-GATE-RUNTIME-001 prerequisite-ceiling report; build/reports/runtime-truth-check-1784496945148219800-630752.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1784497031416014200-644600.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "PASS: FF-GATE-PR-001; build/reports/verify-pr-1784497118648624100-674796.json; commit acf5465518e94984848e7d1f725575a99daebd55, dirty=false",
+      "PASS: final independent adversarial implementation review across wire, core, gate, and closure surfaces",
+      "PASS: JSON parse and git diff --check"
+    ],
     "not_proven": [
-      "Any contract or state-machine implementation",
-      "Schema compatibility or migration safety",
-      "Resource boundedness, cancellation, liveness, or durability",
-      "Compatibility semantics pending WP-004 evidence",
-      "Implementation authorization"
+      "No Ferric execution capability or adapter behavior is proven",
+      "Production network, extractor, storage, FFmpeg, JavaScript, plugin, scheduler, watcher, packaging, or release behavior",
+      "Cross-platform runtime behavior outside the pure deterministic contract/model proof surface",
+      "End-to-end liveness, durability, cancellation, and compatibility through a future staged production artifact",
+      "Release readiness or yt-dlp replacement parity"
     ]
   },
   "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/refinement.json",
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0b--contracts-and-state-machines",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped production slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+    },
     "repository_layout": {
       "governance_root": ".GOV/",
       "product_root": "product/",
-      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "product_owns": ["runtime code under product ownership", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
       "build_root": "build/",
       "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
       "toolchain_selector": "rust-toolchain.toml",
       "canonical_manifest": "build/Cargo.toml",
       "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
-      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+      "runtime_boundary": "Execution from product packages must require neither .GOV/ nor build/."
+    },
+    "change_evidence": {
+      "applicable_rule_ids": [
+        "FF-BUILD-001", "FF-BUILD-002", "FF-BUILD-003", "FF-BUILD-004", "FF-BUILD-005", "FF-BUILD-006", "FF-BUILD-007", "FF-BUILD-008", "FF-BUILD-009", "FF-BUILD-011", "FF-BUILD-012", "FF-BUILD-013", "FF-BUILD-014", "FF-BUILD-015", "FF-BUILD-017", "FF-BUILD-018", "FF-BUILD-019", "FF-BUILD-020", "FF-BUILD-021", "FF-BUILD-022", "FF-BUILD-023", "FF-BUILD-024", "FF-BUILD-025", "FF-BUILD-026", "FF-BUILD-027", "FF-BUILD-029", "FF-BUILD-030", "FF-BUILD-031", "FF-BUILD-032", "FF-BUILD-033", "FF-BUILD-034", "FF-BUILD-035", "FF-BUILD-036", "FF-BUILD-037", "FF-BUILD-038", "FF-BUILD-039", "FF-BUILD-040", "FF-BUILD-041", "FF-BUILD-042", "FF-BUILD-043", "FF-BUILD-044", "FF-BUILD-045", "FF-BUILD-046", "FF-BUILD-047", "FF-BUILD-048", "FF-BUILD-049", "FF-BUILD-050", "FF-BUILD-051", "FF-BUILD-052", "FF-BUILD-053", "FF-BUILD-054", "FF-BUILD-055", "FF-BUILD-056", "FF-BUILD-057", "FF-BUILD-058", "FF-BUILD-059", "FF-BUILD-060", "FF-BUILD-061", "FF-BUILD-062", "FF-BUILD-063", "FF-BUILD-064", "FF-BUILD-065", "FF-BUILD-066", "FF-BUILD-067", "FF-BUILD-068", "FF-BUILD-069", "FF-BUILD-070", "FF-BUILD-071", "FF-BUILD-072", "FF-BUILD-073", "FF-BUILD-074", "FF-BUILD-075", "FF-BUILD-076", "FF-BUILD-077", "FF-BUILD-078", "FF-BUILD-079", "FF-BUILD-080", "FF-BUILD-081", "FF-BUILD-082", "FF-BUILD-083", "FF-BUILD-084", "FF-BUILD-085", "FF-BUILD-086", "FF-BUILD-087", "FF-BUILD-088"
+      ],
+      "acceptance_or_authority_ids": [
+        "WP-FF-005-versioned-core-contracts-v1-AC-001",
+        "WP-FF-005-versioned-core-contracts-v1-AC-002",
+        "WP-FF-005-versioned-core-contracts-v1-AC-003",
+        "WP-FF-005-versioned-core-contracts-v1-AC-004",
+        "WP-FF-005-versioned-core-contracts-v1-AC-005",
+        "WP-FF-005-versioned-core-contracts-v1-AC-006",
+        "WP-FF-005-versioned-core-contracts-v1-AC-007"
+      ],
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Versioned data-only product and diagnostic boundaries reject incompatible, malformed, ambiguous, oversized, and uncorrelated inputs.",
+          "Pure lifecycle and resource models distinguish effect intent from acknowledged durable state and preserve ownership across cancellation, restart, and release.",
+          "Canonical fixtures, inventory rows, compiled tests, and gate reports bind every Phase 0B prerequisite claim to executable proof.",
+          "The prerequisite ceiling is the exact non_product_prerequisite declaration in this packet."
+        ],
+        "risk_cases": [
+          "A sender self-authorizes a schema version, smuggles an unknown field, omits correlation identity, or bypasses framing limits.",
+          "A stale acknowledgement, transient restored state, released credit, or smaller queued request creates false success, ownership loss, or starvation.",
+          "An inventory, manual, adversarial record, or prerequisite wording mutation creates a false PASS without executable evidence.",
+          "A runtime handle enters a data-only crate through an alias, grouped import, standard stream, process, socket, or external pipe type."
+        ]
+      },
+      "reuse_candidates_in_order_with_result": [
+        {
+          "candidate": "no mechanism beyond the accepted outcome",
+          "result": "Rejected because stable public boundaries, executable lifecycle models, and proof gates are explicit Phase 0B deliverables."
+        },
+        {
+          "candidate": "reuse current Ferric code",
+          "result": "Selected for the existing workspace, diagnostics contract, architecture gate, compatibility schemas, reports, and fixture conventions."
+        },
+        {
+          "candidate": "Rust core/std",
+          "result": "Selected for checked arithmetic, deterministic collections, typed state transitions, bounded framing, and data-only ownership models."
+        },
+        {
+          "candidate": "approved platform capability",
+          "result": "Selected for locked Cargo compilation, Clippy, rustdoc, Git identity, filesystem containment, and process-bounded gate execution."
+        },
+        {
+          "candidate": "already-approved dependency",
+          "result": "Existing serde, serde_json, sha2, and build-tool dependencies cover serialization, hashing, fixtures, and validation without a new runtime dependency."
+        },
+        {
+          "candidate": "smallest complete clear implementation",
+          "result": "Selected as three data-only/pure crates, one testkit, canonical fixtures, one inventory, and extensions to the existing xtask gate."
+        }
+      ],
+      "artifact_specific_justification": {
+        "product_contracts": "Own stable typed identities, graph relationships, acquisition and sink data, process boundaries, storage descriptors, and bounded validation.",
+        "diagnostics_contracts": "Own transport-independent diagnostic, lifecycle, health, sequence, privacy, and negotiation data without runtime handles.",
+        "core_models": "Own pure effect-intent state transitions, acknowledged durable prefixes, admission ownership, fairness, and byte-credit conservation.",
+        "conformance_fixtures": "Provide canonical current, prior, incompatible, malformed, boundary, lifecycle, resource, and durability inputs replayed by compiled tests.",
+        "inventory_gate": "Binds stable contract and state IDs to exact owners, Rust types, fixtures, invariants, readiness gates, and executable proof IDs.",
+        "model_manual": "Lets a no-context model inspect, change, validate, and recover the Phase 0B contracts without relying on conversation history."
+      },
+      "pre_simplification_verdict": "PASS: the initial implementation exposed duplicated boundary assumptions, unacknowledged effect transitions, weak ownership attribution, and proof surfaces that could accept fabricated evidence.",
+      "simplification_changes": [
+        "Centralized trusted schema/type validation and recursive framing limits instead of letting each sender self-declare compatibility.",
+        "Represented pending effects and acknowledgements with explicit effect and generation identity instead of treating a generic acknowledgement as success.",
+        "Used strict FIFO head reservation and claim-owner byte attribution instead of implicit queue bypass and global credit consumption.",
+        "Bound inventory rows and adversarial dispositions to exact canonical executable proofs instead of lexical proof-shaped strings.",
+        "Composed PR verification from the actual shared deep checks and exact locked manual commands instead of parallel approximations."
+      ],
+      "post_simplification_verdict": "PASS: the final design has explicit trusted boundaries, correlated state effects, auditable ownership, canonical fixtures, and one fail-closed deep/PR proof composition.",
+      "complete_post_change_verification": [
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+        "cargo check --manifest-path build/Cargo.toml --workspace --all-targets --locked",
+        "cargo test --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked --no-fail-fast",
+        "cargo test --manifest-path build/Cargo.toml --workspace --doc --all-features --locked",
+        "cargo clippy --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked -- -D warnings",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
+        "Parse every changed JSON and canonical YAML surface, run git diff --check, and verify the closure commit is contained in main."
+      ],
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-005-versioned-core-contracts-v1-CEILING-001",
+        "current_ceiling": "These artifacts prove data contracts and pure prerequisite models only; they implement no operator-usable network, storage, FFmpeg, plugin, JavaScript, watcher, packaging, or release capability.",
+        "replacement_trigger": "A later adapter-backed packet changes impact classification and supplies FF-GATE-RUNTIME-001 evidence.",
+        "likely_upgrade_path": "Bind these contracts to real adapters and execute success, negative, and counterfactual scenarios through FF-GATE-RUNTIME-001.",
+        "trigger_detection_method": "Taskboard activation, packet impact classification, member inventory, changed-path classification, and strict runtime-proof manifest validation identify the later trigger.",
+        "linked_evidence": [
+          ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
+          "build/fixtures/contracts/inventory.json",
+          "product/crates/fforager-contracts/",
+          "product/crates/fforager-core/",
+          "build/reports/"
+        ]
+      },
+      "adversarial_review": {
+        "DIFF_ATTACK_SURFACES": [
+          "Contract and serialization boundaries: schema identity, compatibility, unknown fields, framing, provenance, graph cycles, and extension budgets.",
+          "State and resource boundaries: effect acknowledgement, durable restoration, cancellation, FIFO admission, byte-credit ownership, and atomic release.",
+          "Integration and fixture boundaries: real Rust types, lifecycle negative paths, all resource dimensions, durability DTOs, and canonical inventory mappings.",
+          "Gate boundaries: runtime-handle aliases, zero-progress wording, executable proof IDs, manual commands, doctests, deep composition, and review dispositions."
+        ],
+        "INDEPENDENT_CHECKS_RUN": [
+          "Three rotated reviewers independently inspected successive immutable remediation commits with wire, core, fixture, gate, manual, and closure-evidence lenses.",
+          "Workspace proof results: formatting and compilation accepted; 32 contract, 29 core, 13 diagnostic, 10 testkit, and 58 xtask tests accepted.",
+          "Warnings-denied Clippy ran across every workspace target and feature after combined remediation.",
+          "Architecture, runtime-truth, deep, and PR gates were rerun from the active taskboard packet and their emitted reports inspected.",
+          "Mutation probes exercised stale acknowledgements, transient restore, wrong-owner credits, schema self-authorization, unknown fields, import aliases, fabricated proofs, and completion wording."
+        ],
+        "COUNTERFACTUAL_CHECKS": [
+          "Removing trusted schema/type binding or recursive validation causes cross-type, unsupported-version, unknown-field, and over-limit probes to fail the expected oracle.",
+          "Supplying a stale effect generation, wrong effect, transient restore state, or wrong credit owner is rejected without mutating model state.",
+          "Replacing a canonical inventory proof, owner, readiness gate, state set, invariant, or Rust type causes compiled conformance validation to fail.",
+          "Reintroducing runtime-handle aliases, positive prerequisite completion claims, contradictory review dispositions, duplicate manual commands, or omitted deep checks causes gate tests to fail."
+        ],
+        "BOUNDARY_PROBES": [
+          "Bounded frame bytes through Serde and concrete process, plugin, JavaScript-worker, event, error, config, and cancellation validators.",
+          "Source graph roots, provenance chains, redirect overlays, aggregate identity counts, tri-state fields, and namespaced extensions.",
+          "Lifecycle effect intents through correlated acknowledgements, durable restart prefixes, cancellation drains, and invalid transition replay.",
+          "Resource requests and byte claims through capacity, owner caps, FIFO reservation, consumption attribution, transfer, release, and durability positions.",
+          "Packet, inventory, manual, source scanner, doctest, deep, and PR producers through their exact fail-closed consumers."
+        ],
+        "NEGATIVE_PATH_CHECKS": [
+          "Malformed, oversized, partial, duplicate, unknown-kind, incompatible-version, cross-schema, traversal, cycle, and unnamespaced-field inputs are rejected.",
+          "Stale or wrong acknowledgements, transient restore, failure, cancellation, restart, illegal transitions, and false durable prefixes are rejected or explicitly modeled.",
+          "Over-capacity vectors, queue saturation, wrong-owner release or consumption, released unused credit, arithmetic overflow, and large-request starvation are covered.",
+          "Fake proof IDs, wrong owners or readiness gates, missing fixture fields, runtime-handle import evasions, progress synonyms, contradictory findings, and manual command stuffing are rejected."
+        ],
+        "INDEPENDENT_FINDINGS": [
+          {
+            "finding_id": "WP-FF-005-FINDING-WIRE-001",
+            "finding": "Trusted recursive validation rejects schema self-authorization, incomplete framed boundaries, permissive nested fields, and missing graph or worker bounds.",
+            "status": "REMEDIATED",
+            "proof_id": "testkit::tests::canonical_public_contract_fixtures_decode_and_validate"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-LIFECYCLE-001",
+            "finding": "Effect intents, restart prefixes, and cancellation drains now require the exact pending effect and generation acknowledgement before durable advancement.",
+            "status": "REMEDIATED",
+            "proof_id": "core::lifecycle::tests::transient_restore_and_stale_or_wrong_acknowledgements_are_rejected"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-RESOURCE-001",
+            "finding": "Admission starvation and cross-owner byte-credit consumption were closed with strict FIFO reservation and claim-owner attribution receipts.",
+            "status": "REMEDIATED",
+            "proof_id": "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-INSTANCE-001",
+            "finding": "Cross-instance acknowledgement routing was closed by binding every acknowledgement to a nonzero stable machine instance, exact effect, and generation.",
+            "status": "REMEDIATED",
+            "proof_id": "core::lifecycle::tests::acknowledgement_rejects_cross_instance_routing"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-RESTORE-001",
+            "finding": "Lifecycle restoration now accepts only the exact durable-state whitelist cross-checked against the canonical inventory.",
+            "status": "REMEDIATED",
+            "proof_id": "core::lifecycle::tests::restoration_accepts_only_inventory_enumerated_durable_states"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-ATTRIBUTION-001",
+            "finding": "Consumed byte claims can no longer transfer ownership and rewrite historical receive attribution.",
+            "status": "REMEDIATED",
+            "proof_id": "core::resource::tests::consumed_claim_transfer_is_rejected_without_rewriting_attribution"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-INVENTORY-001",
+            "finding": "Every canonical inventory field is line-ending-portably digest-bound and representative semantic mutations fail validation.",
+            "status": "REMEDIATED",
+            "proof_id": "testkit::tests::inventory_digest_rejects_semantic_field_mutations"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-FIXTURE-001",
+            "finding": "Lifecycle, resource, and durability fixtures now execute success, failure, cancellation, restart, invalid, all-dimension, and ownership cases.",
+            "status": "REMEDIATED",
+            "proof_id": "core::lifecycle::tests::success_and_durable_prefixes_require_effect_acknowledgements"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-GATE-SCANNER-001",
+            "finding": "Scanner mutations reject direct, grouped, globbed, nested, and aliased standard stream or external pipe imports.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::data_model_scan_rejects_runtime_handle_import_aliases"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-GATE-PROGRESS-001",
+            "finding": "Prerequisite completion claims under nested runtime, product, capability, release, packaging, or phase subjects now fail closed.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::prerequisite_zero_claim_surface_rejects_parallel_progress_claims"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-GATE-DISPOSITION-001",
+            "finding": "Adversarial finding dispositions now require stable finding identities and exact finding-specific executable proof mappings.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::adversarial_review_evidence_rejects_placeholder_findings"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-GATE-DEEP-001",
+            "finding": "All-feature doctests and the real shared deep-check composition now execute inside both deep and PR verification.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::deep_verification_composes_doctest_gate"
+          },
+          {
+            "finding_id": "WP-FF-005-FINDING-GATE-INVENTORY-001",
+            "finding": "Inventory identifiers, owners, readiness gates, Rust types, states, invariants, and executable proof mappings are exact and mutation-tested.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::contract_inventory_rejects_required_field_and_stable_id_mutations"
+          }
+        ],
+        "RESIDUAL_UNCERTAINTY": [
+          "Adapter execution, peer authentication, operating-system confinement, and child-process cleanup are outside this prerequisite and require later FF-GATE-RUNTIME-001 proof.",
+          "Strict FIFO deliberately accepts head-of-line blocking as the bounded anti-starvation policy; later scheduling may require a separately specified reservation or aging policy.",
+          "The lexical data-only scanner is backed by exact demonstrated alias mutations and architecture boundaries, but code review remains necessary for novel macro-generated or dependency-internal handle paths."
+        ],
+        "MANUAL_REVIEW": {
+          "artifact": "product/MODEL_MANUAL.md",
+          "reviewer": "Codex primary with three rotated independent implementation reviewers",
+          "method": "Read the exact contract-operation topic against source, inventory, fixtures, commands, safety limits, failure recovery, and prerequisite ceiling after final remediation.",
+          "verdict": "PASS",
+          "evidence": [
+            "The manual contains the six exact locked Cargo workflows required for focused contract, core, diagnostic, testkit, Clippy, and deep validation.",
+            "The manual documents typed failure recovery for framing, schema, lifecycle, resource, inventory, and data-only scan failures without relying on chat history.",
+            "The manual assigns later adapter execution evidence to FF-GATE-RUNTIME-001 and preserves the prerequisite ceiling."
+          ]
+        }
+      }
     },
     "stub_implementation_brief": {
       "base_scope": "Turn Phase 0B's product/public/process/diagnostic contracts and lifecycle promises into versioned Rust data plus executable transition and invariant proof surfaces.",

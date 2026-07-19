@@ -8,12 +8,12 @@
     "version": "1",
     "title": "Generate the pinned compatibility inventory and executable oracle corpus",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-18T21:12:21Z"
+    "updated_at_utc": "2026-07-19T12:36:59Z"
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB.",
-    "recorded_at_utc": "2026-07-18T21:12:21Z"
+    "reference": "Operator explicitly instructed Codex to proceed and activate WP-FF-004 after WP-FF-003 v2 was implemented, validated, and hardened.",
+    "recorded_at_utc": "2026-07-19T12:31:56Z"
   },
   "authority": {
     "bootstrap": "START_HERE.yaml",
@@ -35,7 +35,7 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "base_sha": "91404decb77599c0491084627b7ef97c96bfb9b5",
     "work_branch": "codex/compatibility-inventory-corpus",
     "worktree_policy": "NONE",
     "worktree_id": null,
@@ -50,14 +50,10 @@
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
-    "blockers": [
-      "STUB status forbids implementation until the Operator promotes and activates this packet.",
-      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before compiled generators or tests are added.",
-      "The pinned yt-dlp 2026.07.04 artifact identity and legally redistributable fixture boundaries must be recorded during refinement; do not substitute a newer moving baseline."
-    ],
-    "next_action": "After WP-FF-003 is VALIDATED and the Operator authorizes implementation, refresh source-control identity, complete current research and refinement, define the versioned artifact manifest and corpus partitions, then promote this packet to READY_FOR_DEV.",
+    "blockers": [],
+    "next_action": "Complete current source-level research and the EXPANDED refinement against validated WP-FF-003 v2, verify the exact yt-dlp 2026.07.04 oracle identity and fixture boundaries, and define the versioned artifact manifest and corpus partitions before product implementation.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -81,6 +77,7 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json",
+      ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/refinement.json",
       "build/Cargo.toml",
       "build/Cargo.lock",
       "build/architecture-policy.toml",
@@ -96,7 +93,7 @@
       "product/MODEL_MANUAL.md"
     ],
     "dependencies": [
-      "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
+      "WP-FF-003-executable-gate-bootstrap-v2 VALIDATED with verified main containment",
       "Pinned yt-dlp 2026.07.04 source and executable oracle",
       "Accepted WP-003 architecture, tooling, report, and negative-fixture conventions",
       "FF-GATE-ARCH-001 and FF-GATE-PR-001"
@@ -142,27 +139,43 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "recorded_at_utc": "2026-07-19T12:36:59Z",
       "branch": "codex/compatibility-inventory-corpus",
-      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "dirty_paths": [],
-      "checks_run": [],
-      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
-      "next_action": "Wait for WP-FF-003 validation and explicit activation, then perform refinement and current source-level research before implementation."
+      "base_sha": "91404decb77599c0491084627b7ef97c96bfb9b5",
+      "head_sha": "91404decb77599c0491084627b7ef97c96bfb9b5",
+      "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
+        ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/packet.json",
+        ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/refinement.json"
+      ],
+      "checks_run": [
+        "git branch --show-current: codex/compatibility-inventory-corpus",
+        "git rev-parse HEAD: 91404decb77599c0491084627b7ef97c96bfb9b5",
+        "git merge-base main HEAD: 91404decb77599c0491084627b7ef97c96bfb9b5",
+        "git status --porcelain=v2 --branch: clean main at activation baseline before state edits",
+        "WP-FF-003-executable-gate-bootstrap-v2 lifecycle.status: VALIDATED; main_containment_status: VERIFIED",
+        "FF-GATE-ARCH-001 initial activation probe: expected FAIL because the active EXPANDED packet did not yet declare its required refinement input; report build/reports/architecture-check-1784464413976488500-655308.json",
+        "FF-GATE-ARCH-001 after linking substantive refinement: PASS; report build/reports/architecture-check-1784464607934492900-651580.json",
+        "Final activation FF-GATE-ARCH-001 after checkpoint-state update: PASS; report build/reports/architecture-check-1784464663149698900-651004.json"
+      ],
+      "blockers": [],
+      "next_action": "Complete current source-level research and the EXPANDED refinement against validated WP-FF-003 v2, verify the exact yt-dlp 2026.07.04 oracle identity and fixture boundaries, and define the versioned artifact manifest and corpus partitions before product implementation."
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "Activation FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784464663149698900-651004.json"
+    ],
     "not_proven": [
       "Compatibility profile completeness",
       "Corpus representativeness or deterministic replay",
       "Any Ferric behavior or parity",
       "Sanitization coverage",
-      "Implementation authorization"
+      "EXPANDED refinement completion and implementation readiness"
     ]
   },
   "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v1/refinement.json",
     "repository_layout": {
       "governance_root": ".GOV/",
       "product_root": "product/",

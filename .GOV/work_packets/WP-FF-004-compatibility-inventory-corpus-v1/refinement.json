@@ -1,0 +1,109 @@
+{
+  "schema_id": "ff.work_packet_refinement@1",
+  "file_id": "WP-FF-004-compatibility-inventory-corpus-v1-REFINEMENT-001",
+  "wp_id": "WP-FF-004-compatibility-inventory-corpus-v1",
+  "updated_at_utc": "2026-07-19T12:31:56Z",
+  "operator_request": "Proceed and activate WP-FF-004 after WP-FF-003 v2 was implemented, validated, and hardened.",
+  "basis": {
+    "research_status": "PENDING_CURRENT_PRIMARY_SOURCE_RESEARCH",
+    "activation_basis": "The project design and readiness matrix require a generated pinned yt-dlp compatibility profile and executable mandatory oracle corpus. Validated WP-FF-003 v2 supplies the fail-closed xtask, report, policy, negative-fixture, and bounded-process foundation that WP-FF-004 must reuse.",
+    "authority_checked": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#71-baseline-release",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#202-compatibility-objective",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#204-compatibility-report",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#262-differential-test-harness",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#263-recorded-network-fixtures",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0a--compatibility-inventory-and-executable-oracle",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#296-reference-project-comparison-policy",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#316-compatibility",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#317-broad-feature-implementation-readiness-gates",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#SYN-002",
+      ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json#SYN-009",
+      ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json"
+    ],
+    "selected_approach": [
+      "Generate a versioned compatibility profile from the exact pinned yt-dlp 2026.07.04 source and executable oracle.",
+      "Keep native Ferric semantics separate from yt-dlp compatibility-profile semantics.",
+      "Build deterministic offline oracle planes and mechanically separate opt-in live canaries.",
+      "Implement generation, validation, and reporting through the validated WP-FF-003 v2 fforager-xtask and report protocol."
+    ],
+    "rejected_options": [
+      "A moving yt-dlp baseline, because regeneration would silently redefine expected behavior.",
+      "Live network responses as deterministic proof, because mutable external state cannot provide reproducible acceptance evidence.",
+      "Production Python or yt-dlp execution, because the authorized runtime is native Rust with supervised FFmpeg and ffprobe only.",
+      "A hand-curated inventory without completeness checks, because omissions would make compatibility claims non-enumerable and capable of false PASS."
+    ],
+    "research_required_before_product_implementation": [
+      "Verify exact official source and executable artifact identities for yt-dlp 2026.07.04.",
+      "Inspect pinned upstream option, configuration, preset, extractor-registration, URL-matching, help, and runtime metadata implementation surfaces.",
+      "Compare proven inventory-generation, fixture-recording, normalization, sanitization, deterministic-replay, and corpus-sharding patterns from current primary sources and field implementations.",
+      "Record fixture redistribution boundaries, selected and rejected approaches, risks, mitigations, and the executable validation plan before generators or product contracts are implemented."
+    ],
+    "validation_plan": "Require deterministic regeneration, schema and stable-ID checks, independent completeness counts, missing/duplicate/change mutation probes, secret/path/clock/random/network negative probes, offline differential replay, distinct live-canary reporting, FF-GATE-ARCH-001, FF-GATE-PR-001, and independent adversarial closure review."
+  },
+  "scope_edges": {
+    "preserve": [
+      "The complete compatibility, extractor, protocol, metadata, archive, collection, sink, and diagnostic scope in the current technical design.",
+      "The Rust-only production boundary and supervised FFmpeg/ffprobe exception.",
+      "WP-FF-003 v2 fail-closed architecture, tooling, reporting, negative-fixture, and recovery conventions."
+    ],
+    "change": [
+      "Add the Phase 0A generated yt-dlp 2026.07.04 compatibility profile.",
+      "Add versioned deterministic oracle manifests, fixtures, validation, and differential reports.",
+      "Add no-context generation, offline replay, opt-in live-canary, sanitization, and recovery instructions."
+    ],
+    "assumptions_to_verify": [
+      "The exact pinned yt-dlp 2026.07.04 source and executable artifacts remain obtainable and independently identifiable.",
+      "WP-FF-003 v2 paths and report schemas can be extended without introducing a parallel validation framework.",
+      "Mandatory deterministic fixtures can be sanitized and redistributed without retaining credentials or machine-local state."
+    ],
+    "non_goals": [
+      "Ferric extractor, transport fingerprint, JavaScript execution, archive-store, or broad CLI implementation.",
+      "Production invocation of Python or yt-dlp.",
+      "A full replacement-parity claim from corpus construction alone.",
+      "Treating opt-in live canaries as deterministic closure evidence."
+    ]
+  },
+  "acceptance_ids": [
+    "WP-FF-004-compatibility-inventory-corpus-v1-AC-001",
+    "WP-FF-004-compatibility-inventory-corpus-v1-AC-002",
+    "WP-FF-004-compatibility-inventory-corpus-v1-AC-003",
+    "WP-FF-004-compatibility-inventory-corpus-v1-AC-004",
+    "WP-FF-004-compatibility-inventory-corpus-v1-AC-005",
+    "WP-FF-004-compatibility-inventory-corpus-v1-AC-006"
+  ],
+  "red_team": {
+    "risk_tier": "HIGH",
+    "attack_lenses": [
+      "Pinned-oracle provenance, version drift, and untrusted upstream input handling.",
+      "Inventory completeness, dynamic registration, alias collisions, interaction coverage, and false-PASS omissions.",
+      "Fixture secrecy, portability, nondeterminism, normalization drift, and unexpected network access.",
+      "Differential classification integrity, accepted-divergence authorization, report attribution, and shard merging."
+    ],
+    "minimum_controls": [
+      "Fail closed on oracle identity mismatch, missing inventory rows, duplicate or unstable IDs, unknown normalization versions, and undeclared differences.",
+      "Cross-check inventory against at least two independent pinned upstream surfaces and prove omission detection with mutation fixtures.",
+      "Scan and normalize secrets, absolute paths, clocks, randomness, host identity, and mutable network inputs before fixture acceptance.",
+      "Mechanically separate default offline suites from explicit live canaries and emit distinct report classifications.",
+      "Require stable case IDs, deterministic shard merge receipts, and rejection of overlap, gaps, or corpus-version mismatch."
+    ],
+    "plausible_failures": [
+      "A generator reports completeness while dynamically registered options, extractors, aliases, or interactions are absent.",
+      "A corpus passes a narrow happy path while errors, artifacts, archive behavior, redirects, or configuration interactions remain uncovered.",
+      "Cookies, tokens, absolute paths, timestamps, host identifiers, or other machine-local values enter committed fixtures.",
+      "A newer yt-dlp binary or a mutable live response silently replaces the pinned oracle.",
+      "A differential row disappears or is mislabeled so an unsupported Ferric behavior counts as PASS.",
+      "Parallel shards overlap, omit cases, or merge results from different corpus versions."
+    ]
+  },
+  "execution_decomposition": [
+    "Verify current Git, packet, taskboard, validated WP-FF-003 v2, and pinned-oracle state.",
+    "Complete and record current broad source-level research before product implementation.",
+    "Freeze versioned schemas, stable IDs, normalization, sanitization, coverage dimensions, oracle identity, and deterministic/live partition rules.",
+    "Implement profile and corpus generators through fforager-xtask using the accepted WP-FF-003 v2 report and policy surfaces.",
+    "Create deterministic corpus partitions and explicit live-canary manifests.",
+    "Implement fail-closed inventory, corpus, sanitizer, coverage, shard, and differential validators.",
+    "Run mutation, negative, deterministic-regeneration, offline-replay, canonical-gate, and independent adversarial checks.",
+    "Update the model manual and close only through committed acceptance evidence and verified main containment."
+  ]
+}

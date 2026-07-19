@@ -146,28 +146,37 @@ requirements:
     statement: Obtain explicit Operator approval backed by current research and measured need.
   - id: FF-WPR-041
     applies_when: product_change
-    statement: Set scope.product_impact to RUNTIME and define runtime acceptance before implementation; NONE is legal only when changed paths and declared outcomes contain no shipped product behavior or packaging impact.
+    statement: Set scope.product_impact to RUNTIME for product behavior or packaging changes, PREREQUISITE only for a design-authorized bounded Phase 0 prerequisite with an exact zero-progress declaration, and NONE only when changed paths and declared outcomes contain neither product behavior nor prerequisite artifacts.
   - id: FF-WPR-042
-    applies_when: product_change
+    applies_when: product_impact_runtime
     statement: At least one acceptance row uses proof_class production_runtime and identifies the shipped entrypoint, production build identity, representative input, actual production boundaries, expected observables, negative path, timeout, and operator-visible result.
   - id: FF-WPR-043
-    applies_when: product_change
+    applies_when: product_impact_runtime
     statement: extensions.runtime_proof uses the strict current schema consumed by FF-GATE-RUNTIME-001 and records no manually asserted PASS in place of gate-generated runtime evidence.
   - id: FF-WPR-044
-    applies_when: product_change
+    applies_when: product_impact_runtime
     statement: Runtime proof builds the locked shipping profile once, hashes and stages that exact artifact, and executes it without source-tree, .GOV, build tooling, dev-dependencies, testkit, test-only features, or cfg(test) behavior.
   - id: FF-WPR-045
-    applies_when: product_change
+    applies_when: product_impact_runtime
     statement: Mock, fake, stub, fixture-only implementation, in-memory substitute, hardcoded-success path, test-only adapter, and direct internal-function execution may support tests but cannot satisfy runtime acceptance or closure.
   - id: FF-WPR-046
-    applies_when: product_change
+    applies_when: product_impact_runtime
     statement: Missing or mismatched production artifacts, dependencies, inputs, boundaries, observables, negative paths, or runtime receipts remain BLOCKED and cannot be marked PASS or NOT_APPLICABLE.
   - id: FF-WPR-047
     applies_when: product_phase_closure
     statement: The packet closes at least one operator-usable vertical runtime slice through the shipped entrypoint, engine, production adapters, required external processes, output or persistence, diagnostics, and visible result; skeleton-only closure is forbidden.
   - id: FF-WPR-048
-    applies_when: product_change
+    applies_when: product_impact_runtime
     statement: Runtime acceptance includes a gate-executed counterfactual proving the oracle rejects a removed, corrupted, skipped, or falsely successful required observable.
   - id: FF-WPR-049
     applies_when: non_product_experiment_or_research_spike
     statement: The packet labels prototypes, scaffolding, risk spikes, and unreachable experimental code as non-product evidence; they cannot advance implemented capability, product progress, or phase status.
+  - id: FF-WPR-050
+    applies_when: completed_research_basis_exists
+    statement: Reuse a still-current completed packet research basis and proceed to the requested deliverable; reopen research only for an explicit Operator research request or a named stale or missing dependency, source, version, assumption, or evidence trigger.
+  - id: FF-WPR-051
+    applies_when: delegated_agents
+    statement: Delegated lanes match the Operator request exactly; implementation and implementation-review delegation does not authorize research or research-review delegation.
+  - id: FF-WPR-052
+    applies_when: product_impact_prerequisite
+    statement: A PREREQUISITE packet is design-authorized Phase 0 work, commits an exact non-product prerequisite declaration at activation, contains no production-runtime proof or acceptance, claims zero product/capability/runtime/packaging/release/phase progress, and names the future shipped consumer and runtime gate that must re-prove it.

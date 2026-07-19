@@ -163,6 +163,21 @@ struct RuntimeProof {
     scenarios: Vec<RuntimeScenario>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct NonProductPrerequisite {
+    schema_id: String,
+    classification: String,
+    design_authority: String,
+    product_progress: bool,
+    capability_progress: bool,
+    runtime_completion: bool,
+    packaging_or_release_progress: bool,
+    phase_progress: bool,
+    required_future_consumer: String,
+    required_future_proof: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RuntimeArtifact {
@@ -1825,9 +1840,9 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
         .pointer("/scope/product_impact")
         .and_then(Value::as_str)
         .ok_or("FF-RUNTIME-E-IMPACT-MISSING: scope.product_impact is required")?;
-    if !matches!(impact, "NONE" | "RUNTIME") {
+    if !matches!(impact, "NONE" | "PREREQUISITE" | "RUNTIME") {
         return Err(format!(
-            "FF-RUNTIME-E-IMPACT-INVALID: expected NONE or RUNTIME, observed {impact}"
+            "FF-RUNTIME-E-IMPACT-INVALID: expected NONE, PREREQUISITE, or RUNTIME, observed {impact}"
         ));
     }
     let base = packet
@@ -1854,10 +1869,9 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
         .collect::<Vec<_>>();
     if product_paths.is_empty() {
         if impact != "NONE" {
-            return Err(
-                "FF-RUNTIME-E-IMPACT-MISMATCH: packet declares RUNTIME but no shipped product path changed"
-                    .to_owned(),
-            );
+            return Err(format!(
+                "FF-RUNTIME-E-IMPACT-MISMATCH: packet declares {impact} but no shipped product path changed"
+            ));
         }
         if packet.pointer("/extensions/runtime_proof").is_some()
             || packet
@@ -1889,6 +1903,60 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
             artifacts: vec!["build/reports".to_owned()],
         });
     }
+    if impact == "PREREQUISITE" {
+        if packet.pointer("/extensions/runtime_proof").is_some()
+            || has_production_runtime_acceptance(&packet)
+        {
+            return Err(
+                "FF-RUNTIME-E-PREREQUISITE-RUNTIME-CLAIM: PREREQUISITE packet contains extensions.runtime_proof or production_runtime acceptance"
+                    .to_owned(),
+            );
+        }
+        let declaration_value = packet
+            .pointer("/extensions/non_product_prerequisite")
+            .ok_or(
+                "FF-RUNTIME-E-PREREQUISITE-MISSING: product prerequisite change has no extensions.non_product_prerequisite declaration",
+            )?;
+        if !non_product_prerequisite_predeclared(&activated_packet, declaration_value) {
+            return Err(
+                "FF-RUNTIME-E-PREREQUISITE-NOT-PREDECLARED: exact non-product prerequisite declaration must exist at the packet's first committed non-STUB checkpoint"
+                    .to_owned(),
+            );
+        }
+        let declaration: NonProductPrerequisite = serde_json::from_value(declaration_value.clone())
+            .map_err(|error| format!("FF-RUNTIME-E-PREREQUISITE-SCHEMA: {error}"))?;
+        validate_non_product_prerequisite(&declaration)?;
+        return Ok(RuntimeTruthResult {
+            checks: vec![
+                pass(
+                    "runtime-impact",
+                    &format!(
+                        "packet {id} changes product paths only as a predeclared Phase 0 non-product prerequisite: {product_paths:?}"
+                    ),
+                ),
+                pass(
+                    "runtime-prerequisite-contract",
+                    "the exact non-product prerequisite declaration was committed at the packet's first non-STUB checkpoint",
+                ),
+                pass(
+                    "runtime-prerequisite-zero-claims",
+                    "zero product completion; zero capability completion; zero phase completion; zero runtime completion; zero packaging or release progress",
+                ),
+            ],
+            proof_classes: vec!["policy".to_owned(), "scenario_contract".to_owned()],
+            limitations: vec![
+                "This PASS is supporting policy/contract proof only: it proves no product progress, capability progress, phase progress, runtime completion, packaging progress, or release progress.".to_owned(),
+                format!(
+                    "The prerequisite must be consumed by {} and re-proven by {}.",
+                    declaration.required_future_consumer, declaration.required_future_proof
+                ),
+            ],
+            artifacts: vec![
+                format!(".GOV/work_packets/{id}/packet.json"),
+                "build/reports".to_owned(),
+            ],
+        });
+    }
     if impact != "RUNTIME" {
         return Err(format!(
             "FF-RUNTIME-E-IMPACT-MISMATCH: product paths changed while scope.product_impact={impact}: {product_paths:?}"
@@ -1915,6 +1983,68 @@ fn runtime_proof_predeclared(activated_packet: &Value, current_proof: &Value) ->
         .and_then(Value::as_str)
         == Some("RUNTIME")
         && activated_packet.pointer("/extensions/runtime_proof") == Some(current_proof)
+}
+
+fn has_production_runtime_acceptance(packet: &Value) -> bool {
+    packet
+        .pointer("/acceptance_matrix")
+        .and_then(Value::as_array)
+        .is_some_and(|rows| {
+            rows.iter().any(|row| {
+                row.get("proof_class").and_then(Value::as_str) == Some("production_runtime")
+            })
+        })
+}
+
+fn non_product_prerequisite_predeclared(
+    activated_packet: &Value,
+    current_declaration: &Value,
+) -> bool {
+    activated_packet
+        .pointer("/scope/product_impact")
+        .and_then(Value::as_str)
+        == Some("PREREQUISITE")
+        && activated_packet
+            .pointer("/extensions/runtime_proof")
+            .is_none()
+        && !has_production_runtime_acceptance(activated_packet)
+        && activated_packet.pointer("/extensions/non_product_prerequisite")
+            == Some(current_declaration)
+}
+
+fn validate_non_product_prerequisite(declaration: &NonProductPrerequisite) -> Result<(), String> {
+    if declaration.schema_id != "ff.non-product-prerequisite@1" {
+        return Err(
+            "FF-RUNTIME-E-PREREQUISITE-SCHEMA: expected ff.non-product-prerequisite@1".to_owned(),
+        );
+    }
+    if declaration.classification != "phase0_supporting_evidence" {
+        return Err(
+            "FF-RUNTIME-E-PREREQUISITE-CLASSIFICATION: expected phase0_supporting_evidence"
+                .to_owned(),
+        );
+    }
+    if declaration.design_authority.trim().is_empty()
+        || declaration.required_future_consumer.trim().is_empty()
+        || declaration.required_future_proof.trim().is_empty()
+    {
+        return Err(
+            "FF-RUNTIME-E-PREREQUISITE-SCHEMA: design authority, future consumer, and future proof must be nonempty"
+                .to_owned(),
+        );
+    }
+    if declaration.product_progress
+        || declaration.capability_progress
+        || declaration.runtime_completion
+        || declaration.packaging_or_release_progress
+        || declaration.phase_progress
+    {
+        return Err(
+            "FF-RUNTIME-E-PREREQUISITE-COMPLETION-CLAIM: every product, capability, runtime, packaging/release, and phase progress field must be false"
+                .to_owned(),
+        );
+    }
+    Ok(())
 }
 
 fn changed_paths_since(root: &Path, base: &str) -> Result<BTreeSet<String>, String> {
@@ -1979,17 +2109,27 @@ fn validate_packet_activation_base(
     let history = command_output(
         root,
         "git",
-        &["log", "--diff-filter=A", "--format=%H", "--", &relative],
+        &["log", "--format=%H", "--reverse", "--", &relative],
     )?;
-    let activation = history
+    let mut activation = None;
+    for commit in history
         .lines()
         .map(str::trim)
-        .find(|line| !line.is_empty())
-        .ok_or("FF-RUNTIME-E-BASE-UNPROVEN: packet has no committed activation checkpoint")?;
-    let object = format!("{activation}:{relative}");
-    let activated_packet = command_output(root, "git", &["show", &object])?;
-    let value: Value = serde_json::from_str(&activated_packet)
-        .map_err(|error| format!("FF-RUNTIME-E-BASE-UNPROVEN: parse activation packet: {error}"))?;
+        .filter(|line| !line.is_empty())
+    {
+        let object = format!("{commit}:{relative}");
+        let committed_packet = command_output(root, "git", &["show", &object])?;
+        let value: Value = serde_json::from_str(&committed_packet).map_err(|error| {
+            format!("FF-RUNTIME-E-BASE-UNPROVEN: parse committed packet {commit}: {error}")
+        })?;
+        if committed_packet_is_activation(commit, &value)? {
+            activation = Some(value);
+            break;
+        }
+    }
+    let value = activation.ok_or(
+        "FF-RUNTIME-E-BASE-UNPROVEN: packet has no committed non-STUB activation checkpoint",
+    )?;
     let activated_base = value
         .pointer("/source_control/base_sha")
         .and_then(Value::as_str)
@@ -2000,6 +2140,16 @@ fn validate_packet_activation_base(
         ));
     }
     Ok(value)
+}
+
+fn committed_packet_is_activation(commit: &str, packet: &Value) -> Result<bool, String> {
+    let status = packet
+        .pointer("/lifecycle/status")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            format!("FF-RUNTIME-E-BASE-UNPROVEN: committed packet {commit} omits lifecycle.status")
+        })?;
+    Ok(status != "STUB")
 }
 
 fn validate_runtime_proof_contract(proof: &RuntimeProof) -> Result<(), String> {
@@ -4366,6 +4516,90 @@ mod tests {
     }
 
     #[test]
+    fn non_product_prerequisite_must_be_exactly_predeclared() {
+        let declaration = serde_json::json!({
+            "schema_id": "ff.non-product-prerequisite@1",
+            "classification": "phase0_supporting_evidence",
+            "design_authority": "technical-design#phase-0",
+            "product_progress": false,
+            "capability_progress": false,
+            "runtime_completion": false,
+            "packaging_or_release_progress": false,
+            "phase_progress": false,
+            "required_future_consumer": "the first shipped production slice",
+            "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+        });
+        let activated = serde_json::json!({
+            "scope": {"product_impact": "PREREQUISITE"},
+            "extensions": {"non_product_prerequisite": declaration.clone()},
+            "acceptance_matrix": []
+        });
+        assert!(non_product_prerequisite_predeclared(
+            &activated,
+            &declaration
+        ));
+        let mut rewritten = declaration.clone();
+        rewritten["design_authority"] = Value::String("rewritten".to_owned());
+        assert!(!non_product_prerequisite_predeclared(
+            &activated, &rewritten
+        ));
+
+        let mut runtime_proof = activated.clone();
+        runtime_proof["extensions"]["runtime_proof"] = serde_json::json!({});
+        assert!(!non_product_prerequisite_predeclared(
+            &runtime_proof,
+            &declaration
+        ));
+
+        let mut runtime_acceptance = activated;
+        runtime_acceptance["acceptance_matrix"] =
+            serde_json::json!([{"proof_class": "production_runtime"}]);
+        assert!(!non_product_prerequisite_predeclared(
+            &runtime_acceptance,
+            &declaration
+        ));
+    }
+
+    #[test]
+    fn non_product_prerequisite_rejects_completion_claims_and_schema_drift() {
+        let mut declaration = serde_json::json!({
+            "schema_id": "ff.non-product-prerequisite@1",
+            "classification": "phase0_supporting_evidence",
+            "design_authority": "technical-design#phase-0",
+            "product_progress": false,
+            "capability_progress": false,
+            "runtime_completion": false,
+            "packaging_or_release_progress": false,
+            "phase_progress": false,
+            "required_future_consumer": "the first shipped production slice",
+            "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+        });
+        let valid: NonProductPrerequisite = serde_json::from_value(declaration.clone()).unwrap();
+        validate_non_product_prerequisite(&valid).unwrap();
+
+        declaration["phase_progress"] = Value::Bool(true);
+        let claimed: NonProductPrerequisite = serde_json::from_value(declaration.clone()).unwrap();
+        assert!(
+            validate_non_product_prerequisite(&claimed)
+                .unwrap_err()
+                .contains("FF-RUNTIME-E-PREREQUISITE-COMPLETION-CLAIM")
+        );
+
+        declaration["phase_progress"] = Value::Bool(false);
+        declaration["unexpected"] = Value::Bool(false);
+        assert!(serde_json::from_value::<NonProductPrerequisite>(declaration).is_err());
+    }
+
+    #[test]
+    fn first_non_stub_packet_version_is_the_activation_checkpoint() {
+        let stub = serde_json::json!({"lifecycle": {"status": "STUB"}});
+        let in_progress = serde_json::json!({"lifecycle": {"status": "IN_PROGRESS"}});
+        assert!(!committed_packet_is_activation("stub", &stub).unwrap());
+        assert!(committed_packet_is_activation("activation", &in_progress).unwrap());
+        assert!(committed_packet_is_activation("creation", &in_progress).unwrap());
+    }
+
+    #[test]
     fn runtime_stage_paths_reject_aliases_and_unsafe_segments() {
         assert!(safe_relative("inputs/representative.bin"));
         assert!(!safe_relative("inputs/../representative.bin"));
@@ -4382,7 +4616,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_base_is_bound_to_the_activation_commit() {
+    fn creation_time_in_progress_packet_is_a_valid_activation_checkpoint() {
         let root = repo_root().unwrap();
         let packet_id = "WP-FF-012-runtime-truth-gates-v1";
         let base = "a5a6a3a78e3aefcbd463294bbbab5e4ec2f58728";

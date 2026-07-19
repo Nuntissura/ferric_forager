@@ -7,7 +7,7 @@ namespaces:
     next_numeric_id: 2
   FF-CODEX:
     entity_kind: project_rule
-    next_numeric_id: 60
+    next_numeric_id: 62
   FF-BOOT:
     entity_kind: bootstrap_rule
     next_numeric_id: 3
@@ -38,7 +38,7 @@ namespaces:
     next_numeric_id: 9
   FF-WPR:
     entity_kind: work_packet_requirement
-    next_numeric_id: 50
+    next_numeric_id: 53
   FF-START-BOUNDARY:
     entity_kind: model_entrypoint_boundary
     next_numeric_id: 7
@@ -113,6 +113,10 @@ registered_files:
     path: .GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v2/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: WP-FF-005-versioned-core-contracts-v1
     path: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json
+  - id: WP-FF-005-versioned-core-contracts-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/refinement.json
+  - id: WP-FF-005-versioned-core-contracts-v1-CEILING-001
+    path: .GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: WP-FF-006-rust-youtube-challenge-spike-v1
     path: .GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json
   - id: WP-FF-007-transport-fingerprint-spike-v1
@@ -140,8 +144,8 @@ registered_rule_ranges:
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX
     first: FF-CODEX-001
-    last: FF-CODEX-059
-    count: 59
+    last: FF-CODEX-061
+    count: 61
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001
@@ -155,8 +159,8 @@ registered_rule_ranges:
     path: .GOV/taskboard/taskboard.yaml
   - namespace: FF-WPR
     first: FF-WPR-001
-    last: FF-WPR-049
-    count: 49
+    last: FF-WPR-052
+    count: 52
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
   - namespace: FF-START-BOUNDARY
     first: FF-START-BOUNDARY-001

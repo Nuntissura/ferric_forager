@@ -49,7 +49,7 @@
   },
   "scope": {
     "summary": "{{SCOPE_SUMMARY}}",
-    "product_impact": "{{PRODUCT_IMPACT_NONE_OR_RUNTIME}}",
+    "product_impact": "{{PRODUCT_IMPACT_NONE_PREREQUISITE_OR_RUNTIME}}",
     "in_scope": [],
     "non_goals": [],
     "allowed_paths": [],

@@ -170,10 +170,12 @@ rules:
 
   - id: FF-CODEX-049
     category: runtime_truth
-    statement: Product progress, capability completion, work-packet closure, and product-phase completion MUST be measured by operator-usable behavior executed through a shipped production entrypoint; compilation, tests, mocks, fixtures, reports, documentation, contracts, prototypes, scaffolding, and governance are supporting evidence only and MUST NOT independently constitute product progress or completion.
+    statement: Product progress, capability completion, product-runtime work-packet closure, and product-phase completion MUST be measured by operator-usable behavior executed through a shipped production entrypoint; compilation, tests, mocks, fixtures, reports, documentation, contracts, prototypes, scaffolding, governance, and explicitly classified Phase 0 prerequisite packets are supporting evidence only and MUST NOT independently constitute product progress or completion.
+    revision: 2
   - id: FF-CODEX-050
     category: runtime_truth
-    statement: Before product implementation begins, every product work packet MUST define at least one black-box runtime scenario containing the production build identity, shipped entrypoint, representative input, actual production boundaries, expected outputs and side effects, failure oracle, timeout, and operator-visible result.
+    statement: Before product runtime implementation begins, every work packet with scope.product_impact RUNTIME MUST define at least one black-box runtime scenario containing the production build identity, shipped entrypoint, representative input, actual production boundaries, expected outputs and side effects, failure oracle, timeout, and operator-visible result; design-authorized PREREQUISITE packets instead carry the exact zero-progress prerequisite declaration required by FF-CODEX-054.
+    revision: 2
   - id: FF-CODEX-051
     category: runtime_truth
     statement: Product closure proof MUST build the shipping profile once, record the artifact digest, stage that exact artifact into a clean package directory, and execute it without source-tree, .GOV/, build/, dev-dependency, testkit, test-only feature, or cfg(test) assistance.
@@ -185,7 +187,8 @@ rules:
     statement: Shipped paths MUST NOT contain placeholder behavior, no-op success, dummy output, inert commands, fabricated state, or deferred implementation hidden behind a successful result; a typed unsupported result is legal only for an explicitly unsupported capability row and MUST NOT count as implemented behavior.
   - id: FF-CODEX-054
     category: runtime_truth
-    statement: Infrastructure, contracts, scaffolding, and test machinery required by product work MUST be created in the same closure unit as the first production runtime behavior that consumes them and MUST NOT form a standalone completed product phase or product-delivery claim.
+    statement: Infrastructure, contracts, scaffolding, and test machinery required by product work MUST normally be created in the same closure unit as the first production runtime behavior that consumes them; a design-authorized Phase 0 prerequisite packet may instead close only its bounded prerequisite contract when scope.product_impact is PREREQUISITE, it makes zero product, capability, runtime, packaging, release, or phase-progress claim, and its artifacts are required to be consumed and re-proven by the first production runtime slice.
+    revision: 2
   - id: FF-CODEX-055
     category: runtime_truth
     statement: Every product phase MUST finish with at least one complete vertical runtime slice through the real shipped entrypoint, engine, production adapters, required external processes, persistence or output boundary, diagnostics, and operator-visible result; skeleton-only and layer-only completed product phases are forbidden.
@@ -194,11 +197,20 @@ rules:
     statement: Unit, property, mutation, fixture, replay, integration, fuzz, and mock-based tests remain required where applicable but are insufficient for product closure unless the corresponding production artifact also passes its black-box runtime scenario.
   - id: FF-CODEX-057
     category: runtime_truth
-    statement: Product-affecting verification MUST fail BLOCKED rather than report PASS or NOT_APPLICABLE when production-artifact execution, a required production dependency, representative input, expected observable, negative path, or runtime evidence is absent.
+    statement: Verification of a work packet with scope.product_impact RUNTIME MUST fail BLOCKED rather than report PASS or NOT_APPLICABLE when production-artifact execution, a required production dependency, representative input, expected observable, negative path, or runtime evidence is absent; PREREQUISITE verification may PASS only its bounded non-product prerequisite contract and explicit zero-progress ceiling.
+    revision: 2
   - id: FF-CODEX-058
     category: runtime_truth
     statement: Runtime acceptance MUST include an executable counterfactual proving the gate fails when a required operator-visible output or side effect is removed, corrupted, skipped, or falsely reported successful.
   - id: FF-CODEX-059
     category: runtime_truth
-    statement: Code unreachable from a current accepted production entrypoint is not implemented product behavior and MUST be removed or retained only as explicitly non-product experimental work that cannot advance product, packet, or phase status.
+    statement: Code unreachable from a current accepted production entrypoint is not implemented product behavior and MUST be removed or retained only as explicitly non-product experimental work or design-authorized Phase 0 prerequisite work; prerequisite code may advance only its named prerequisite packet and MUST NOT advance product, capability, runtime, packaging, release, or phase status until consumed and re-proven through a shipped entrypoint.
+    revision: 2
+
+  - id: FF-CODEX-060
+    category: research_reuse
+    statement: When an active packet already has a completed research basis that remains current for its selected approach, reuse it and proceed to the requested deliverable; do not repeat, broaden, or adversarially review research unless the Operator explicitly requests research work or a named dependency, source, version, assumption, or evidence gap is proven stale or missing.
+  - id: FF-CODEX-061
+    category: delegated_execution
+    statement: Assign delegated agents only to the lanes the Operator requested; an instruction to use subagents for implementation and adversarial review of the implementation does not authorize research, research review, planning review, or replacement of direct implementation work.
 

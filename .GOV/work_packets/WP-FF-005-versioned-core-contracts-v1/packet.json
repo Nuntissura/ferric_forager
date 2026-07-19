@@ -8,12 +8,12 @@
     "version": "1",
     "title": "Define versioned core contracts and executable state-machine specifications",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-18T21:12:21Z"
+    "updated_at_utc": "2026-07-19T18:22:59Z"
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB.",
-    "recorded_at_utc": "2026-07-18T21:12:21Z"
+    "reference": "Operator explicitly ordered activation and implementation of WP-FF-005, reuse of existing research, implementation assistance by subagents, and multi-lens adversarial review of the implementation followed by remediation and hardening.",
+    "recorded_at_utc": "2026-07-19T18:22:59Z"
   },
   "authority": {
     "bootstrap": "START_HERE.yaml",
@@ -37,29 +37,26 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
     "work_branch": "codex/versioned-core-contracts",
-    "worktree_policy": "NONE",
-    "worktree_id": null,
+    "worktree_policy": "ISOLATED_PARALLEL_HIGH_RISK",
+    "worktree_id": "WP-FF-005-versioned-core-contracts",
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
     "closure_commit": null,
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
-    "blockers": [
-      "STUB status forbids implementation until the Operator promotes and activates this packet.",
-      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before compiled contracts or model tests are added.",
-      "Compatibility-facing fields and semantics require the WP-FF-004 inventory/corpus contract or an explicitly documented provisional boundary; do not freeze guessed parity semantics."
-    ],
-    "next_action": "After WP-003 is VALIDATED and the Operator authorizes implementation, inspect WP-004 contract outputs/status, complete the research-backed refinement, map every contract/state machine to exact invariants and proof methods, and promote to READY_FOR_DEV.",
+    "blockers": [],
+    "next_action": "Implement the versioned contract crates, pure state models, conformance fixtures, deep validation gate, and model manual from the existing completed research basis; then run independent adversarial implementation reviews and remediate every confirmed finding.",
     "supersedes": [],
     "superseded_by": null
   },
   "scope": {
     "summary": "Freeze the Phase 0B serializable product and diagnostic contracts, identity relationships, bounded resource models, and owned state-machine specifications needed before broad implementation.",
+    "product_impact": "PREREQUISITE",
     "in_scope": [
       "Versioned serializable source graph, item/representation/track/asset/derived-output identities, provenance, tri-state validity, configuration, event, error, cancellation, and public JSON contracts.",
       "Versioned process, plugin IPC, JavaScript-worker IPC, and diagnostic envelope contracts with limits, request IDs, compatibility ranges, errors, cancellation acknowledgement, and provenance.",
@@ -78,6 +75,13 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
+      ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/refinement.json",
+      ".GOV/codex.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+      ".GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json",
+      ".GOV/id-registry.yaml",
       "build/Cargo.toml",
       "build/Cargo.lock",
       "build/architecture-policy.toml",
@@ -106,56 +110,72 @@
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-001",
       "requirement": "Every required Phase 0B contract has a stable ID, schema/version policy, owner, documented limits/errors, compatibility range, serialization fixture, and machine-readable inventory entry; no runtime handles, Tokio types, sockets, processes, or runtime trait objects occur in contract crates.",
+      "proof_class": "prerequisite_contract_artifact",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-002",
       "requirement": "Identity contracts distinguish item, representation, track, asset, and derived output, preserve provenance and relationships across serialization, and reject collisions, ambiguous canonicalization, and archive-ineligible partial outputs.",
+      "proof_class": "prerequisite_contract_artifact",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-003",
       "requirement": "Each named state machine declares states, owner, preconditions, invariants, postconditions, cancellation outcomes, durable prefixes, invalid transitions, and finite-model assumptions; model/property tests cover success, failure, cancellation, restart, and counterfactual invalid transitions.",
+      "proof_class": "prerequisite_model_execution",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-004",
       "requirement": "Atomic resource-vector and byte-credit models have checked arithmetic, item/byte ceilings, admission/release invariants, no permit leaks, bounded cancellation progress, and saturation tests demonstrating bounded state under stalled consumers.",
+      "proof_class": "prerequisite_model_execution",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-005",
       "requirement": "Cross-version fixtures prove documented current/current and supported compatibility outcomes, while unknown mandatory kinds, incompatible major versions, malformed/oversized frames, partial frames, duplicate IDs, and illegal transitions fail with typed bounded errors.",
+      "proof_class": "prerequisite_conformance_execution",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-006",
       "requirement": "The canonical architecture, PR, and triggered deep gates pass; reports map every acceptance row and readiness-gate contract to concrete tests and residual uncertainty.",
+      "proof_class": "governed_gate",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-005-versioned-core-contracts-v1-AC-007",
       "requirement": "The Phase 0 model manual documents contract locations, schemas, versioning rules, inspection commands, model tests, fixture regeneration, safety limits, common failures, and recovery without requiring chat history.",
+      "proof_class": "reviewed_artifact",
       "status": "PENDING",
       "evidence": []
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "recorded_at_utc": "2026-07-19T18:22:59Z",
       "branch": "codex/versioned-core-contracts",
-      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "base_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
+      "head_sha": "199e81497c4b3ae95584064e60b71673f6b10206",
       "dirty_paths": [],
-      "checks_run": [],
-      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
-      "next_action": "Wait for WP-003 validation and explicit activation, then complete refinement and contract-to-invariant mapping."
+      "checks_run": [
+        "Read START_HERE.yaml, AGENTS.md, .GOV/codex.yaml, taskboard, WP-005 packet, topology, build rules, work-packet requirements/template, cited design anchors, and readiness matrix",
+        "Verified AGENTS.md and CLAUDE.md are byte-identical",
+        "Inspected branch, HEAD, merge-base, dirty paths, and worktrees",
+        "Verified WP-003 and WP-004 prerequisite outputs are validated and inspected their reusable build and compatibility surfaces",
+        "Reused the completed project research basis; no additional research is authorized or required for activation",
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check: PASS",
+        "cargo test --manifest-path build/Cargo.toml --locked -p fforager-xtask -- --nocapture: PASS, 52 tests",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS, build/reports/architecture-check-1784485817153018900-669612.json"
+      ],
+      "blockers": [],
+      "next_action": "Commit the activation checkpoint, then implement contracts, state models, conformance fixtures, and gates in parallel lanes."
     }
   },
   "validation": {
@@ -169,6 +189,19 @@
     ]
   },
   "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/refinement.json",
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0b--contracts-and-state-machines",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped production slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+    },
     "repository_layout": {
       "governance_root": ".GOV/",
       "product_root": "product/",

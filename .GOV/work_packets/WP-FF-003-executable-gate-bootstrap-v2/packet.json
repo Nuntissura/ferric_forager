@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Adversarially re-evaluate and remediate the Phase 0 executable-gate bootstrap",
     "created_at_utc": "2026-07-19T10:27:04Z",
-    "updated_at_utc": "2026-07-19T11:20:57Z"
+    "updated_at_utc": "2026-07-19T11:28:02Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -41,15 +41,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
+    "closure_commit": "27887cea0026a9db218b623ce8e69fc0cf191fb0",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Regression-proof active-packet input binding across packet closure, then rerun clean-source architecture-check and verify-pr before restoring MERGE_PENDING.",
+    "next_action": "Commit and remotely back up the refreshed merge-pending evidence, merge the accepted closure into main, then mechanically verify containment before VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -100,9 +100,9 @@
       "requirement": "All eight WP-FF-003 v1 acceptance requirements remain preserved and are freshly re-proven against current source, policy, reports, fixtures, manual, and canonical commands.",
       "status": "PASS",
       "evidence": [
-        "build/reports/architecture-check-1784459980344894600-641012.json",
-        "build/reports/verify-pr-1784460029076241600-646424.json",
-        "All preserved v1 source, policy, fixture, report, manual, and canonical command surfaces passed from clean commit 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01."
+        "build/reports/architecture-check-1784460384946397900-638472.json",
+        "build/reports/verify-pr-1784460426565043200-644864.json",
+        "All preserved v1 source, policy, fixture, report, manual, and canonical command surfaces passed from clean commit 27887cea0026a9db218b623ce8e69fc0cf191fb0."
       ]
     },
     {
@@ -138,29 +138,29 @@
     {
       "id": "WP-FF-003-executable-gate-bootstrap-v2-AC-005",
       "requirement": "The pinned architecture-check and verify-pr commands, formatting, warnings-denied Clippy, tests, docs, dependency policy, governance parsing, authority mirror, allowlist, registry-target, and git diff checks pass on the final branch with truthful proof limitations.",
-      "status": "PENDING",
+      "status": "PASS",
       "evidence": [
-        "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784459980344894600-641012.json",
-        "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460029076241600-646424.json",
-        "Final aggregate source was clean at 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01; 28 checks, 19 tests, 16 fixtures, cargo-deny, advisory freshness, docs, governance parsing, authority mirror, and git diff checks passed."
+        "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784460384946397900-638472.json",
+        "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460426565043200-644864.json",
+        "Final aggregate source was clean at 27887cea0026a9db218b623ce8e69fc0cf191fb0; 28 checks, 19 tests, 16 fixtures, cargo-deny, advisory freshness, docs, governance parsing, authority mirror, and git diff checks passed."
       ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-19T11:20:57Z",
+      "recorded_at_utc": "2026-07-19T11:28:02Z",
       "branch": "codex/wp-ff-003-adversarial-remediation",
       "base_sha": "f44e5747c59e2b42783a5ea323ac8368ad2b420c",
-      "head_sha": "16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
+      "head_sha": "27887cea0026a9db218b623ce8e69fc0cf191fb0",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json",
         ".GOV/id-registry.yaml",
-        "build/reports/architecture-check-1784459980344894600-641012.json",
-        "build/reports/verify-pr-1784460029076241600-646424.json"
+        "build/reports/architecture-check-1784460384946397900-638472.json",
+        "build/reports/verify-pr-1784460426565043200-644864.json"
       ],
       "checks_run": [
-        "FF-GATE-ARCH-001 PASS with clean source at 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
-        "FF-GATE-PR-001 PASS with clean source at 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01",
+        "FF-GATE-ARCH-001 PASS with clean source at 27887cea0026a9db218b623ce8e69fc0cf191fb0",
+        "FF-GATE-PR-001 PASS with clean source at 27887cea0026a9db218b623ce8e69fc0cf191fb0",
         "19 focused tests PASS; 13 composed repository mutation cases and 16 production-validator fixture rows PASS",
         "Governance JSON/YAML parse, authority mirror, and git diff --check PASS"
       ],
@@ -170,9 +170,9 @@
   },
   "validation": {
     "checks": [
-      "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784459980344894600-641012.json",
-      "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460029076241600-646424.json",
-      "Clean-source report proof: git commit 16dafd1ae76fcecb8a3f3309dd7d28f7b0d5be01, dirty=false, 28 checks, zero failures, 16 production-validator fixtures",
+      "FF-GATE-ARCH-001 PASS: build/reports/architecture-check-1784460384946397900-638472.json",
+      "FF-GATE-PR-001 PASS: build/reports/verify-pr-1784460426565043200-644864.json",
+      "Clean-source report proof: git commit 27887cea0026a9db218b623ce8e69fc0cf191fb0, dirty=false, 28 checks, zero failures, 16 production-validator fixtures",
       "cargo fmt, three locked check profiles, warnings-denied Clippy, 19 tests, rustdoc warnings denied, cargo-deny advisories/bans/licenses/sources: PASS",
       "Governance JSON/YAML parsing, authority mirror equality, active v2 packet/refinement report inputs, allowlisted changed paths, registry targets, and git diff --check: PASS"
     ],

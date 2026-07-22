@@ -67,6 +67,6 @@ work_packets:
   - wp_id: WP-FF-012-runtime-truth-gates-v1
     packet: .GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/packet.json
   - wp_id: WP-FF-013-proof-integrity-remediation-v1
-    packet: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/packet.json
+    packet: .GOV/archive/work_packets/WP-FF-013-proof-integrity-remediation/WP-FF-013-proof-integrity-remediation-v1/packet.json
   - wp_id: WP-FF-013-proof-integrity-remediation-v2
     packet: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/packet.json

@@ -289,7 +289,15 @@ struct CompatibilityReport {
     status: &'static str,
     source: CompatibilitySource,
     inputs: BTreeMap<String, String>,
+    /// Capabilities the command is designed to support. This is descriptive only.
+    declared_supported_proof_classes: Vec<&'static str>,
+    /// Proof classes from checks that actually executed for this invocation.
+    executed_proof_classes: Vec<&'static str>,
+    /// Whether this report covers the complete corpus or only one selected shard.
+    execution_scope: &'static str,
     checks: Vec<CompatibilityCheck>,
+    semantic_replays: Vec<SemanticReplay>,
+    aggregate_proof_class: &'static str,
     negative_fixtures: Vec<NegativeResult>,
     differential_rows: Vec<DifferentialRow>,
     artifacts: Vec<String>,
@@ -301,13 +309,137 @@ struct CompatibilitySource {
     git_commit: String,
     dirty: bool,
     dirty_paths: Vec<String>,
+    content_fingerprint: String,
 }
 
 #[derive(Debug, Serialize)]
 struct CompatibilityCheck {
     id: String,
     status: &'static str,
+    proof_class: &'static str,
+    concrete_input: String,
+    boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
     detail: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SemanticReplay {
+    case_id: String,
+    plane: String,
+    status: &'static str,
+    proof_class: &'static str,
+    concrete_input: String,
+    boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
+}
+
+/// Evidence recovered from an emitted compatibility replay report by a second
+/// gate. This intentionally owns its strings: it is a deserialized artifact,
+/// not the in-memory declaration used to write the report.
+#[derive(Clone, Debug)]
+pub(super) struct ReplayReportEvidence {
+    pub(super) report_path: String,
+    pub(super) status: String,
+    pub(super) execution_scope: String,
+    pub(super) source_git_commit: String,
+    pub(super) source_dirty: bool,
+    pub(super) source_dirty_paths: Vec<String>,
+    pub(super) source_content_fingerprint: String,
+    pub(super) semantic_replays: Vec<ReplayResultEvidence>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ReplayResultEvidence {
+    pub(super) case_id: String,
+    pub(super) plane: String,
+    pub(super) concrete_input: String,
+    pub(super) boundary: String,
+    pub(super) expected_result: String,
+    pub(super) observed_result: String,
+    pub(super) skipped_semantic_dependencies: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayReportArtifact {
+    schema_id: String,
+    schema_version: String,
+    command: String,
+    status: String,
+    source: ReplayReportSource,
+    inputs: BTreeMap<String, String>,
+    declared_supported_proof_classes: Vec<String>,
+    executed_proof_classes: Vec<String>,
+    execution_scope: String,
+    checks: Vec<ReplayReportCheck>,
+    semantic_replays: Vec<ReplayReportSemanticReplay>,
+    aggregate_proof_class: String,
+    negative_fixtures: Vec<ReplayReportNegativeResult>,
+    differential_rows: Vec<ReplayReportDifferentialRow>,
+    artifacts: Vec<String>,
+    proof_limitations: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayReportSource {
+    git_commit: String,
+    dirty: bool,
+    dirty_paths: Vec<String>,
+    content_fingerprint: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayReportCheck {
+    id: String,
+    status: String,
+    proof_class: String,
+    concrete_input: String,
+    boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
+    detail: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayReportSemanticReplay {
+    case_id: String,
+    plane: String,
+    status: String,
+    proof_class: String,
+    concrete_input: String,
+    boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayReportNegativeResult {
+    fixture_id: String,
+    status: String,
+    expected_diagnostic: String,
+    observed_diagnostic: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayReportDifferentialRow {
+    case_id: String,
+    status: String,
+    classification: String,
+    decision_id: Option<String>,
+    expected_digest: String,
+    observed_digest: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -412,15 +544,17 @@ pub(super) fn run_validate(root: &Path, args: &[String]) -> Result<(), String> {
     let report = base_report(
         root,
         "compatibility-validate",
-        "PASS",
+        "STRUCTURAL_ONLY",
+        "complete_corpus_structural_validation",
         BTreeMap::new(),
         checks,
+        Vec::new(),
         negative_fixtures,
         Vec::new(),
     )?;
     let path = write_compatibility_report(root, "compatibility-validate", &report)?;
     println!(
-        "PASS FF-GATE-COMPAT-001; report={}; profile_options={}; corpus_cases={}",
+        "STRUCTURAL_ONLY FF-GATE-COMPAT-001; report={}; profile_options={}; corpus_cases={}",
         slash(&path),
         profile.counts.options,
         corpus.cases.len()
@@ -449,37 +583,57 @@ pub(super) fn run_replay(root: &Path, args: &[String], rest: &[String]) -> Resul
         .iter()
         .filter(|case| shard.is_none_or(|(index, _)| case.shard == index))
         .collect::<Vec<_>>();
-    for case in &selected {
-        checks.push(pass(
-            &format!("replay-{}", case.id),
-            &format!(
-                "plane={} expected_outcome={} fixture_sha256={}",
-                case.plane, case.expected_outcome, case.fixture_sha256
-            ),
+    if selected.is_empty() {
+        let scope = shard.map_or_else(
+            || "complete corpus".to_owned(),
+            |(index, total)| format!("shard {index}/{total}"),
+        );
+        return Err(format!(
+            "FF-COMP-E-SHARD-EMPTY: {scope} selected zero corpus cases; empty selections cannot produce replay evidence"
         ));
     }
-    checks.push(pass(
+    let mut semantic_replays = Vec::new();
+    for case in &selected {
+        let fixture: Value = read_json(&root.join(&case.fixture))?;
+        semantic_replays.push(replay_case_semantics(case, &fixture)?);
+    }
+    checks.push(structural_check(
         "offline-replay",
         &format!(
-            "selected {} sanitized deterministic cases; shard={:?}; network_access=false",
+            "selected {} deterministic fixture cases for native Rust semantic replay; shard={:?}; network_access=false",
             selected.len(),
             shard
         ),
     ));
+    let execution_scope = if shard.is_some() {
+        "selected_shard_only"
+    } else {
+        "complete_corpus"
+    };
+    let status = if shard.is_some() {
+        "SEMANTIC_REPLAY_SUBSET_EXECUTED"
+    } else {
+        "SEMANTIC_REPLAY_EXECUTED"
+    };
     let report = base_report(
         root,
         "compatibility-replay",
-        "PASS",
+        status,
+        execution_scope,
         BTreeMap::new(),
         checks,
+        semantic_replays,
         Vec::new(),
         Vec::new(),
     )?;
     let path = write_compatibility_report(root, "compatibility-replay", &report)?;
     println!(
-        "PASS FF-GATE-COMPAT-REPLAY-001; report={}; cases={}",
+        "{} FF-GATE-COMPAT-REPLAY-001; report={}; cases={}; execution_scope={}; aggregate_executed_proof_class={}",
+        status,
         slash(&path),
-        selected.len()
+        selected.len(),
+        execution_scope,
+        report.aggregate_proof_class,
     );
     let _ = args;
     Ok(())
@@ -511,18 +665,20 @@ pub(super) fn run_diff(root: &Path, args: &[String], rest: &[String]) -> Result<
     let report = base_report(
         root,
         "compatibility-diff",
-        "PASS",
+        "STRUCTURAL_ONLY",
+        "complete_corpus_structural_comparison",
         BTreeMap::from([(
             format!("candidate:{candidate_path}"),
             sha256_file(&candidate_file)?,
         )]),
         canonical_checks,
         Vec::new(),
+        Vec::new(),
         rows,
     )?;
     let path = write_compatibility_report(root, "compatibility-diff", &report)?;
     println!(
-        "PASS FF-GATE-COMPAT-DIFF-001; report={}; this proves report completeness, not Ferric parity",
+        "STRUCTURAL_ONLY FF-GATE-COMPAT-DIFF-001; report={}; this proves report completeness, not Ferric parity",
         slash(&path)
     );
     let _ = args;
@@ -556,13 +712,14 @@ pub(super) fn run_inventory_diff(
             git_commit: state.git_commit,
             dirty: state.dirty,
             dirty_paths: state.dirty_paths,
+            content_fingerprint: state.content_fingerprint,
         },
         inputs,
     )?;
     let path = unique_report_path(root, "compatibility-inventory-diff")?;
     atomic_json(&path, &report)?;
     println!(
-        "PASS FF-GATE-COMPAT-DIFF-002; report={}",
+        "STRUCTURAL_ONLY FF-GATE-COMPAT-DIFF-002; report={}",
         slash(path.strip_prefix(root).map_err(|error| error.to_string())?)
     );
     let _ = args;
@@ -629,6 +786,15 @@ pub(super) fn run_live_canaries(
         checks.push(CompatibilityCheck {
             id: canary.id.clone(),
             status: "OBSERVED",
+            proof_class: "integration_observation",
+            concrete_input: canary.url.clone(),
+            boundary: "explicit opt-in pinned external oracle canary".to_owned(),
+            expected_result: canary.expected_classification.clone(),
+            observed_result: detail.clone(),
+            skipped_semantic_dependencies: vec![
+                "Live canaries are nondeterministic observations and do not prove native Ferric behavior."
+                    .to_owned(),
+            ],
             detail,
         });
     }
@@ -636,11 +802,13 @@ pub(super) fn run_live_canaries(
         root,
         "compatibility-live-canaries",
         "OBSERVED",
+        "selected_live_canaries_only",
         BTreeMap::from([(
             "live-oracle-executable:yt-dlp-windows-x64".to_owned(),
             ORACLE_EXE_SHA256.to_owned(),
         )]),
         checks,
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     )?;
@@ -1332,6 +1500,325 @@ fn validate_case_fixture(case: &CorpusCase, fixture: &Value) -> Result<(), Strin
     Ok(())
 }
 
+fn replay_case_semantics(case: &CorpusCase, fixture: &Value) -> Result<SemanticReplay, String> {
+    let observed_result = match case.plane.as_str() {
+        "archive" => replay_archive_case(fixture)?,
+        "failure" => replay_failure_case(fixture)?,
+        "filesystem_process_artifact" => replay_artifact_case(fixture)?,
+        "migration" => replay_migration_case(fixture)?,
+        "normalized_observation" => replay_normalized_observation_case(fixture)?,
+        "sanitized_network_transcript" => replay_sanitized_transcript_case(fixture)?,
+        "source_graph" => replay_source_graph_case(fixture)?,
+        other => return Err(format!("FF-COMP-E-COVERAGE: unknown replay plane {other}")),
+    };
+    if observed_result != case.expected_outcome {
+        return Err(format!(
+            "FF-COMP-E-SEMANTIC-OUTCOME: {} expected {:?}, native Rust replay observed {:?}",
+            case.id, case.expected_outcome, observed_result
+        ));
+    }
+    Ok(SemanticReplay {
+        case_id: case.id.clone(),
+        plane: case.plane.clone(),
+        status: "SEMANTIC_PASS",
+        proof_class: "semantic",
+        concrete_input: case.fixture.clone(),
+        boundary: "native Rust compatibility fixture interpreter".to_owned(),
+        expected_result: case.expected_outcome.clone(),
+        observed_result,
+        skipped_semantic_dependencies: vec![
+            "Ferric has no shipped entrypoint in this prerequisite packet; this native interpreter proves fixture semantics, not Ferric runtime parity."
+                .to_owned(),
+            "yt-dlp and Python are not invoked by compatibility-replay.".to_owned(),
+        ],
+    })
+}
+
+fn replay_archive_case(fixture: &Value) -> Result<String, String> {
+    let archive_before = fixture
+        .get("archive_before")
+        .and_then(Value::as_array)
+        .ok_or("FF-COMP-E-SEMANTIC-ARCHIVE: archive_before is absent")?
+        .iter()
+        .map(|entry| entry.as_str().map(ToOwned::to_owned))
+        .collect::<Option<BTreeSet<_>>>()
+        .ok_or("FF-COMP-E-SEMANTIC-ARCHIVE: archive_before has non-string entry")?;
+    let request = fixture
+        .get("request")
+        .and_then(Value::as_object)
+        .ok_or("FF-COMP-E-SEMANTIC-ARCHIVE: request is absent")?;
+    let extractor = request
+        .get("extractor_key")
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-ARCHIVE: extractor_key is absent")?;
+    let media_id = request
+        .get("media_id")
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-ARCHIVE: media_id is absent")?;
+    let key = format!("{extractor} {media_id}");
+    let observed = if archive_before.contains(&key) {
+        serde_json::json!({
+            "decision": "skip-already-recorded",
+            "archive_after": archive_before.iter().cloned().collect::<Vec<_>>(),
+            "output_created": false,
+        })
+    } else {
+        serde_json::json!({
+            "decision": "record-and-create-output",
+            "archive_after": archive_before.iter().chain(std::iter::once(&key)).cloned().collect::<Vec<_>>(),
+            "output_created": true,
+        })
+    };
+    if fixture.get("expected") != Some(&observed) {
+        return Err("FF-COMP-E-SEMANTIC-ARCHIVE: deduplication decision differs from expected archive state".to_owned());
+    }
+    if !archive_before.contains(&key) {
+        return Err("FF-COMP-E-SEMANTIC-ARCHIVE: corpus duplicate case did not exercise the duplicate branch".to_owned());
+    }
+    Ok("duplicate-history-classification".to_owned())
+}
+
+fn replay_failure_case(fixture: &Value) -> Result<String, String> {
+    let input = fixture
+        .get("input")
+        .and_then(Value::as_object)
+        .ok_or("FF-COMP-E-SEMANTIC-FAILURE: input is absent")?;
+    if input.get("operation").and_then(Value::as_str) != Some("network-request")
+        || input.get("deadline_ms").and_then(Value::as_u64) != Some(1_000)
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-FAILURE: timeout input is not the pinned network request boundary"
+                .to_owned(),
+        );
+    }
+    let observed = serde_json::json!({
+        "category": "timeout",
+        "retryable": true,
+        "completion": "incomplete-evidence",
+        "success": false,
+    });
+    if fixture.get("expected_error") != Some(&observed) {
+        return Err("FF-COMP-E-SEMANTIC-FAILURE: timeout classification differs from expected evidence semantics".to_owned());
+    }
+    Ok("timeout-failure-envelope".to_owned())
+}
+
+fn replay_artifact_case(fixture: &Value) -> Result<String, String> {
+    let plan = fixture
+        .get("process_plan")
+        .and_then(Value::as_array)
+        .ok_or("FF-COMP-E-SEMANTIC-ARTIFACT: process_plan is absent")?;
+    let observed_programs = plan
+        .iter()
+        .map(|step| step.get("program").and_then(Value::as_str))
+        .collect::<Option<Vec<_>>>()
+        .ok_or("FF-COMP-E-SEMANTIC-ARTIFACT: process plan program is absent")?;
+    if observed_programs != ["ffmpeg", "ffprobe"]
+        || plan.iter().any(|step| {
+            step.get("timeout_policy").and_then(Value::as_str) != Some("bounded")
+                || step
+                    .get("argument_classes")
+                    .and_then(Value::as_array)
+                    .is_none_or(Vec::is_empty)
+        })
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-ARTIFACT: native process plan is not bounded ffmpeg then ffprobe"
+                .to_owned(),
+        );
+    }
+    let artifacts = fixture
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .ok_or("FF-COMP-E-SEMANTIC-ARTIFACT: artifacts are absent")?;
+    if artifacts.len() != 2
+        || artifacts.iter().any(|artifact| {
+            let path = artifact
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            !safe_relative(path)
+                || !path.starts_with("output/")
+                || !matches!(
+                    artifact.get("state").and_then(Value::as_str),
+                    Some("durable-final" | "durable-sidecar")
+                )
+        })
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-ARTIFACT: durable output artifact boundary is invalid".to_owned(),
+        );
+    }
+    Ok("normalized-process-artifact".to_owned())
+}
+
+fn replay_migration_case(fixture: &Value) -> Result<String, String> {
+    let source = fixture
+        .get("source")
+        .and_then(Value::as_object)
+        .ok_or("FF-COMP-E-SEMANTIC-MIGRATION: source is absent")?;
+    let configuration = source
+        .get("configuration")
+        .and_then(Value::as_object)
+        .ok_or("FF-COMP-E-SEMANTIC-MIGRATION: source configuration is absent")?;
+    let format = configuration
+        .get("format")
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-MIGRATION: source format is absent")?;
+    let output = configuration
+        .get("output")
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-MIGRATION: source output is absent")?;
+    let observed = serde_json::json!({
+        "schema_version": "1",
+        "configuration": {
+            "format_selector": format,
+            "output_template": output,
+        },
+        "warnings": [],
+    });
+    if source.get("schema_version").and_then(Value::as_str) != Some("0")
+        || fixture.get("expected") != Some(&observed)
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-MIGRATION: explicit v0-to-v1 mapping differs from expected result"
+                .to_owned(),
+        );
+    }
+    Ok("explicit-migration-mapping".to_owned())
+}
+
+fn replay_normalized_observation_case(fixture: &Value) -> Result<String, String> {
+    let observation = fixture
+        .get("observation")
+        .and_then(Value::as_object)
+        .ok_or("FF-COMP-E-SEMANTIC-NORMALIZATION: observation is absent")?;
+    let extractor = observation
+        .get("extractor_key")
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-NORMALIZATION: extractor_key is absent")?;
+    let formats = observation
+        .get("formats")
+        .and_then(Value::as_array)
+        .ok_or("FF-COMP-E-SEMANTIC-NORMALIZATION: formats are absent")?;
+    let normalized_formats = formats
+        .iter()
+        .map(|format| format.as_str().map(ToOwned::to_owned))
+        .collect::<Option<BTreeSet<_>>>()
+        .ok_or("FF-COMP-E-SEMANTIC-NORMALIZATION: format is non-string")?;
+    if !extractor.eq_ignore_ascii_case("generic")
+        || normalized_formats != BTreeSet::from(["audio-128".to_owned(), "video-720".to_owned()])
+        || observation.get("selected_format").and_then(Value::as_str) != Some("video-720+audio-128")
+        || observation.get("output_filename").and_then(Value::as_str)
+            != Some("Fixture_Alpha_[alpha].mkv")
+        || observation.get("timestamp").and_then(Value::as_str) != Some("{{TIMESTAMP}}")
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-NORMALIZATION: canonical observation invariants failed".to_owned(),
+        );
+    }
+    Ok("stable-normalized-observation".to_owned())
+}
+
+fn replay_sanitized_transcript_case(fixture: &Value) -> Result<String, String> {
+    validate_sanitized_value(fixture)?;
+    let exchanges = fixture
+        .get("exchanges")
+        .and_then(Value::as_array)
+        .ok_or("FF-COMP-E-SEMANTIC-TRANSCRIPT: exchanges are absent")?;
+    let response_digest = exchanges
+        .first()
+        .and_then(|exchange| exchange.pointer("/response/body_sha256"))
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-TRANSCRIPT: response body digest is absent")?;
+    if exchanges.len() != 1
+        || !valid_sha256(response_digest)
+        || fixture.get("clock").and_then(Value::as_str) != Some("{{TIMESTAMP}}")
+        || fixture.get("random_seed").and_then(Value::as_str) != Some("{{RANDOM_SEED}}")
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-TRANSCRIPT: transcript is not a bounded sanitized replay input"
+                .to_owned(),
+        );
+    }
+    Ok("sanitized-offline-replay".to_owned())
+}
+
+fn replay_source_graph_case(fixture: &Value) -> Result<String, String> {
+    let observation = fixture
+        .get("observation")
+        .and_then(Value::as_object)
+        .ok_or("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: observation is absent")?;
+    let root_id = observation
+        .get("root_id")
+        .and_then(Value::as_str)
+        .ok_or("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: root_id is absent")?;
+    let nodes = observation
+        .get("nodes")
+        .and_then(Value::as_array)
+        .ok_or("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: nodes are absent")?;
+    let mut children = BTreeMap::new();
+    for node in nodes {
+        let id = node
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: node id is absent")?;
+        let node_children = node
+            .get("children")
+            .and_then(Value::as_array)
+            .ok_or("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: node children are absent")?
+            .iter()
+            .map(|child| child.as_str().map(ToOwned::to_owned))
+            .collect::<Option<Vec<_>>>()
+            .ok_or("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: child id is non-string")?;
+        if children.insert(id.to_owned(), node_children).is_some() {
+            return Err("FF-COMP-E-SEMANTIC-SOURCE-GRAPH: duplicate node id".to_owned());
+        }
+    }
+    if !children.contains_key(root_id)
+        || children.len() != 3
+        || children
+            .values()
+            .flatten()
+            .any(|child| !children.contains_key(child))
+        || source_graph_has_cycle(&children)
+    {
+        return Err(
+            "FF-COMP-E-SEMANTIC-SOURCE-GRAPH: graph expansion is dangling, cyclic, or incomplete"
+                .to_owned(),
+        );
+    }
+    Ok("direct-source-graph-expansion".to_owned())
+}
+
+fn source_graph_has_cycle(graph: &BTreeMap<String, Vec<String>>) -> bool {
+    let mut indegree = graph
+        .keys()
+        .map(|node| (node.clone(), 0_usize))
+        .collect::<BTreeMap<_, _>>();
+    for children in graph.values() {
+        for child in children {
+            *indegree.entry(child.clone()).or_default() += 1;
+        }
+    }
+    let mut ready = indegree
+        .iter()
+        .filter_map(|(node, degree)| (*degree == 0).then_some(node.clone()))
+        .collect::<Vec<_>>();
+    let mut visited = 0_usize;
+    while let Some(node) = ready.pop() {
+        visited += 1;
+        for child in graph.get(&node).into_iter().flatten() {
+            let degree = indegree.get_mut(child).expect("graph child has indegree");
+            *degree = degree.saturating_sub(1);
+            if *degree == 0 {
+                ready.push(child.clone());
+            }
+        }
+    }
+    visited != graph.len()
+}
+
 fn validate_live_manifest(
     live: &LiveManifest,
     profile: &CompatibilityProfile,
@@ -1432,7 +1919,7 @@ fn validate_negative_fixtures(
         }
         results.push(NegativeResult {
             fixture_id: case.fixture_id,
-            status: "PASS",
+            status: "REJECTED_AS_EXPECTED",
             expected_diagnostic: case.expected_diagnostic.clone(),
             observed_diagnostic: observed,
         });
@@ -1990,7 +2477,7 @@ fn inventory_diff(
     Ok(InventoryDiffReport {
         schema_id: "ff.compatibility-inventory-diff@2",
         schema_version: "2.0.0",
-        status: "PASS",
+        status: "STRUCTURAL_ONLY",
         source,
         inputs,
         before_profile_id: before.profile_id.clone(),
@@ -2059,12 +2546,15 @@ fn set_difference<'a>(
     left.difference(&right).cloned().collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn base_report(
     root: &Path,
     command: &str,
     status: &'static str,
+    execution_scope: &'static str,
     extra_inputs: BTreeMap<String, String>,
     checks: Vec<CompatibilityCheck>,
+    semantic_replays: Vec<SemanticReplay>,
     negative_fixtures: Vec<NegativeResult>,
     differential_rows: Vec<DifferentialRow>,
 ) -> Result<CompatibilityReport, String> {
@@ -2078,7 +2568,10 @@ fn base_report(
             return Err(format!("duplicate report input key {key}"));
         }
     }
-    Ok(CompatibilityReport {
+    let executed_proof_classes = executed_proof_classes(&checks, &semantic_replays);
+    let aggregate_proof_class = aggregate_proof_class(&executed_proof_classes);
+    let declared_supported_proof_classes = declared_supported_proof_classes(command);
+    let report = CompatibilityReport {
         schema_id: "ff.compatibility-report@1",
         schema_version: "1.0.0",
         command: command.to_owned(),
@@ -2087,9 +2580,15 @@ fn base_report(
             git_commit: source.git_commit,
             dirty: source.dirty,
             dirty_paths: source.dirty_paths,
+            content_fingerprint: source.content_fingerprint,
         },
         inputs,
+        declared_supported_proof_classes,
+        executed_proof_classes,
+        execution_scope,
         checks,
+        semantic_replays,
+        aggregate_proof_class,
         negative_fixtures,
         differential_rows,
         artifacts: vec![
@@ -2102,15 +2601,538 @@ fn base_report(
             "Live canaries are opt-in nondeterministic observations and never satisfy offline deterministic acceptance.".to_owned(),
             "The generated profile inventories pinned oracle surfaces; later compatibility rows remain missing features until implemented and compared.".to_owned(),
         ],
+    };
+    validate_report_evidence(&report)?;
+    Ok(report)
+}
+
+pub(super) fn validate_replay_report_evidence_for_architecture(
+    status: &str,
+    execution_scope: &str,
+    executed_proof_classes: &[&str],
+    semantic_replay_count: usize,
+) -> Result<(), &'static str> {
+    let semantic_status = matches!(
+        status,
+        "SEMANTIC_REPLAY_EXECUTED" | "SEMANTIC_REPLAY_SUBSET_EXECUTED"
+    );
+    if semantic_status
+        && (semantic_replay_count == 0 || !executed_proof_classes.contains(&"semantic"))
+    {
+        return Err("FF-ARCH-E-STRUCTURAL-BEHAVIORAL-PASS");
+    }
+    if status == "SEMANTIC_REPLAY_EXECUTED" && execution_scope != "complete_corpus" {
+        return Err("FF-ARCH-E-PROOF-CLASS-PROMOTION");
+    }
+    if status == "SEMANTIC_REPLAY_SUBSET_EXECUTED" && execution_scope != "selected_shard_only" {
+        return Err("FF-ARCH-E-PROOF-CLASS-PROMOTION");
+    }
+    Ok(())
+}
+
+/// Read the exact report emitted by a replay child process and validate it as
+/// an artifact. Callers must not treat the child's exit status as semantic
+/// evidence without this independent report-boundary check.
+pub(super) fn read_replay_report_evidence(
+    root: &Path,
+    report_path: &Path,
+) -> Result<ReplayReportEvidence, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("FF-COMP-E-REPLAY-REPORT-PATH: canonicalize root: {error}"))?;
+    let canonical_report_path = report_path.canonicalize().map_err(|error| {
+        format!("FF-COMP-E-REPLAY-REPORT-PATH: canonicalize replay report: {error}")
+    })?;
+    let relative_report_path = canonical_report_path
+        .strip_prefix(&canonical_root)
+        .map_err(|error| format!("FF-COMP-E-REPLAY-REPORT-PATH: {error}"))?;
+    let report: ReplayReportArtifact = read_json(report_path)?;
+    validate_replay_report_artifact(&report)?;
+    validate_replay_report_input_provenance(root, &report)?;
+    validate_replay_report_source_provenance(root, &report)?;
+
+    let corpus: CorpusManifest = read_json(&root.join(CORPUS_PATH))?;
+    validate_corpus_without_files(&corpus)?;
+    let expected_ids = corpus
+        .cases
+        .iter()
+        .map(|case| case.id.clone())
+        .collect::<BTreeSet<_>>();
+    let observed_ids = report
+        .semantic_replays
+        .iter()
+        .map(|replay| replay.case_id.clone())
+        .collect::<BTreeSet<_>>();
+    if report.execution_scope == "complete_corpus" && observed_ids != expected_ids {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-COVERAGE: complete replay report does not contain exactly the canonical corpus cases"
+                .to_owned(),
+        );
+    }
+    if report.execution_scope == "selected_shard_only"
+        && (observed_ids.is_empty() || !observed_ids.is_subset(&expected_ids))
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-COVERAGE: selected shard report has an empty or unknown case set"
+                .to_owned(),
+        );
+    }
+    validate_replay_report_semantic_rows(root, &corpus, &report)?;
+
+    Ok(ReplayReportEvidence {
+        report_path: slash(relative_report_path),
+        status: report.status,
+        execution_scope: report.execution_scope,
+        source_git_commit: report.source.git_commit,
+        source_dirty: report.source.dirty,
+        source_dirty_paths: report.source.dirty_paths,
+        source_content_fingerprint: report.source.content_fingerprint,
+        semantic_replays: report
+            .semantic_replays
+            .into_iter()
+            .map(|replay| ReplayResultEvidence {
+                case_id: replay.case_id,
+                plane: replay.plane,
+                concrete_input: replay.concrete_input,
+                boundary: replay.boundary,
+                expected_result: replay.expected_result,
+                observed_result: replay.observed_result,
+                skipped_semantic_dependencies: replay.skipped_semantic_dependencies,
+            })
+            .collect(),
     })
 }
 
-fn pass(id: &str, detail: &str) -> CompatibilityCheck {
+/// The child report is evidence only when it was emitted for the source state
+/// that the parent can still observe.  A syntactically valid report from an
+/// earlier checkout or dirty-tree state is not reusable semantic proof.
+fn validate_replay_report_source_provenance(
+    root: &Path,
+    report: &ReplayReportArtifact,
+) -> Result<(), String> {
+    let current = super::source_state(root)?;
+    if report.source.git_commit != current.git_commit
+        || report.source.dirty != current.dirty
+        || report.source.dirty_paths != current.dirty_paths
+        || report.source.content_fingerprint != current.content_fingerprint
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-SOURCE-STALE: replay report source provenance does not equal the current repository state"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+/// Re-execute the deterministic native semantics from the canonical corpus
+/// and compare every row.  This prevents a child process from self-attesting
+/// a semantic status with label-only or stale row values.
+fn validate_replay_report_semantic_rows(
+    root: &Path,
+    corpus: &CorpusManifest,
+    report: &ReplayReportArtifact,
+) -> Result<(), String> {
+    let cases_by_id = corpus
+        .cases
+        .iter()
+        .map(|case| (case.id.as_str(), case))
+        .collect::<BTreeMap<_, _>>();
+    for observed in &report.semantic_replays {
+        let case = cases_by_id.get(observed.case_id.as_str()).ok_or_else(|| {
+            format!(
+                "FF-COMP-E-REPLAY-REPORT-SEMANTIC: replay row {} has no canonical corpus case",
+                observed.case_id
+            )
+        })?;
+        let fixture: Value = read_json(&root.join(&case.fixture))?;
+        let expected = replay_case_semantics(case, &fixture)?;
+        if observed.case_id != expected.case_id
+            || observed.plane != expected.plane
+            || observed.status != expected.status
+            || observed.proof_class != expected.proof_class
+            || observed.concrete_input != expected.concrete_input
+            || observed.boundary != expected.boundary
+            || observed.expected_result != expected.expected_result
+            || observed.observed_result != expected.observed_result
+            || observed.skipped_semantic_dependencies != expected.skipped_semantic_dependencies
+        {
+            return Err(format!(
+                "FF-COMP-E-REPLAY-REPORT-SEMANTIC: replay row {} does not match independently recomputed canonical semantics",
+                observed.case_id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_replay_report_input_provenance(
+    root: &Path,
+    report: &ReplayReportArtifact,
+) -> Result<(), String> {
+    let required = [ORACLE_PATH, PROFILE_PATH, CORPUS_PATH, LIVE_PATH];
+    if report.inputs.len() != required.len()
+        || report
+            .inputs
+            .keys()
+            .any(|path| !required.contains(&path.as_str()))
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-INPUT: replay report input set is not the exact replay provenance set"
+                .to_owned(),
+        );
+    }
+    for path in required {
+        let recorded = report.inputs.get(path).ok_or_else(|| {
+            format!(
+                "FF-COMP-E-REPLAY-REPORT-INPUT: replay report omits required input digest {path}"
+            )
+        })?;
+        let actual = sha256_file(&root.join(path))?;
+        if recorded != &actual {
+            return Err(format!(
+                "FF-COMP-E-REPLAY-REPORT-DIGEST: replay report digest for {path} does not match the current replay input"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// This creates a complete serialized replay-report artifact with semantic
+/// status but no semantic executions. It is deliberately routed through the
+/// same artifact validator used after report writing and by composed gates.
+pub(super) fn structural_replay_report_mutation_diagnostic() -> Result<(), String> {
+    let malformed = serde_json::json!({
+        "schema_id": "ff.compatibility-report@1",
+        "schema_version": "1.0.0",
+        "command": "compatibility-replay",
+        "status": "SEMANTIC_REPLAY_EXECUTED",
+        "source": {"git_commit": "fixture", "dirty": false, "dirty_paths": [], "content_fingerprint": "0".repeat(64)},
+        "inputs": {
+            ORACLE_PATH: "0".repeat(64),
+            PROFILE_PATH: "1".repeat(64),
+            CORPUS_PATH: "2".repeat(64),
+            LIVE_PATH: "3".repeat(64),
+        },
+        "declared_supported_proof_classes": ["semantic", "structural"],
+        "executed_proof_classes": ["structural"],
+        "execution_scope": "complete_corpus",
+        "checks": [{
+            "id": "offline-replay",
+            "status": "STRUCTURAL_ONLY",
+            "proof_class": "structural",
+            "concrete_input": "corpus",
+            "boundary": "fixture validator",
+            "expected_result": "structural validation succeeds",
+            "observed_result": "fixture loaded",
+            "skipped_semantic_dependencies": ["semantic interpreter not executed"],
+            "detail": "fixture loaded"
+        }],
+        "semantic_replays": [],
+        "aggregate_proof_class": "structural",
+        "negative_fixtures": [],
+        "differential_rows": [],
+        "artifacts": ["build/reports"],
+        "proof_limitations": ["fixture mutation"]
+    });
+    let bytes = serde_json::to_vec(&malformed)
+        .map_err(|error| format!("FF-COMP-E-REPLAY-REPORT-SERIALIZE: {error}"))?;
+    let report: ReplayReportArtifact = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("FF-COMP-E-REPLAY-REPORT-PARSE: {error}"))?;
+    validate_replay_report_artifact(&report)
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_replay_report_artifact(report: &ReplayReportArtifact) -> Result<(), String> {
+    if report.schema_id != "ff.compatibility-report@1"
+        || report.schema_version != "1.0.0"
+        || report.command != "compatibility-replay"
+    {
+        return Err("FF-COMP-E-REPLAY-REPORT-IDENTITY: invalid replay report identity".to_owned());
+    }
+    if !matches!(
+        report.status.as_str(),
+        "SEMANTIC_REPLAY_EXECUTED" | "SEMANTIC_REPLAY_SUBSET_EXECUTED"
+    ) {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-STATUS: replay report is not semantic execution evidence"
+                .to_owned(),
+        );
+    }
+    if report.source.git_commit.trim().is_empty()
+        || report
+            .source
+            .dirty_paths
+            .iter()
+            .any(|path| path.trim().is_empty())
+        || report.source.dirty == report.source.dirty_paths.is_empty()
+        || !valid_sha256(&report.source.content_fingerprint)
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-SOURCE: replay report has malformed source provenance"
+                .to_owned(),
+        );
+    }
+    for path in [ORACLE_PATH, PROFILE_PATH, CORPUS_PATH, LIVE_PATH] {
+        if report
+            .inputs
+            .get(path)
+            .is_none_or(|digest| !valid_sha256(digest))
+        {
+            return Err(format!(
+                "FF-COMP-E-REPLAY-REPORT-INPUT: replay report omits or corrupts required input digest {path}"
+            ));
+        }
+    }
+    validate_report_string_set(
+        &report.declared_supported_proof_classes,
+        "FF-COMP-E-REPLAY-REPORT-DECLARED",
+    )?;
+    validate_report_string_set(
+        &report.executed_proof_classes,
+        "FF-COMP-E-REPLAY-REPORT-EXECUTED",
+    )?;
+    if !report
+        .declared_supported_proof_classes
+        .iter()
+        .any(|class| class == "semantic")
+    {
+        return Err(
+            "FF-COMP-E-PROOF-DECLARATION: semantic replay omitted declared semantic support"
+                .to_owned(),
+        );
+    }
+
+    let malformed_check = report.checks.iter().any(|check| {
+        check.id.trim().is_empty()
+            || check.status.trim().is_empty()
+            || check.proof_class.trim().is_empty()
+            || check.concrete_input.trim().is_empty()
+            || check.boundary.trim().is_empty()
+            || check.expected_result.trim().is_empty()
+            || check.observed_result.trim().is_empty()
+            || check
+                .skipped_semantic_dependencies
+                .iter()
+                .any(|dependency| dependency.trim().is_empty())
+            || check.detail.trim().is_empty()
+    });
+    if malformed_check {
+        return Err(
+            "FF-COMP-E-PROOF-RESULT-SHAPE: replay report check omits executed evidence".to_owned(),
+        );
+    }
+    let mut semantic_ids = BTreeSet::new();
+    for replay in &report.semantic_replays {
+        if replay.case_id.trim().is_empty()
+            || replay.plane.trim().is_empty()
+            || replay.status != "SEMANTIC_PASS"
+            || replay.proof_class != "semantic"
+            || replay.concrete_input.trim().is_empty()
+            || replay.boundary.trim().is_empty()
+            || replay.expected_result.trim().is_empty()
+            || replay.observed_result.trim().is_empty()
+            || !semantic_ids.insert(replay.case_id.as_str())
+        {
+            return Err(
+                "FF-COMP-E-PROOF-RESULT-SHAPE: replay report has malformed, nonsemantic, or duplicate semantic evidence"
+                    .to_owned(),
+            );
+        }
+    }
+    if report.semantic_replays.is_empty() {
+        return Err(
+            "FF-COMP-E-SEMANTIC-EMPTY: semantic replay report contains no executed cases"
+                .to_owned(),
+        );
+    }
+    for result in &report.negative_fixtures {
+        if result.fixture_id.trim().is_empty()
+            || result.status.trim().is_empty()
+            || result.expected_diagnostic.trim().is_empty()
+            || result.observed_diagnostic.trim().is_empty()
+        {
+            return Err(
+                "FF-COMP-E-REPLAY-REPORT-SHAPE: malformed negative fixture evidence".to_owned(),
+            );
+        }
+    }
+    for row in &report.differential_rows {
+        if row.case_id.trim().is_empty()
+            || row.status.trim().is_empty()
+            || row.classification.trim().is_empty()
+            || row.expected_digest.trim().is_empty()
+            || row.decision_id.as_deref().is_some_and(str::is_empty)
+            || row.observed_digest.as_deref().is_some_and(str::is_empty)
+        {
+            return Err(
+                "FF-COMP-E-REPLAY-REPORT-SHAPE: malformed differential evidence".to_owned(),
+            );
+        }
+    }
+    if report.artifacts.iter().any(|path| path.trim().is_empty())
+        || report
+            .proof_limitations
+            .iter()
+            .any(|limitation| limitation.trim().is_empty())
+    {
+        return Err("FF-COMP-E-REPLAY-REPORT-SHAPE: empty artifact or proof limitation".to_owned());
+    }
+
+    let mut actual_classes = report
+        .checks
+        .iter()
+        .map(|check| check.proof_class.as_str())
+        .chain(
+            report
+                .semantic_replays
+                .iter()
+                .map(|replay| replay.proof_class.as_str()),
+        )
+        .collect::<Vec<_>>();
+    actual_classes.sort_unstable();
+    actual_classes.dedup();
+    let recorded_classes = report
+        .executed_proof_classes
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    if actual_classes != recorded_classes {
+        return Err("FF-COMP-E-PROOF-CLASS-PROMOTION: replay report classes do not derive from result evidence".to_owned());
+    }
+    if report.aggregate_proof_class != aggregate_proof_class(&actual_classes) {
+        return Err("FF-COMP-E-PROOF-CLASS-PROMOTION: replay report aggregate does not derive from result evidence".to_owned());
+    }
+    validate_replay_report_evidence_for_architecture(
+        &report.status,
+        &report.execution_scope,
+        &actual_classes,
+        report.semantic_replays.len(),
+    )
+    .map_err(ToOwned::to_owned)?;
+    Ok(())
+}
+
+fn validate_report_string_set(values: &[String], diagnostic: &str) -> Result<(), String> {
+    let observed = values.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    if values.is_empty()
+        || values.iter().any(|value| value.trim().is_empty())
+        || observed.len() != values.len()
+        || values.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return Err(format!(
+            "{diagnostic}: report proof classes must be nonempty, unique, and sorted"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_report_evidence(report: &CompatibilityReport) -> Result<(), String> {
+    let declared = report.declared_supported_proof_classes.clone();
+    let executed_refs = report.executed_proof_classes.clone();
+    let expected_aggregate = aggregate_proof_class(&executed_refs);
+    if report.aggregate_proof_class != expected_aggregate {
+        return Err(
+            "FF-COMP-E-PROOF-CLASS-PROMOTION: aggregate must derive from executed evidence"
+                .to_owned(),
+        );
+    }
+    if report.checks.iter().any(|check| {
+        check.proof_class.trim().is_empty()
+            || check.concrete_input.trim().is_empty()
+            || check.boundary.trim().is_empty()
+            || check.expected_result.trim().is_empty()
+            || check.observed_result.trim().is_empty()
+    }) || report.semantic_replays.iter().any(|replay| {
+        replay.proof_class.trim().is_empty()
+            || replay.concrete_input.trim().is_empty()
+            || replay.boundary.trim().is_empty()
+            || replay.expected_result.trim().is_empty()
+            || replay.observed_result.trim().is_empty()
+    }) {
+        return Err(
+            "FF-COMP-E-PROOF-RESULT-SHAPE: executed result omits required evidence fields"
+                .to_owned(),
+        );
+    }
+    validate_replay_report_evidence_for_architecture(
+        report.status,
+        report.execution_scope,
+        &executed_refs,
+        report.semantic_replays.len(),
+    )
+    .map_err(ToOwned::to_owned)?;
+    if report.status == "SEMANTIC_REPLAY_EXECUTED"
+        && report.execution_scope == "complete_corpus"
+        && !declared.contains(&"semantic")
+    {
+        return Err(
+            "FF-COMP-E-PROOF-DECLARATION: semantic replay omitted its declared support".to_owned(),
+        );
+    }
+    if report.command == "compatibility-replay" {
+        let artifact: ReplayReportArtifact = serde_json::from_value(
+            serde_json::to_value(report)
+                .map_err(|error| format!("FF-COMP-E-REPLAY-REPORT-SERIALIZE: {error}"))?,
+        )
+        .map_err(|error| format!("FF-COMP-E-REPLAY-REPORT-PARSE: {error}"))?;
+        validate_replay_report_artifact(&artifact)?;
+    }
+    Ok(())
+}
+
+fn declared_supported_proof_classes(command: &str) -> Vec<&'static str> {
+    match command {
+        "compatibility-replay" => vec!["semantic", "structural"],
+        "compatibility-live-canaries" => vec!["integration_observation"],
+        _ => vec!["structural"],
+    }
+}
+
+fn executed_proof_classes(
+    checks: &[CompatibilityCheck],
+    semantic_replays: &[SemanticReplay],
+) -> Vec<&'static str> {
+    let mut observed = checks
+        .iter()
+        .map(|check| check.proof_class)
+        .chain(semantic_replays.iter().map(|replay| replay.proof_class))
+        .collect::<Vec<_>>();
+    observed.sort_unstable();
+    observed.dedup();
+    observed
+}
+
+fn aggregate_proof_class(classes: &[&str]) -> &'static str {
+    if classes.contains(&"structural") {
+        "structural"
+    } else if classes.contains(&"semantic") {
+        "semantic"
+    } else if classes.contains(&"integration_observation") {
+        "integration_observation"
+    } else {
+        "none"
+    }
+}
+
+fn structural_check(id: &str, detail: &str) -> CompatibilityCheck {
     CompatibilityCheck {
         id: id.to_owned(),
-        status: "PASS",
+        status: "STRUCTURAL_ONLY",
+        proof_class: "structural",
+        concrete_input: id.to_owned(),
+        boundary: "compatibility manifest and fixture validator".to_owned(),
+        expected_result: "structural validation succeeds".to_owned(),
+        observed_result: detail.to_owned(),
+        skipped_semantic_dependencies: vec![
+            "No native Ferric product behavior or external oracle execution was observed."
+                .to_owned(),
+        ],
         detail: detail.to_owned(),
     }
+}
+
+fn pass(id: &str, detail: &str) -> CompatibilityCheck {
+    structural_check(id, detail)
 }
 
 fn write_compatibility_report(
@@ -2487,6 +3509,39 @@ mod tests {
         )
     }
 
+    fn canonical_complete_replay_report(root: &Path) -> CompatibilityReport {
+        let (manifest, profile, corpus) = canonical_inputs();
+        validate_oracle_manifest(&manifest).expect("canonical oracle manifest");
+        validate_profile(&profile, &manifest).expect("canonical compatibility profile");
+        let mut checks = Vec::new();
+        validate_corpus(root, &corpus, &profile, &mut checks).expect("canonical corpus");
+        let semantic_replays = corpus
+            .cases
+            .iter()
+            .map(|case| {
+                let fixture: Value =
+                    read_json(&root.join(&case.fixture)).expect("canonical replay case fixture");
+                replay_case_semantics(case, &fixture).expect("canonical replay semantics")
+            })
+            .collect::<Vec<_>>();
+        checks.push(structural_check(
+            "offline-replay",
+            "canonical replay test fixture",
+        ));
+        base_report(
+            root,
+            "compatibility-replay",
+            "SEMANTIC_REPLAY_EXECUTED",
+            "complete_corpus",
+            BTreeMap::new(),
+            checks,
+            semantic_replays,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("canonical replay report")
+    }
+
     #[test]
     fn canonical_artifact_digests_match_constants() {
         let root = test_root();
@@ -2500,6 +3555,158 @@ mod tests {
         assert_eq!(profile_digest, PROFILE_SHA256);
         assert_eq!(corpus_digest, CORPUS_MANIFEST_SHA256);
         assert_eq!(live_digest, LIVE_MANIFEST_SHA256);
+    }
+
+    #[test]
+    fn replay_report_evidence_accepts_canonicalized_windows_path() {
+        let root = test_root();
+        let report = canonical_complete_replay_report(&root);
+        let path = unique_report_path(&root, "compatibility-replay-canonical-path")
+            .expect("unique replay report path");
+        atomic_json(&path, &report).expect("write canonical replay report");
+        let canonical_path = path.canonicalize().expect("canonical replay report path");
+        let evidence = read_replay_report_evidence(&root, &canonical_path)
+            .expect("canonicalized report path must remain inside the repository");
+        fs::remove_file(&path).expect("remove canonical replay report");
+        assert_eq!(
+            evidence.report_path,
+            slash(
+                path.strip_prefix(&root)
+                    .expect("repository-relative report")
+            )
+        );
+    }
+
+    #[test]
+    fn replay_report_evidence_rejects_tampered_current_input_digest() {
+        let root = test_root();
+        let report = canonical_complete_replay_report(&root);
+        let mut artifact = serde_json::to_value(report).expect("serialize replay report");
+        artifact["inputs"][ORACLE_PATH] = Value::String("0".repeat(64));
+        let path = unique_report_path(&root, "compatibility-replay-tampered")
+            .expect("unique replay report path");
+        atomic_json(&path, &artifact).expect("write tampered replay report");
+        let error = read_replay_report_evidence(&root, &path)
+            .expect_err("tampered replay report input digest must be rejected");
+        fs::remove_file(&path).expect("remove tampered replay report");
+        assert!(
+            error.contains("FF-COMP-E-REPLAY-REPORT-DIGEST"),
+            "unexpected replay report diagnostic: {error}"
+        );
+    }
+
+    #[test]
+    fn replay_report_evidence_recomputes_canonical_semantic_rows() {
+        let root = test_root();
+        let report = canonical_complete_replay_report(&root);
+        let mut artifact = serde_json::to_value(report).expect("serialize replay report");
+        artifact["semantic_replays"][0]["observed_result"] =
+            Value::String("self-attested-pass".to_owned());
+        let path = unique_report_path(&root, "compatibility-replay-semantic-tampered")
+            .expect("unique replay report path");
+        atomic_json(&path, &artifact).expect("write tampered replay report");
+        let error = read_replay_report_evidence(&root, &path)
+            .expect_err("self-attested replay row must be rejected");
+        fs::remove_file(&path).expect("remove tampered replay report");
+        assert!(
+            error.contains("FF-COMP-E-REPLAY-REPORT-SEMANTIC"),
+            "unexpected replay report diagnostic: {error}"
+        );
+    }
+
+    #[test]
+    fn replay_report_evidence_rejects_stale_source_provenance() {
+        let root = test_root();
+        let report = canonical_complete_replay_report(&root);
+        let mut artifact = serde_json::to_value(report).expect("serialize replay report");
+        artifact["source"]["git_commit"] = Value::String("stale-source".to_owned());
+        let path = unique_report_path(&root, "compatibility-replay-stale-source")
+            .expect("unique replay report path");
+        atomic_json(&path, &artifact).expect("write stale replay report");
+        let error = read_replay_report_evidence(&root, &path)
+            .expect_err("stale replay source provenance must be rejected");
+        fs::remove_file(&path).expect("remove stale replay report");
+        assert!(
+            error.contains("FF-COMP-E-REPLAY-REPORT-SOURCE-STALE"),
+            "unexpected replay report diagnostic: {error}"
+        );
+    }
+
+    #[test]
+    fn native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes() {
+        let root = test_root();
+        let (_, profile, corpus) = canonical_inputs();
+        let mut structural = Vec::new();
+        validate_corpus(&root, &corpus, &profile, &mut structural).expect("canonical corpus");
+        let replays = corpus
+            .cases
+            .iter()
+            .map(|case| {
+                let fixture: Value = read_json(&root.join(&case.fixture)).expect("case fixture");
+                replay_case_semantics(case, &fixture)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .expect("every corpus plane has executable native semantics");
+        assert_eq!(replays.len(), 7);
+        assert!(
+            replays
+                .iter()
+                .all(|replay| replay.status == "SEMANTIC_PASS")
+        );
+        assert_eq!(
+            aggregate_proof_class(&executed_proof_classes(&structural, &replays)),
+            "structural"
+        );
+
+        for case in &corpus.cases {
+            let mut mutated: Value =
+                read_json(&root.join(&case.fixture)).expect("case fixture must load");
+            match case.plane.as_str() {
+                "archive" => mutated["archive_before"] = serde_json::json!([]),
+                "failure" => mutated["input"]["deadline_ms"] = Value::from(999_u64),
+                "filesystem_process_artifact" => {
+                    mutated["process_plan"][0]["program"] = Value::String("invalid".to_owned());
+                }
+                "migration" => {
+                    mutated["source"]["configuration"]["format"] =
+                        Value::String("invalid".to_owned());
+                }
+                "normalized_observation" => {
+                    mutated["observation"]["selected_format"] = Value::String("invalid".to_owned());
+                }
+                "sanitized_network_transcript" => {
+                    mutated["clock"] = Value::String("unbounded-clock".to_owned());
+                }
+                "source_graph" => {
+                    mutated["observation"]["nodes"][2]["children"] =
+                        serde_json::json!(["media-alpha"]);
+                }
+                other => panic!("unexpected corpus plane {other}"),
+            }
+            assert!(
+                replay_case_semantics(case, &mutated)
+                    .expect_err(
+                        "fixture-behavior counterfactual must not be accepted by semantic replay"
+                    )
+                    .starts_with("FF-COMP-E-SEMANTIC"),
+                "semantic counterfactual for plane {} was not rejected",
+                case.plane
+            );
+        }
+
+        let archive_case = corpus
+            .cases
+            .iter()
+            .find(|case| case.plane == "archive")
+            .expect("archive case");
+        let mut relabelled = archive_case.clone();
+        relabelled.expected_outcome = "self-consistent-label".to_owned();
+        let fixture: Value = read_json(&root.join(&archive_case.fixture)).expect("archive fixture");
+        assert!(
+            replay_case_semantics(&relabelled, &fixture)
+                .expect_err("expected_outcome text alone cannot close replay")
+                .contains("FF-COMP-E-SEMANTIC-OUTCOME")
+        );
     }
 
     #[test]
@@ -2678,6 +3885,7 @@ mod tests {
                 git_commit: "test".to_owned(),
                 dirty: false,
                 dirty_paths: Vec::new(),
+                content_fingerprint: "0".repeat(64),
             },
             BTreeMap::new(),
         )
@@ -2703,6 +3911,7 @@ mod tests {
                 git_commit: "test".to_owned(),
                 dirty: false,
                 dirty_paths: Vec::new(),
+                content_fingerprint: "0".repeat(64),
             },
             BTreeMap::new(),
         )
@@ -2754,12 +3963,20 @@ mod tests {
             &test_root(),
             "compatibility-live-canaries",
             "OBSERVED",
+            "selected_live_canaries_only",
             BTreeMap::new(),
             vec![CompatibilityCheck {
                 id: "live-canary-test".to_owned(),
                 status: "OBSERVED",
+                proof_class: "integration_observation",
+                concrete_input: "https://media.invalid/".to_owned(),
+                boundary: "test observation boundary".to_owned(),
+                expected_result: "nondeterministic_observation".to_owned(),
+                observed_result: "nondeterministic observation".to_owned(),
+                skipped_semantic_dependencies: vec!["test-only observation".to_owned()],
                 detail: "nondeterministic observation".to_owned(),
             }],
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         )

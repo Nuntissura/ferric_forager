@@ -2,10 +2,10 @@
   "schema_id": "ff.work_packet_refinement@1",
   "file_id": "WP-FF-013-proof-integrity-remediation-v2-REFINEMENT-001",
   "wp_id": "WP-FF-013-proof-integrity-remediation-v2",
-  "updated_at_utc": "2026-07-22T13:49:15Z",
+  "updated_at_utc": "2026-07-22T16:17:57Z",
   "operator_request": "Keep Ferric Forager a native Rust rewrite/reimagination that cannot use yt-dlp as product behavior; first harden project Codex prevention rules, then address every finding with no more than six terra xhigh subagents in parallel.",
   "basis": {
-    "research_status": "REUSED_COMPLETED_PROJECT_RESEARCH",
+    "research_status": "REUSED_COMPLETED_PROJECT_RESEARCH_PLUS_TARGETED_REOPEN",
     "research_reopen_triggers": [
       "The Operator explicitly requests research.",
       "A selected dependency, upstream oracle version, or source assumption is proven stale.",
@@ -25,19 +25,21 @@
       ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v2/packet.json",
       ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
       ".GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/packet.json",
-      ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/packet.json"
+      ".GOV/archive/work_packets/WP-FF-013-proof-integrity-remediation/WP-FF-013-proof-integrity-remediation-v1/packet.json"
     ],
     "existing_research_sources": [
       "The current technical design reference set and peer-review corpus",
       "Validated WP-003 build and proof infrastructure",
       "Validated WP-004 compatibility inventory and pinned-oracle corpus",
       "Validated WP-005 contract implementation basis",
-      "Validated WP-012 runtime-truth enforcement"
+      "Validated WP-012 runtime-truth enforcement",
+      "Official Rust Clippy lint-configuration documentation for fully-qualified disallowed methods, types, and macros: https://doc.rust-lang.org/clippy/lint_configuration.html"
     ],
     "selected_approach": [
       "Supersede the deficient v1 activation instead of backfilling its history.",
       "Keep yt-dlp outside product crates, packaging, runtime, fallback, wrapper, and sidecar paths; allow only pinned non-shipped oracle generation and comparison.",
       "Make proof reports distinguish static support declarations from evidence actually executed.",
+      "Combine product-local compiler-resolved Clippy forbids for raw process construction and byte/text embedding with the independent source gate required for include!, which the pinned Clippy release does not observe reliably.",
       "Replace helper-predicate fixtures with isolated mutations and composed/public boundary execution.",
       "Complete lifecycle effect outcome and recovery semantics, explicit schema-transition authority, and exact counterexample tests.",
       "Retain the prerequisite zero-progress ceiling until a shipped Rust Ferric entrypoint consumes and re-proves the work."
@@ -55,7 +57,7 @@
       "Reuse the WP-004 corpus as provenance-bound inputs while upgrading replay selection and reporting.",
       "Reuse xtask reporting, rule-to-proof mapping, temp-copy helpers, runtime truth, and adversarial review structure."
     ],
-    "validation_plan": "Implement three non-overlapping remediation lanes, run focused and workspace tests, execute compatibility and canonical gates, execute isolated mutations against actual governed boundaries, inspect result-level proof metadata, rerun the exact public counterexamples with execution receipts, and fail closure if any evidence still depends only on declarations or local helper literals."
+    "validation_plan": "Implement three non-overlapping remediation lanes, run focused and workspace tests, compile alias and embedded-asset bypass probes through product-local Clippy forbids plus the independent source gate, execute compatibility and canonical gates, execute isolated mutations against actual governed boundaries, inspect result-level proof metadata, rerun the exact public counterexamples with execution receipts, and fail closure if any evidence still depends only on declarations or local helper literals."
   },
   "scope_edges": {
     "assumptions": [
@@ -64,9 +66,9 @@
       "No shipped Ferric entrypoint exists, so all closure remains prerequisite-only."
     ],
     "non_goals": [
-      "Implementing or claiming a shipped downloader runtime.",
+      "Creating or claiming a Ferric downloader entrypoint.",
       "Broad architecture redesign unrelated to reproduced failures.",
-      "New dependencies or additional external research."
+      "New dependencies or broad external research beyond the targeted official Clippy verification triggered by a reproduced alias/include bypass."
     ]
   },
   "acceptance_ids": [

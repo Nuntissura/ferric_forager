@@ -253,6 +253,9 @@ pub enum GraphError {
     InvalidExtensions {
         owner: String,
     },
+    RelationshipCycle {
+        node: NodeId,
+    },
     RedirectCycle {
         node: NodeId,
     },
@@ -294,7 +297,8 @@ impl SourceGraph {
         validate_roots_and_parents(self, &nodes, limits.maximum_provenance_depth)?;
         validate_edges(self, &nodes)?;
         validate_continuations(self, &nodes, limits)?;
-        validate_redirects(self, &nodes, limits.maximum_redirect_depth)
+        validate_redirects(self, &nodes, limits.maximum_redirect_depth)?;
+        validate_relationship_cycles(self)
     }
 }
 
@@ -367,13 +371,14 @@ fn validate_roots_and_parents(
         }
     }
     for node in &graph.nodes {
-        if let Some(parent) = &node.provenance.parent_node
-            && !nodes.contains_key(parent)
-        {
-            return Err(GraphError::DanglingProvenanceParent {
-                node: node.id.clone(),
-                parent: parent.clone(),
-            });
+        match &node.provenance.parent_node {
+            Some(parent) if !nodes.contains_key(parent) => {
+                return Err(GraphError::DanglingProvenanceParent {
+                    node: node.id.clone(),
+                    parent: parent.clone(),
+                });
+            }
+            _ => {}
         }
     }
     validate_provenance_chains(nodes, maximum_provenance_depth)
@@ -402,6 +407,90 @@ fn validate_edges(
                 edge: edge.id.clone(),
                 node: edge.to.clone(),
             });
+        }
+    }
+    Ok(())
+}
+
+/// Whether an edge participates in recursive source resolution.
+///
+/// The partition is exhaustive: containment, embedding, transparent overlays, and
+/// continuations are traversable and therefore acyclic; alternates, complementary
+/// assets, additional assets, and derived outputs are descriptive links only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RelationshipTraversal {
+    Recursive,
+    Descriptive,
+}
+
+const fn relationship_traversal(kind: &EdgeKind) -> RelationshipTraversal {
+    match kind {
+        EdgeKind::Contains
+        | EdgeKind::Embeds
+        | EdgeKind::TransparentlyOverlays
+        | EdgeKind::Continuation => RelationshipTraversal::Recursive,
+        EdgeKind::Alternate
+        | EdgeKind::Complementary
+        | EdgeKind::Additional
+        | EdgeKind::DerivedOutput => RelationshipTraversal::Descriptive,
+    }
+}
+
+/// Traversable relationships must remain acyclic before any recursive resolution.
+const fn relationship_cycle_is_forbidden(kind: &EdgeKind) -> bool {
+    matches!(
+        relationship_traversal(kind),
+        RelationshipTraversal::Recursive
+    )
+}
+
+fn validate_relationship_cycles(graph: &SourceGraph) -> Result<(), GraphError> {
+    let mut adjacency = BTreeMap::<NodeId, BTreeSet<NodeId>>::new();
+    for node in &graph.nodes {
+        adjacency.entry(node.id.clone()).or_default();
+    }
+    for edge in &graph.edges {
+        if relationship_cycle_is_forbidden(&edge.kind) {
+            adjacency
+                .entry(edge.from.clone())
+                .or_default()
+                .insert(edge.to.clone());
+        }
+    }
+
+    let roots = adjacency.keys().cloned().collect::<Vec<_>>();
+    let mut visiting = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    for root in roots {
+        if visited.contains(&root) {
+            continue;
+        }
+        let mut stack = vec![(root, false)];
+        while let Some((node, exiting)) = stack.pop() {
+            if exiting {
+                visiting.remove(&node);
+                visited.insert(node);
+                continue;
+            }
+            if visited.contains(&node) {
+                continue;
+            }
+            if !visiting.insert(node.clone()) {
+                return Err(GraphError::RelationshipCycle { node });
+            }
+            stack.push((node.clone(), true));
+            if let Some(targets) = adjacency.get(&node) {
+                for target in targets.iter().rev() {
+                    if visiting.contains(target) {
+                        return Err(GraphError::RelationshipCycle {
+                            node: target.clone(),
+                        });
+                    }
+                    if !visited.contains(target) {
+                        stack.push((target.clone(), false));
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -530,15 +619,16 @@ fn validate_node(
         }
     }
     for (field, value) in [("title", &node.title), ("description", &node.description)] {
-        if let TriState::Present(value) = value
-            && value.len() > limits.maximum_string_bytes
-        {
-            return Err(GraphError::StringTooLong {
-                field,
-                node: node.id.clone(),
-                actual: value.len(),
-                maximum: limits.maximum_string_bytes,
-            });
+        match value {
+            TriState::Present(value) if value.len() > limits.maximum_string_bytes => {
+                return Err(GraphError::StringTooLong {
+                    field,
+                    node: node.id.clone(),
+                    actual: value.len(),
+                    maximum: limits.maximum_string_bytes,
+                });
+            }
+            _ => {}
         }
     }
     node.extensions
@@ -783,15 +873,18 @@ impl FragmentDescriptor {
     /// Returns a typed error for empty/oversized URLs or malformed checksums.
     pub fn validate(&self, limits: DataContractLimits) -> Result<(), DataContractError> {
         validate_data_text("fragment_url", &self.url, limits)?;
-        if let Some(checksum) = &self.checksum
-            && (checksum.len() != 64
-                || !checksum
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
-        {
-            return Err(DataContractError::InvalidChecksum {
-                sequence: self.sequence,
-            });
+        match &self.checksum {
+            Some(checksum)
+                if checksum.len() != 64
+                    || !checksum
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) =>
+            {
+                return Err(DataContractError::InvalidChecksum {
+                    sequence: self.sequence,
+                });
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -837,25 +930,28 @@ impl SinkSemantics {
     ///
     /// Returns a typed error when a declared bound is zero or exceeds policy.
     pub fn validate(&self, limits: DataContractLimits) -> Result<(), DataContractError> {
-        if let Some(lifetime) = self.expected_lifetime_seconds
-            && (lifetime == 0 || lifetime > limits.maximum_sink_lifetime_seconds)
-        {
-            return Err(DataContractError::LimitExceeded {
-                field: "expected_lifetime_seconds",
-                actual: lifetime,
-                maximum: limits.maximum_sink_lifetime_seconds,
-            });
+        match self.expected_lifetime_seconds {
+            Some(lifetime) if lifetime == 0 || lifetime > limits.maximum_sink_lifetime_seconds => {
+                return Err(DataContractError::LimitExceeded {
+                    field: "expected_lifetime_seconds",
+                    actual: lifetime,
+                    maximum: limits.maximum_sink_lifetime_seconds,
+                });
+            }
+            _ => {}
         }
-        if let BackpressureMode::BoundedBuffer {
-            maximum_items,
-            maximum_bytes,
-        } = self.backpressure
-            && (maximum_items == 0
+        match self.backpressure {
+            BackpressureMode::BoundedBuffer {
+                maximum_items,
+                maximum_bytes,
+            } if maximum_items == 0
                 || maximum_bytes == 0
                 || maximum_items > limits.maximum_buffer_items
-                || maximum_bytes > limits.maximum_buffer_bytes)
-        {
-            return Err(DataContractError::InvalidBoundedBuffer);
+                || maximum_bytes > limits.maximum_buffer_bytes =>
+            {
+                return Err(DataContractError::InvalidBoundedBuffer);
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -1055,6 +1151,176 @@ mod tests {
             graph.validate(GraphLimits::default()),
             Err(GraphError::RedirectCycle { node: first.id })
         );
+        Ok(())
+    }
+
+    #[test]
+    fn every_traversable_relationship_rejects_cycles_and_accepts_exact_limit_acyclic_graphs()
+    -> Result<(), crate::IdError> {
+        for kind in [
+            EdgeKind::Contains,
+            EdgeKind::Embeds,
+            EdgeKind::TransparentlyOverlays,
+            EdgeKind::Continuation,
+        ] {
+            let mut first = node("traversal_first")?;
+            let mut second = node("traversal_second")?;
+            let mut third = node("traversal_third")?;
+            if kind == EdgeKind::TransparentlyOverlays {
+                first.kind = NodeKind::Redirect;
+                second.kind = NodeKind::Redirect;
+                third.kind = NodeKind::Redirect;
+            }
+
+            let expected_cycle = |node: NodeId| {
+                if kind == EdgeKind::TransparentlyOverlays {
+                    GraphError::RedirectCycle { node }
+                } else {
+                    GraphError::RelationshipCycle { node }
+                }
+            };
+            let limits = GraphLimits {
+                maximum_nodes: 3,
+                maximum_edges: 2,
+                ..GraphLimits::default()
+            };
+
+            let self_cycle = SourceGraph {
+                schema: SchemaVersion { major: 1, minor: 0 },
+                roots: vec![first.id.clone()],
+                nodes: vec![first.clone()],
+                edges: vec![SourceEdge {
+                    id: EdgeId::new("edge_traversal_self")?,
+                    from: first.id.clone(),
+                    to: first.id.clone(),
+                    kind: kind.clone(),
+                }],
+                continuations: vec![],
+            };
+            assert_eq!(
+                self_cycle.validate(limits),
+                Err(expected_cycle(first.id.clone()))
+            );
+
+            let multi_node_cycle = SourceGraph {
+                schema: SchemaVersion { major: 1, minor: 0 },
+                roots: vec![first.id.clone()],
+                nodes: vec![first.clone(), second.clone()],
+                edges: vec![
+                    SourceEdge {
+                        id: EdgeId::new("edge_traversal_cycle_first")?,
+                        from: first.id.clone(),
+                        to: second.id.clone(),
+                        kind: kind.clone(),
+                    },
+                    SourceEdge {
+                        id: EdgeId::new("edge_traversal_cycle_second")?,
+                        from: second.id.clone(),
+                        to: first.id.clone(),
+                        kind: kind.clone(),
+                    },
+                ],
+                continuations: vec![],
+            };
+            assert_eq!(
+                multi_node_cycle.validate(limits),
+                Err(expected_cycle(first.id.clone()))
+            );
+
+            let acyclic_at_limit = SourceGraph {
+                schema: SchemaVersion { major: 1, minor: 0 },
+                roots: vec![first.id.clone()],
+                nodes: vec![first.clone(), second.clone(), third.clone()],
+                edges: vec![
+                    SourceEdge {
+                        id: EdgeId::new("edge_traversal_acyclic_first")?,
+                        from: first.id.clone(),
+                        to: second.id.clone(),
+                        kind: kind.clone(),
+                    },
+                    SourceEdge {
+                        id: EdgeId::new("edge_traversal_acyclic_second")?,
+                        from: second.id.clone(),
+                        to: third.id.clone(),
+                        kind,
+                    },
+                ],
+                continuations: vec![],
+            };
+            assert!(acyclic_at_limit.validate(limits).is_ok());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn deep_bounded_acyclic_traversal_graph_is_accepted() -> Result<(), crate::IdError> {
+        const NODE_COUNT: usize = 256;
+        let nodes = (0..NODE_COUNT)
+            .map(|index| node(&format!("deep_{index}")))
+            .collect::<Result<Vec<_>, _>>()?;
+        let edges = nodes
+            .windows(2)
+            .enumerate()
+            .map(|(index, pair)| {
+                Ok(SourceEdge {
+                    id: EdgeId::new(format!("edge_deep_{index}"))?,
+                    from: pair[0].id.clone(),
+                    to: pair[1].id.clone(),
+                    kind: EdgeKind::Contains,
+                })
+            })
+            .collect::<Result<Vec<_>, crate::IdError>>()?;
+        let graph = SourceGraph {
+            schema: SchemaVersion { major: 1, minor: 0 },
+            roots: vec![nodes[0].id.clone()],
+            nodes,
+            edges,
+            continuations: vec![],
+        };
+        assert!(
+            graph
+                .validate(GraphLimits {
+                    maximum_nodes: NODE_COUNT,
+                    maximum_edges: NODE_COUNT - 1,
+                    ..GraphLimits::default()
+                })
+                .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn non_traversable_relationship_cycles_remain_descriptive() -> Result<(), crate::IdError> {
+        for kind in [
+            EdgeKind::Alternate,
+            EdgeKind::Complementary,
+            EdgeKind::Additional,
+            EdgeKind::DerivedOutput,
+        ] {
+            let first = node("descriptive_first")?;
+            let second = node("descriptive_second")?;
+            let graph = SourceGraph {
+                schema: SchemaVersion { major: 1, minor: 0 },
+                roots: vec![first.id.clone()],
+                nodes: vec![first.clone(), second.clone()],
+                edges: vec![
+                    SourceEdge {
+                        id: EdgeId::new("edge_descriptive_first")?,
+                        from: first.id.clone(),
+                        to: second.id.clone(),
+                        kind: kind.clone(),
+                    },
+                    SourceEdge {
+                        id: EdgeId::new("edge_descriptive_second")?,
+                        from: second.id.clone(),
+                        to: first.id,
+                        kind,
+                    },
+                ],
+                continuations: vec![],
+            };
+            assert!(graph.validate(GraphLimits::default()).is_ok());
+        }
         Ok(())
     }
 

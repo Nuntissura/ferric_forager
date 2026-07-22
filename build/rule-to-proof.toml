@@ -162,3 +162,73 @@ proof_classes = ["policy", "runtime_observable", "negative_fixture"]
 validators = ["runtime-proof-contract"]
 fixture_ids = ["runtime-scaffold-completion"]
 limitations = ["Reachability review remains necessary for dynamic dispatch paths not observable from source structure."]
+
+[[rules]]
+rule_id = "FF-BUILD-089"
+proof_classes = ["source", "dependency", "process_plan", "negative_fixture"]
+validators = ["product-native-boundary"]
+fixture_ids = ["indirect-oracle-runtime-wrapper", "documentation-asset-bypass", "readme-include-bypass", "dynamic-product-process", "include-doc-macro-bypass", "clippy-allow-escape", "product-clippy-guard-missing", "clippy-conf-dir-poison", "cargo-home-poison"]
+limitations = ["Product source currently rejects include!/include_bytes!/include_str!, aliases or direct use of std::process::Command, and local disallowed-lint escape text; compiler-resolved Clippy guards additionally forbid Command aliases, Command::new, include_bytes!, and include_str! while the scanner retains include! and escape coverage. Verification rejects and strips compiler, toolchain, wrapper, lint-flag, and CLIPPY_CONF_DIR overrides; an isolated compiler probe proves a poisoned alternate Clippy directory cannot hide an aliased Command. The future typed FFmpeg/ffprobe process boundary must be explicitly introduced and then re-proven through a shipped entrypoint."]
+
+[[rules]]
+rule_id = "FF-BUILD-090"
+proof_classes = ["structural", "semantic", "negative_fixture"]
+validators = ["compatibility-semantic-replay"]
+fixture_ids = ["structural-replay-behavioral-pass", "source-content-fingerprint"]
+limitations = ["Compatibility replay executes native Rust fixture semantics but does not prove a future shipped Ferric entrypoint or yt-dlp replacement parity. Freshness binds HEAD, dirty paths, and a deterministic fingerprint of tracked and untracked source contents."]
+
+[[rules]]
+rule_id = "FF-BUILD-091"
+proof_classes = ["semantic", "counterfactual", "negative_fixture"]
+validators = ["public-boundary-counterexample"]
+fixture_ids = ["declaration-only-proof"]
+limitations = ["Public-boundary counterexamples currently prove prerequisite contracts, not production runtime behavior."]
+
+[[rules]]
+rule_id = "FF-BUILD-092"
+proof_classes = ["state_effect", "counterfactual", "negative_fixture"]
+validators = ["effect-acknowledgement-boundary"]
+fixture_ids = ["effect-acknowledgement-subset"]
+limitations = ["The state machine is a prerequisite model; future process and filesystem adapters must re-prove acknowledgement delivery through a shipped entrypoint."]
+
+[[rules]]
+rule_id = "FF-BUILD-093"
+proof_classes = ["wire_boundary", "counterfactual", "negative_fixture"]
+validators = ["schema-transition-authority"]
+fixture_ids = ["unrelated-schema-transition"]
+limitations = ["No non-exact schema transition is authorized in the shipped registry; a future exact reviewed transition must be added and behavior-tested before any drift can be accepted."]
+
+[[rules]]
+rule_id = "FF-BUILD-094"
+proof_classes = ["wire_boundary", "negative_fixture"]
+validators = ["wire-boundary"]
+fixture_ids = ["wire-zero-or-unknown-field", "sequence-zero-replay"]
+limitations = ["Current fixtures cover registered diagnostic contract boundaries only."]
+
+[[rules]]
+rule_id = "FF-BUILD-095"
+proof_classes = ["graph", "counterfactual", "negative_fixture"]
+validators = ["source-graph-cycle-boundary"]
+fixture_ids = ["source-graph-cycle"]
+limitations = ["Cycle rejection proves bounded graph validation; adapter traversal remains future runtime proof."]
+
+[[rules]]
+rule_id = "FF-BUILD-096"
+proof_classes = ["public_boundary", "counterfactual", "negative_fixture"]
+validators = ["finding-regression-boundary"]
+fixture_ids = ["counterexample-not-public-boundary", "remove-public-boundary-counterexample-test", "receipt-only-public-counterexample-test"]
+limitations = ["Regression fixtures prove the corrected public prerequisite boundary, not shipped product completion."]
+
+[[rules]]
+rule_id = "FF-BUILD-097"
+proof_classes = ["semantic", "negative_fixture"]
+validators = ["behavior-sensitive-proof-map"]
+fixture_ids = ["proof-map-string-only", "proof-map-behavior-stub", "proof-map-constant-tautology"]
+limitations = ["Proof routing metadata is non-proof; each inventory proof ID must resolve through cargo test --list and execute as an exact non-ignored test in verify-deep. The gate rejects obvious neutralized bodies and literal-only assertion tautologies before execution; the isolated ItemId counterfactual proves that a mapped stub cannot replace independent public behavior evidence, but it does not claim one mutation probe covers every mapped contract invariant or that arbitrary semantic relevance can be decided statically."]
+
+[[rules]]
+rule_id = "FF-BUILD-098"
+proof_classes = ["structural", "semantic", "integration", "production_runtime", "negative_fixture"]
+validators = ["proof-class-aggregation"]
+fixture_ids = ["proof-class-promotion", "gate-report-runtime-claim"]
+limitations = ["Aggregation reports the weakest executed class and cannot upgrade prerequisite evidence into runtime proof."]

@@ -2,9 +2,16 @@ use fforager_diagnostics_contract::*;
 use std::error::Error;
 
 fn schema(fill: char) -> Result<SchemaIdentity, ContractError> {
+    schema_at_revision(fill, 1)
+}
+
+fn schema_at_revision(
+    fill: char,
+    canonical_input_version: u16,
+) -> Result<SchemaIdentity, ContractError> {
     SchemaIdentity::new(
         SchemaHashAlgorithm::Sha256,
-        1,
+        canonical_input_version,
         SchemaHash::new(fill.to_string().repeat(64))?,
     )
 }
@@ -67,44 +74,87 @@ fn negotiation_selects_highest_mutual_minor_and_exact_schema() -> Result<(), Box
     let producer = ProtocolOffer::new(
         CompatibilityRange::new(1, 1, 4)?,
         vec![schema('a')?, schema('b')?],
-        false,
     )?;
-    let watcher = ProtocolOffer::new(CompatibilityRange::new(1, 2, 3)?, vec![schema('b')?], false)?;
-    let negotiated = producer.negotiate(&watcher)?;
+    let watcher = ProtocolOffer::new(CompatibilityRange::new(1, 2, 3)?, vec![schema('b')?])?;
+    let strict = SchemaCompatibilityAuthority::strict();
+    let negotiated = producer.negotiate(&watcher, strict)?;
     assert_eq!(negotiated.version, ProtocolVersion::new(1, 3)?);
     assert!(matches!(negotiated.schema, SchemaDisposition::Exact(_)));
     Ok(())
 }
 
 #[test]
-fn negotiation_handles_schema_drift_and_rejects_incompatibility() -> Result<(), Box<dyn Error>> {
-    let drift_a = ProtocolOffer::new(CompatibilityRange::new(1, 1, 2)?, vec![schema('a')?], true)?;
-    let drift_b = ProtocolOffer::new(CompatibilityRange::new(1, 2, 3)?, vec![schema('b')?], true)?;
-    assert!(matches!(
-        drift_a.negotiate(&drift_b)?.schema,
-        SchemaDisposition::CompatibleDrift
-    ));
-
-    let strict_b =
-        ProtocolOffer::new(CompatibilityRange::new(1, 2, 3)?, vec![schema('b')?], false)?;
+fn public_negotiation_is_strict_and_rejects_peer_schema_authority() -> Result<(), Box<dyn Error>> {
+    let producer_wire = br#"{"versions":{"major":1,"minimum_minor":1,"maximum_minor":2},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":1,"digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#;
+    let watcher_wire = br#"{"versions":{"major":1,"minimum_minor":2,"maximum_minor":3},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":2,"digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}"#;
+    let producer = serde_json::from_slice::<ProtocolOffer>(producer_wire)?;
+    let watcher = serde_json::from_slice::<ProtocolOffer>(watcher_wire)?;
+    let strict = SchemaCompatibilityAuthority::default();
     assert_eq!(
-        drift_a.negotiate(&strict_b),
+        producer.negotiate(&watcher, strict),
         Err(ContractError::SchemaIncompatible)
     );
 
-    let major_two =
-        ProtocolOffer::new(CompatibilityRange::new(2, 1, 2)?, vec![schema('a')?], true)?;
+    let unrelated_target = schema_at_revision('c', 3)?;
+    let unrelated_watcher =
+        ProtocolOffer::new(CompatibilityRange::new(1, 2, 3)?, vec![unrelated_target])?;
     assert_eq!(
-        drift_a.negotiate(&major_two),
+        producer.negotiate(&unrelated_watcher, strict),
+        Err(ContractError::SchemaIncompatible)
+    );
+
+    let peer_crafted_transition = br#"{"versions":{"major":1,"minimum_minor":1,"maximum_minor":2},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":1,"digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"schema_transition":{"authority_id":"peer-crafted","revision":1,"source":{"algorithm":"sha256","canonical_input_version":1,"digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"target":{"algorithm":"sha256","canonical_input_version":2,"digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"semantics":"additive_optional_fields"}}"#;
+    assert!(serde_json::from_slice::<ProtocolOffer>(peer_crafted_transition).is_err());
+
+    let major_two = ProtocolOffer::new(CompatibilityRange::new(2, 1, 2)?, vec![schema('a')?])?;
+    assert_eq!(
+        producer.negotiate(&major_two, strict),
         Err(ContractError::IncompatibleMajor)
     );
 
-    let minor_four =
-        ProtocolOffer::new(CompatibilityRange::new(1, 4, 5)?, vec![schema('a')?], true)?;
+    let minor_four = ProtocolOffer::new(CompatibilityRange::new(1, 4, 5)?, vec![schema('a')?])?;
     assert_eq!(
-        drift_a.negotiate(&minor_four),
+        producer.negotiate(&minor_four, strict),
         Err(ContractError::NoCompatibleMinor)
     );
+    Ok(())
+}
+
+#[test]
+fn protocol_offer_v1_permissive_migration_grants_no_schema_authority() -> Result<(), Box<dyn Error>>
+{
+    let source_v1_wire = br#"{"versions":{"major":1,"minimum_minor":0,"maximum_minor":2},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":1,"digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"allow_compatible_schema_drift":true}"#;
+    let target_v1_wire = br#"{"versions":{"major":1,"minimum_minor":0,"maximum_minor":2},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":2,"digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"allow_compatible_schema_drift":true}"#;
+    assert!(serde_json::from_slice::<ProtocolOffer>(source_v1_wire).is_err());
+    assert!(serde_json::from_slice::<ProtocolOffer>(target_v1_wire).is_err());
+
+    let source_legacy = serde_json::from_slice::<ProtocolOfferV1>(source_v1_wire)?;
+    let target_legacy = serde_json::from_slice::<ProtocolOfferV1>(target_v1_wire)?;
+    assert!(source_legacy.legacy_allow_compatible_schema_drift());
+    assert!(target_legacy.legacy_allow_compatible_schema_drift());
+    let source_current = source_legacy.into_v2()?;
+    let target_current = target_legacy.into_v2()?;
+    let migrated_wire = serde_json::to_value(&source_current)?;
+    assert!(migrated_wire.get("allow_compatible_schema_drift").is_none());
+    assert_eq!(
+        source_current.negotiate(&target_current, SchemaCompatibilityAuthority::strict()),
+        Err(ContractError::SchemaIncompatible)
+    );
+
+    let current_wire = br#"{"versions":{"major":1,"minimum_minor":0,"maximum_minor":2},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":2,"digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}"#;
+    let current = serde_json::from_slice::<ProtocolOffer>(current_wire)?;
+    assert_eq!(
+        serde_json::from_slice::<ProtocolOffer>(&serde_json::to_vec(&current)?)?,
+        current
+    );
+
+    let mut v1_unknown_nested: serde_json::Value = serde_json::from_slice(source_v1_wire)?;
+    v1_unknown_nested["accepted_schemas"][0]["future_required"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<ProtocolOfferV1>(v1_unknown_nested).is_err());
+
+    let mut v2_unknown_nested: serde_json::Value = serde_json::from_slice(current_wire)?;
+    v2_unknown_nested["versions"]["future_required"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<ProtocolOffer>(v2_unknown_nested).is_err());
     Ok(())
 }
 
@@ -229,6 +279,23 @@ fn sequence_replay_ack_and_exhaustion_are_bounded() -> Result<(), Box<dyn Error>
             fault: SequenceFault::ReplayOutsideWindow
         })
     );
+    let zero_replay = SequenceIdentity {
+        key: stream.clone(),
+        sequence: 0,
+    };
+    assert_eq!(
+        tracker.admit_replay(&zero_replay, u64::MAX),
+        Err(ContractError::Sequence {
+            fault: SequenceFault::InvalidStart
+        })
+    );
+    assert_eq!(
+        tracker.acknowledge_durable(0),
+        Err(ContractError::Sequence {
+            fault: SequenceFault::InvalidStart
+        })
+    );
+    assert_eq!(tracker.last_durable(), None);
     assert_eq!(
         tracker.acknowledge_durable(3),
         Err(ContractError::Sequence {
@@ -276,7 +343,7 @@ fn identifiers_text_and_schema_sets_are_bounded() -> Result<(), Box<dyn Error>> 
     ));
 
     assert_eq!(
-        ProtocolOffer::new(CompatibilityRange::new(1, 0, 0)?, Vec::new(), false),
+        ProtocolOffer::new(CompatibilityRange::new(1, 0, 0)?, Vec::new()),
         Err(ContractError::Empty {
             field: "accepted_schemas"
         })
@@ -285,7 +352,6 @@ fn identifiers_text_and_schema_sets_are_bounded() -> Result<(), Box<dyn Error>> 
         ProtocolOffer::new(
             CompatibilityRange::new(1, 0, 0)?,
             vec![schema('a')?; MAX_SCHEMA_IDENTITIES + 1],
-            false,
         ),
         Err(ContractError::LimitExceeded {
             kind: LimitKind::SchemaSet,
@@ -297,9 +363,30 @@ fn identifiers_text_and_schema_sets_are_bounded() -> Result<(), Box<dyn Error>> 
         ProtocolOffer::new(
             CompatibilityRange::new(1, 0, 0)?,
             vec![duplicate_schema.clone(), duplicate_schema],
-            false,
         ),
         Err(ContractError::DuplicateSchema)
+    );
+    assert_eq!(
+        ProtocolOffer::new(
+            CompatibilityRange {
+                major: 0,
+                minimum_minor: 0,
+                maximum_minor: 0,
+            },
+            vec![schema('a')?],
+        ),
+        Err(ContractError::InvalidRange)
+    );
+    assert_eq!(
+        ProtocolOffer::new(
+            CompatibilityRange::new(1, 0, 0)?,
+            vec![SchemaIdentity {
+                algorithm: SchemaHashAlgorithm::Sha256,
+                canonical_input_version: 0,
+                digest: SchemaHash::new("a".repeat(64))?,
+            }],
+        ),
+        Err(ContractError::InvalidRange)
     );
     Ok(())
 }
@@ -423,14 +510,44 @@ fn wire_round_trip_validates_and_rejects_deserialization_bypasses() -> Result<()
         decode_json_frame(&encoded, FrameCompleteness::Complete)?,
         value
     );
-    let mut additive_minor: serde_json::Value = serde_json::from_slice(&encoded)?;
-    additive_minor["future_optional"] = serde_json::json!({"opaque": true});
+    let mut unknown_top_level: serde_json::Value = serde_json::from_slice(&encoded)?;
+    unknown_top_level["future_optional"] = serde_json::json!({"opaque": true});
     assert_eq!(
         decode_json_frame(
-            &serde_json::to_vec(&additive_minor)?,
+            &serde_json::to_vec(&unknown_top_level)?,
             FrameCompleteness::Complete
-        )?,
-        value
+        ),
+        Err(ContractError::MalformedFrame)
+    );
+
+    let mut unknown_descriptor: serde_json::Value = serde_json::from_slice(&encoded)?;
+    unknown_descriptor["descriptor"]["future_required"] = serde_json::json!(true);
+    assert_eq!(
+        decode_json_frame(
+            &serde_json::to_vec(&unknown_descriptor)?,
+            FrameCompleteness::Complete
+        ),
+        Err(ContractError::MalformedFrame)
+    );
+
+    let mut unknown_sequence: serde_json::Value = serde_json::from_slice(&encoded)?;
+    unknown_sequence["sequence"]["future_required"] = serde_json::json!(true);
+    assert_eq!(
+        decode_json_frame(
+            &serde_json::to_vec(&unknown_sequence)?,
+            FrameCompleteness::Complete
+        ),
+        Err(ContractError::MalformedFrame)
+    );
+
+    let mut unknown_field: serde_json::Value = serde_json::from_slice(&encoded)?;
+    unknown_field["fields"][0]["future_required"] = serde_json::json!(true);
+    assert_eq!(
+        decode_json_frame(
+            &serde_json::to_vec(&unknown_field)?,
+            FrameCompleteness::Complete
+        ),
+        Err(ContractError::MalformedFrame)
     );
 
     let mut invalid_sequence = value.clone();

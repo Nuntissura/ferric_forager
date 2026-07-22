@@ -1,7 +1,7 @@
 ---
 file_id: FF-PRODUCT-MODEL-MANUAL-001
 file_kind: model_manual
-updated_at: "2026-07-19"
+updated_at: "2026-07-22"
 ---
 
 <topic id="phase-0-purpose" status="active" version="3" wp="WP-FF-005-versioned-core-contracts-v1" updated_at="2026-07-19">
@@ -21,11 +21,13 @@ Shipped product runtime must not read or require `.GOV/` or `build/`. Build tool
 
 </topic>
 
-<topic id="phase-0-compatibility-oracle" status="active" version="1" wp="WP-FF-004-compatibility-inventory-corpus-v1" ingestable="true" updated_at="2026-07-19">
+<topic id="phase-0-compatibility-oracle" status="active" version="4" wp="WP-FF-004-compatibility-inventory-corpus-v1" updated_at="2026-07-22">
 
 ## Generate and validate the compatibility oracle
 
 WP-FF-004 pins the external oracle to the official `yt-dlp 2026.07.04` Windows executable and matching source tag. The executable and source checkout are research inputs outside shipped product code; Ferric Forager has no production Python or yt-dlp dependency.
+
+Phase 0 product source must not embed `README` or `docs` assets with `include!`, `include_bytes!`, or `include_str!`, and it must not construct a process through `Command::new`; those paths would turn research or documentation into an ungoverned runtime dependency. Product-local Clippy configuration forbids compiler-resolved aliases of `std::process::Command`, `Command::new`, `include_bytes!`, and `include_str!`; the architecture scanner separately forbids `include!` and local suppression of those guards. A future shipped runtime may introduce a typed `ExternalProgram` boundary that allowlists only `ffmpeg` and `ffprobe`, validates fixed arguments and executable identity, and is proven through the staged production artifact. It must not permit `yt-dlp`, Python, shell composition, or dynamically assembled program names.
 
 Set repository-relative paths to the separately acquired, hash-matching oracle inputs, then run:
 
@@ -41,13 +43,15 @@ Generation verifies the immutable release identity, executable SHA-256, source G
 
 Validation reads the committed oracle manifest, generated profile, seven-plane corpus, opt-in live manifest, and the exact required negative-fixture inventory. It binds each versioned manifest/profile to its canonical content digest, checks stable IDs, counts, coverage, shard assignments, normalization versions, offline/network separation, allowlisted secret placeholders, and pinned provenance. Case fixture digests normalize CRLF/CR to LF before hashing so clean Git checkouts remain portable. JSON inputs are bounded to 16 MiB. A successful run emits a unique `ff.compatibility-report@1` JSON report under `build/reports/`.
 
-Offline replay never opens the network. Run all cases or a zero-based deterministic shard; a valid shard may contain zero cases:
+Offline replay never opens the network. Run all cases or a zero-based deterministic shard. A shard that selects zero cases fails with `FF-COMP-E-SHARD-EMPTY`; it is not replay evidence. A non-empty shard report is explicitly `selected_shard_only` and never claims complete-corpus semantic replay:
 
 ```powershell
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-replay --shard 0/4
 ```
 
 The mandatory planes are source graph, normalized observation, sanitized network transcript, filesystem/process artifact, failure/timeout, archive duplicate handling, and configuration migration. Fixtures replace authorization, cookies, query tokens, clocks, random seeds, and machine-local state with allowlisted placeholders before commit.
+
+Replay executes deterministic native Rust semantics for every selected case: it records the concrete fixture input, exercised boundary, expected outcome, and observed outcome. It reports `SEMANTIC_REPLAY_EXECUTED`, never a behavior `PASS` inferred only from schema, digest, or expected-outcome text. Structural checks remain structural; report aggregation retains the weakest executed proof class and does not claim shipped Ferric parity, runtime completion, or a yt-dlp/Python dependency.
 
 </topic>
 
@@ -104,19 +108,19 @@ cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard
 ```
 
-`architecture-check` consumes `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, locked Cargo metadata, parsed canonical YAML authority, governed source paths, and `build/fixtures/architecture/`. Its negative fixtures call production validator primitives, while focused tests apply representative mutations to isolated repository copies and invoke the composed production gate. It emits a unique versioned JSON report under `build/reports/` and exits nonzero on mismatch.
+`architecture-check` consumes `build/architecture-policy.toml`, `build/tooling-policy.toml`, `build/rule-to-proof.toml`, locked Cargo metadata, parsed canonical YAML authority, governed source paths, and `build/fixtures/architecture/`. Proof-integrity fixtures mutate isolated product trees, serialized report evidence, and compiled isolated testkit workspaces, then execute the same product scanner, report validator, or exact public test boundary used by the gate. Legacy architecture fixtures remain structural policy checks. It emits a unique versioned JSON report under `build/reports/` and exits nonzero on mismatch.
 
 `runtime-truth-check` compares the active packet base SHA with current changed paths. A governance/build-only packet must declare `scope.product_impact` as `NONE`; its PASS proves only that no product claim is legal. A product-affecting packet must declare `RUNTIME`, supply strict `ff.runtime-proof@1` evidence, and have a declared shipped member. The gate then builds the locked release profile, hashes and stages the exact binary, copies hash-bound inputs into a clean package directory, launches the staged binary as an external process, verifies success and negative scenarios, and removes a required observable to prove the same oracle rejects the counterfactual. Missing runtime proof is `FAIL`/`BLOCKED`, never `PASS` or `NOT_APPLICABLE`.
 
 Supporting unit, fixture, replay, fuzz, property, and mock-based tests remain useful, but `cfg(test)`, dev-dependencies, testkit, mock/fake/stub adapters, in-memory substitutes, hardcoded success, and direct internal calls cannot satisfy `ff.runtime-proof@1`. A product packet requires at least one success and one negative scenario. Exit status alone is not an observable; require stdout, stderr, or a bounded output file with optional SHA-256.
 
-`verify-deep` is active for WP-005. It runs the pinned workspace across formatting, compile profiles, Clippy, all tests, the machine-readable contract inventory, the data-only model scan, and the architecture gate. Its report maps all seven WP-005 acceptance rows to proof and states the prerequisite-only proof ceiling.
+`verify-deep` runs the pinned workspace across formatting, compile profiles, Clippy, all tests, the machine-readable contract inventory, the data-only model scan, the full compatibility replay, the empty-shard negative boundary, and the architecture gate. Its report separates declared proof support from evidence actually executed and retains the prerequisite-only proof ceiling.
 
 `verify-pr` also validates active packet change evidence and runs tool preflight, formatting, compile profiles, Clippy, tests, docs, dependency policy, architecture validation, `FF-GATE-RUNTIME-001`, and the applicable WP-005 deep checks. Prerequisite runtime validation carries an explicit zero-product-progress ceiling. Runtime-affecting missing production proof cannot be skipped. Watcher proof activates with the watcher package, and the release gate remains `NOT_IMPLEMENTED`; none of those states may be converted into product PASS.
 
 </topic>
 
-<topic id="phase-0-contract-operation" status="active" version="1" wp="WP-FF-005-versioned-core-contracts-v1" ingestable="true" updated_at="2026-07-19">
+<topic id="phase-0-contract-operation" status="active" version="1" wp="WP-FF-005-versioned-core-contracts-v1" ingestable="true" updated_at="2026-07-22">
 
 ## Inspect and change the Phase 0 contracts and models
 
@@ -140,11 +144,11 @@ cargo clippy --manifest-path build/Cargo.toml --workspace --all-targets --all-fe
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard
 ```
 
-Wire versions use incompatible major versions and inclusive trusted local reader ranges; a sender cannot self-authorize compatibility. Every envelope type binds to its exact canonical schema ID before dispatch. Unknown mandatory kinds and unnamespaced unknown fields fail. Unknown optional data is accepted only through a namespaced `ExtensionMap` inside fixed entry, key, value, and total byte budgets. Stable typed IDs reject the wrong prefix, uppercase/noncanonical characters, empty suffixes, and values above 128 bytes. Process, plugin, and JavaScript-worker framing is a four-byte big-endian length followed by JSON; declared size is rejected before payload allocation and every decoded envelope is recursively validated. The product frame defaults to 1 MiB. Diagnostics cap a JSON frame at 256 KiB, fields at 64, text at 4 KiB, IDs at 128 bytes, retained unknown optional values at 8 KiB, and schema identities at 16. Read the exported constants and inventory row before relying on any limit.
+Wire versions use incompatible major versions and inclusive trusted local reader ranges; a sender cannot self-authorize compatibility. Every envelope type binds to its exact canonical schema ID before dispatch. `ProtocolOfferV1` migration retains bounded DTO fields only: the shipped diagnostics authority accepts exact schema identity only, and rejects every non-exact drift until a future reviewed transition is explicitly added and behavior-tested. Unknown mandatory kinds and unnamespaced unknown fields fail. Unknown optional data is accepted only through a namespaced `ExtensionMap` inside fixed entry, key, value, and total byte budgets. Stable typed IDs reject the wrong prefix, uppercase/noncanonical characters, empty suffixes, and values above 128 bytes. Process, plugin, and JavaScript-worker framing is a four-byte big-endian length followed by JSON; declared size is rejected before payload allocation and every decoded envelope is recursively validated. The product frame defaults to 1 MiB. Diagnostics cap a JSON frame at 256 KiB, fields at 64, text at 4 KiB, IDs at 128 bytes, retained unknown optional values at 8 KiB, and schema identities at 16. Read the exported constants and inventory row before relying on any limit.
 
 Every lifecycle transition is pure and owned. Invalid transitions leave state and trace unchanged. Traces are bounded and replayable. The commit/archive and byte-durability models enumerate effect-request and acknowledged durable-prefix states; an emitted write, sync, verification, archive, cleanup, or cancellation intent never counts as acknowledged success, and restart reconciliation never invents success from a partial prefix. Resource admission is one checked 13-dimensional vector transaction with exact grant ownership, bounded waiter item/byte counts, strict FIFO head reservation, a deterministic per-owner active-grant ceiling, explicit cancellation dispatch, transactional release, and exact ownership checks. Byte credits conserve capacity, revoke released unused credit, reject positions beyond consumed or live credited bytes, and track received, validated, written, and durable positions monotonically.
 
-Each state-machine instance receives a caller-supplied, nonzero, stable `MachineInstanceId`. An acknowledgement is accepted only when its instance ID, effect, and generation exactly match a currently pending effect. Persist that instance identity and the next generation with the durable state. Public restoration accepts only the states returned by the machine's `durable_states` whitelist; testkit cross-checks that whitelist against the inventory's exact durable-prefix list. Initial, transient, failed, inconsistent, cancelled, and other non-enumerated states are not restart prefixes.
+Each state-machine instance receives a caller-supplied, nonzero, stable `MachineInstanceId`. An acknowledgement, effect failure, or effect cancellation outcome is accepted only when its instance ID, effect, and generation exactly match a currently pending effect. Persist that instance identity and the next generation with the durable state. Public restoration accepts only the states returned by the machine's `durable_states` whitelist; testkit cross-checks that whitelist against the inventory's exact durable-prefix list. Initial, transient, failed, inconsistent, cancelled, and other non-enumerated states are not restart prefixes.
 
 Byte receive consumes a named claim owned by the named owner and records that attribution. An unconsumed claim may transfer ownership, but a partially or fully consumed claim rejects transfer so historical attribution cannot be rewritten. Releasing a claim revokes its unused remainder while retaining consumed attribution for audit.
 
@@ -156,7 +160,7 @@ Before dispatching decoded boundary data:
 - Reject incompatible schema versions before reading operation-specific payload fields.
 - Keep request registration separate from correlated events and acknowledgements; only a new request consumes a new request-ID slot.
 - Compare cancellation acknowledgements with the originating request ID, generation, and caller-selected expected responder before retiring ownership.
-- Route lifecycle acknowledgements with the persisted stable machine instance ID plus exact effect and generation; never synthesize or reuse another instance's token.
+- Route lifecycle acknowledgements and effect failure/cancellation outcomes with the persisted stable machine instance ID plus exact effect and generation; never synthesize or reuse another instance's token.
 - Treat validation failure as a typed boundary rejection; do not repair, truncate, default, or silently discard mandatory data.
 
 To change or regenerate fixtures, never overwrite or reinterpret a supported prior-version file. Add a new versioned fixture, update `inventory.json`, add the matching reader/writer or rejection test, and run the focused testkit plus `verify-deep`. A breaking schema change requires a new major version and retained old fixture. An additive minor change must remain inside a declared compatibility range. Reusing a stable ID for changed semantics is forbidden.

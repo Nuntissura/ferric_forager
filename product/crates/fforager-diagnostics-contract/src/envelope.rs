@@ -162,6 +162,7 @@ pub struct DiagnosticEnvelope {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DiagnosticEnvelopeWire {
     protocol: ProtocolVersion,
     schema: SchemaIdentity,

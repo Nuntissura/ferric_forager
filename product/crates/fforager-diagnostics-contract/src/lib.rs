@@ -30,9 +30,10 @@ pub use lifecycle::{
     LoopState, ReadyEvidence, WatcherState,
 };
 pub use protocol::{
-    CompatibilityRange, NegotiatedProtocol, ProtocolOffer, ProtocolVersion, SchemaDisposition,
-    SchemaHash, SchemaHashAlgorithm, SchemaIdentity, SequenceDisposition, SequenceIdentity,
-    SequenceKey, SequenceTracker,
+    CompatibilityRange, NegotiatedProtocol, ProtocolOffer, ProtocolOfferV1, ProtocolVersion,
+    ReviewedSchemaTransition, SchemaCompatibilityAuthority, SchemaDisposition, SchemaHash,
+    SchemaHashAlgorithm, SchemaIdentity, SequenceDisposition, SequenceIdentity, SequenceKey,
+    SequenceTracker,
 };
 
 /// Maximum UTF-8 bytes accepted for a bounded text value.

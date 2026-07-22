@@ -1,6 +1,6 @@
 schema_id: ff.work_packet_requirements@2
 file_id: FF-GOV-WP-REQUIREMENTS-001
-updated_at: "2026-07-18"
+updated_at: "2026-07-22"
 authority: canonical_profile_requirements
 purpose: Preserve reliable state, recovery, scope, and proof while minimizing paperwork that does not advance product delivery.
 profile_selection:
@@ -180,3 +180,21 @@ requirements:
   - id: FF-WPR-052
     applies_when: product_impact_prerequisite
     statement: A PREREQUISITE packet is design-authorized Phase 0 work, commits an exact non-product prerequisite declaration at activation, contains no production-runtime proof or acceptance, claims zero product/capability/runtime/packaging/release/phase progress, and names the future shipped consumer and runtime gate that must re-prove it.
+  - id: FF-WPR-053
+    applies_when: yt_dlp_compatibility_or_media_behavior
+    statement: Scope and acceptance explicitly prohibit yt-dlp and Python from product dependencies, packaging, installation, subprocess, fallback, sidecar, plugin, service, and delegated runtime paths; any pinned yt-dlp oracle use is non-shipped build or research tooling with provenance and Ferric-independent execution, and validation includes an indirect-wrapper negative case.
+  - id: FF-WPR-054
+    applies_when: replay_or_behavioral_proof
+    statement: Each acceptance row names the semantics executed, concrete input, observed boundary, expected and observed results, proof class, and skipped dependencies; structural fixture checks cannot close a replay, oracle, parity, compatibility, durability, integration, or behavioral PASS row.
+  - id: FF-WPR-055
+    applies_when: external_effect_state_transition
+    statement: Record the complete required acknowledgement set for every emitted effect and prove each partial-acknowledgement prefix cannot reach durable, terminal, release, success, cancellation, confinement, commit, or recovery completion.
+  - id: FF-WPR-056
+    applies_when: schema_graph_or_durable_wire_change
+    statement: Acceptance includes exact schema-transition authority with unrelated-hash negatives, declared sequence origin and unknown-field policy at every wire level, and relationship-kind cycle policy with self-cycle and multi-node-cycle negatives.
+  - id: FF-WPR-057
+    applies_when: behavioral_acceptance_or_proof_map
+    statement: Map metadata routes to an executable public-boundary proof that is independent of implementation declarations; include a behavior-changing declaration-preserving counterfactual, and reject proof-ID strings, constants, inventory equality, or expected-label agreement as behavioral proof.
+  - id: FF-WPR-058
+    applies_when: confirmed_inspection_finding
+    statement: Preserve the original failing input in an executable public-boundary regression, record the corrected observable, and prove the regression fails when the correction is removed or bypassed before marking the finding closed.

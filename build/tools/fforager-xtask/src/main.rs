@@ -12,6 +12,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,9 +20,38 @@ const ARCH_GATE: &str = "FF-GATE-ARCH-001";
 const PR_GATE: &str = "FF-GATE-PR-001";
 const RUNTIME_GATE: &str = "FF-GATE-RUNTIME-001";
 const DEEP_GATE: &str = "FF-GATE-DEEP-001";
+const FAILURE_PROOF_CLASS: &str = "structural";
+static COMMAND_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
+    "tests::public_boundary_counterexamples_reject_audit_failures";
+const PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID: &str =
+    "testkit::tests::public_boundary_counterexamples_reject_audit_failures";
+const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v3:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,acknowledged-effect-prefixes";
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
+const CARGO_PROOF_COMMAND_TIMEOUT: Duration = Duration::from_mins(5);
 const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
 const GATE_COMMAND_TIMEOUT: Duration = Duration::from_mins(15);
+const TERMINATION_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+const RUST_ENVIRONMENT_OVERRIDES: &[&str] = &[
+    "CARGO_CONFIG",
+    "CARGO_HOME",
+    "CARGO_BUILD_RUSTC",
+    "CARGO_BUILD_RUSTC_WRAPPER",
+    "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_BUILD_RUSTDOC",
+    "CARGO_BUILD_RUSTDOCFLAGS",
+    "CARGO_BUILD_RUSTFLAGS",
+    "CARGO_ENCODED_RUSTDOCFLAGS",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "CLIPPY_CONF_DIR",
+    "RUSTC",
+    "RUSTC_BOOTSTRAP",
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "RUSTDOC",
+    "RUSTDOCFLAGS",
+    "RUSTFLAGS",
+];
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -278,7 +308,9 @@ struct GateReport {
     checks: Vec<Check>,
     rules: Vec<String>,
     fixtures: Vec<FixtureResult>,
-    proof_classes: Vec<String>,
+    declared_supported_proof_classes: Vec<String>,
+    executed_proof_classes: Vec<String>,
+    aggregate_executed_proof_class: String,
     proof_limitations: Vec<String>,
     artifacts: Vec<String>,
 }
@@ -288,6 +320,7 @@ struct SourceState {
     git_commit: String,
     dirty: bool,
     dirty_paths: Vec<String>,
+    content_fingerprint: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -307,6 +340,12 @@ struct InputState {
 struct Check {
     id: String,
     status: &'static str,
+    proof_class: &'static str,
+    concrete_input: String,
+    executed_boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
     detail: String,
 }
 
@@ -314,9 +353,106 @@ struct Check {
 struct FixtureResult {
     fixture_id: String,
     status: &'static str,
+    proof_class: &'static str,
+    concrete_input: String,
+    executed_boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
     execution_path: &'static str,
     expected_diagnostic: String,
     observed_diagnostics: Vec<String>,
+}
+
+/// Owned, deny-unknown-fields representation used to validate the bytes that
+/// are actually persisted.  `GateReport` deliberately borrows static labels
+/// while constructing a report; this artifact boundary ensures those labels
+/// cannot bypass schema validation during serialization.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateReportArtifact {
+    schema_id: String,
+    schema_version: String,
+    gate_id: String,
+    gate_version: u32,
+    status: String,
+    exit_code: u8,
+    source: GateReportSourceArtifact,
+    invocation: GateReportInvocationArtifact,
+    inputs: Vec<GateReportInputArtifact>,
+    checks: Vec<GateReportCheckArtifact>,
+    rules: Vec<String>,
+    fixtures: Vec<GateReportFixtureArtifact>,
+    declared_supported_proof_classes: Vec<String>,
+    executed_proof_classes: Vec<String>,
+    aggregate_executed_proof_class: String,
+    proof_limitations: Vec<String>,
+    artifacts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateReportSourceArtifact {
+    git_commit: String,
+    dirty: bool,
+    dirty_paths: Vec<String>,
+    content_fingerprint: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateReportInvocationArtifact {
+    repository_root: String,
+    gate_args: Vec<String>,
+    canonical_command: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateReportInputArtifact {
+    path: String,
+    git_blob: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateReportCheckArtifact {
+    id: String,
+    status: String,
+    proof_class: String,
+    concrete_input: String,
+    executed_boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
+    detail: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateReportFixtureArtifact {
+    fixture_id: String,
+    status: String,
+    proof_class: String,
+    concrete_input: String,
+    executed_boundary: String,
+    expected_result: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
+    execution_path: String,
+    expected_diagnostic: String,
+    observed_diagnostics: Vec<String>,
+}
+
+#[derive(Debug)]
+struct FixtureExecution {
+    diagnostics: Vec<String>,
+    proof_class: &'static str,
+    execution_path: &'static str,
+    concrete_input: String,
+    executed_boundary: String,
+    observed_result: String,
+    skipped_semantic_dependencies: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -324,7 +460,8 @@ struct ArchitectureResult {
     checks: Vec<Check>,
     rules: Vec<String>,
     fixtures: Vec<FixtureResult>,
-    proof_classes: Vec<String>,
+    declared_supported_proof_classes: Vec<String>,
+    executed_proof_classes: Vec<String>,
     limitations: Vec<String>,
 }
 
@@ -431,7 +568,11 @@ fn run_architecture_gate_inner(root: &Path, gate_args: &[String]) -> Result<(), 
         checks: result.checks,
         rules: result.rules,
         fixtures: result.fixtures,
-        proof_classes: result.proof_classes,
+        aggregate_executed_proof_class: aggregate_executed_proof_class(
+            &result.executed_proof_classes,
+        ),
+        declared_supported_proof_classes: result.declared_supported_proof_classes,
+        executed_proof_classes: result.executed_proof_classes,
         proof_limitations: result.limitations,
         artifacts: vec!["build/reports".to_owned()],
     };
@@ -450,6 +591,8 @@ fn run_verify_deep(root: &Path, gate_args: &[String]) -> Result<(), String> {
 fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
     let architecture = run_verify_deep_checks(root, &mut checks)?;
+    let executed_proof_classes = executed_proof_classes(&checks, &architecture.fixtures);
+    let aggregate_executed_proof_class = aggregate_executed_proof_class(&executed_proof_classes);
     let report = GateReport {
         schema_id: "ff.gate-report@1",
         schema_version: "1.0.0",
@@ -461,17 +604,19 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
         invocation: invocation(gate_args),
         inputs: collect_inputs(root)?,
         checks,
-        rules: (1..=7)
-            .map(|number| format!("WP-FF-005-versioned-core-contracts-v1-AC-{number:03}"))
-            .collect(),
+        rules: architecture.rules.clone(),
         fixtures: architecture.fixtures,
-        proof_classes: vec![
-            "prerequisite_contract_artifact".to_owned(),
-            "prerequisite_model_execution".to_owned(),
-            "prerequisite_conformance_execution".to_owned(),
-            "governed_gate".to_owned(),
-            "reviewed_artifact".to_owned(),
+        declared_supported_proof_classes: vec![
+            "graph".to_owned(),
+            "negative_fixture".to_owned(),
+            "public_boundary".to_owned(),
+            "semantic".to_owned(),
+            "state_effect".to_owned(),
+            "structural".to_owned(),
+            "wire_boundary".to_owned(),
         ],
+        aggregate_executed_proof_class,
+        executed_proof_classes,
         proof_limitations: vec![
             "This is Phase 0 prerequisite proof and claims no product capability, runtime completion, packaging, release, or phase progress.".to_owned(),
             "Concrete network, storage, FFmpeg, JavaScript, plugin, scheduler, watcher, and archive adapters remain future consumers of these contracts and models.".to_owned(),
@@ -493,45 +638,120 @@ fn run_verify_deep_checks(
 ) -> Result<ArchitectureResult, String> {
     verify_tool_identities(root, checks)?;
     run_rust_verification(root, checks)?;
+    execute_public_boundary_counterexample_test(root, checks)?;
+    execute_compatibility_replay_boundaries(root, checks)?;
     run_doctests(root, checks)?;
     validate_contract_inventory(root, checks)?;
     validate_contract_manual(root, checks)?;
     scan_data_only_product_models(root, checks)?;
     let mut architecture = architecture_check(root)?;
     checks.append(&mut architecture.checks);
-    for (id, detail) in [
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-001",
-            "versioned data-only product and diagnostic contracts, bounded limits/errors, and inventory rows were compiled and tested",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-002",
-            "typed identity, relationship, provenance, collision, canonicalization, and archive-eligibility tests passed",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-003",
-            "all twelve finite lifecycle models passed success, failure, cancellation, restart, replay, and invalid-transition tests",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-004",
-            "checked atomic resource-vector and byte-credit boundary, saturation, fairness, cancellation, and release tests passed",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-005",
-            "shared conformance tests passed prior/current, incompatible-major, partial, oversized, unknown-kind, duplicate, and malformed paths",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-006",
-            "architecture and deep proof surfaces passed on the pinned workspace",
-        ),
-        (
-            "WP-FF-005-versioned-core-contracts-v1-AC-007",
-            "the no-context model manual is a recorded gate input and documents the contract workflow",
-        ),
-    ] {
-        checks.push(pass(id, detail));
-    }
+    checks.push(pass(
+        "deep-proof-surface",
+        "locked workspace, contract inventory, model manual, data-only scan, public-boundary counterexamples, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
+    ));
     Ok(architecture)
+}
+
+fn execute_compatibility_replay_boundaries(
+    root: &Path,
+    checks: &mut Vec<Check>,
+) -> Result<(), String> {
+    let source_before = source_state(root)?;
+    let reports_before = report_file_snapshot(root)?;
+    let output = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "run",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "-p",
+            "fforager-xtask",
+            "--",
+            "compatibility-replay",
+        ],
+    )?;
+    let report_path = child_report_path(root, &output, "compatibility-replay")?;
+    validate_fresh_child_report(&report_path, &reports_before)?;
+    let evidence = compatibility::read_replay_report_evidence(root, &report_path)?;
+    let source_after = source_state(root)?;
+    if evidence.source_git_commit != source_before.git_commit
+        || evidence.source_dirty != source_before.dirty
+        || evidence.source_dirty_paths != source_before.dirty_paths
+        || evidence.source_content_fingerprint != source_before.content_fingerprint
+        || !source_states_equal(&source_before, &source_after)
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-SOURCE-STALE: child replay report or repository source state changed during deep semantic proof"
+                .to_owned(),
+        );
+    }
+    if evidence.status != "SEMANTIC_REPLAY_EXECUTED"
+        || evidence.execution_scope != "complete_corpus"
+    {
+        return Err(format!(
+            "FF-COMP-E-REPLAY-REPORT-STATUS: deep gate requires complete semantic replay, observed status={} scope={}",
+            evidence.status, evidence.execution_scope
+        ));
+    }
+    let replay_report_path = evidence.report_path;
+    for replay in evidence.semantic_replays {
+        checks.push(Check {
+            id: format!("compatibility-replay-semantic-{}", replay.case_id),
+            status: "PASS",
+            proof_class: "semantic",
+            concrete_input: replay.concrete_input,
+            executed_boundary: format!(
+                "exact child compatibility report {} via {}",
+                replay_report_path, replay.boundary
+            ),
+            expected_result: replay.expected_result,
+            observed_result: format!("plane={}; {}", replay.plane, replay.observed_result),
+            skipped_semantic_dependencies: replay.skipped_semantic_dependencies,
+            detail:
+                "complete-corpus semantic replay evidence recovered from the exact child report"
+                    .to_owned(),
+        });
+    }
+    let error = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "run",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "-p",
+            "fforager-xtask",
+            "--",
+            "compatibility-replay",
+            "--shard",
+            "2/4",
+        ],
+    )
+    .expect_err("empty replay shard unexpectedly produced evidence");
+    if !error.contains("FF-COMP-E-SHARD-EMPTY") {
+        return Err(format!(
+            "empty replay shard failed without the required typed diagnostic: {error}"
+        ));
+    }
+    checks.push(Check {
+        id: "compatibility-replay-empty-shard".to_owned(),
+        status: "PASS",
+        proof_class: "negative_fixture",
+        concrete_input: "compatibility-replay --shard 2/4".to_owned(),
+        executed_boundary: "fforager-xtask compatibility replay selection boundary".to_owned(),
+        expected_result: "reject an empty selected shard with FF-COMP-E-SHARD-EMPTY".to_owned(),
+        observed_result: "FF-COMP-E-SHARD-EMPTY".to_owned(),
+        skipped_semantic_dependencies: vec![
+            "An empty selection intentionally executes no case semantics and produces no replay report."
+                .to_owned(),
+        ],
+        detail: "empty replay shard was rejected before any semantic PASS could be produced".to_owned(),
+    });
+    Ok(())
 }
 
 fn validate_contract_inventory(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
@@ -572,7 +792,16 @@ fn validate_contract_inventory(root: &Path, checks: &mut Vec<Check>) -> Result<(
             states.len()
         ));
     }
-    validate_contract_inventory_rows(root, entries, states)?;
+    let inventory_proof_ids = validate_contract_inventory_rows(root, entries, states)?;
+    checks.extend(resolve_and_execute_inventory_proofs(
+        root,
+        &inventory_proof_ids,
+    )?);
+    validate_public_boundary_counterexample_declaration(root)?;
+    checks.push(pass(
+        "public-boundary-counterexample-declaration",
+        "inventory-backed public-boundary proof has a non-ignored registered test declaration",
+    ));
     checks.push(pass(
         "contract-inventory",
         &format!(
@@ -587,17 +816,23 @@ fn validate_contract_inventory_rows(
     root: &Path,
     entries: &[Value],
     states: &[Value],
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     let fixture_root = root.join("build/fixtures/contracts");
     let mut ids = BTreeSet::new();
     let mut contract_ids = BTreeSet::new();
     let mut state_ids = BTreeSet::new();
+    let mut proof_ids = BTreeSet::new();
     for (row, is_state) in entries
         .iter()
         .map(|row| (row, false))
         .chain(states.iter().map(|row| (row, true)))
     {
         let id = validate_contract_inventory_row(row, is_state, &fixture_root)?;
+        let proof_id = row
+            .get("proof_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("contract inventory row {id} omits proof_id"))?;
+        proof_ids.insert(proof_id.to_owned());
         if !ids.insert(id) {
             return Err(format!("duplicate contract inventory ID {id}"));
         }
@@ -614,6 +849,508 @@ fn validate_contract_inventory_rows(
             "contract inventory stable-ID coverage mismatch: contracts={contract_ids:?}; states={state_ids:?}"
         ));
     }
+    Ok(proof_ids.into_iter().collect())
+}
+
+fn resolve_and_execute_inventory_proofs(
+    root: &Path,
+    proof_ids: &[String],
+) -> Result<Vec<Check>, String> {
+    resolve_and_execute_inventory_proofs_with_cargo_mode(root, proof_ids, "--locked", None)
+}
+
+fn resolve_and_execute_inventory_proofs_with_cargo_mode(
+    root: &Path,
+    proof_ids: &[String],
+    cargo_mode: &str,
+    target_dir: Option<&Path>,
+) -> Result<Vec<Check>, String> {
+    let target_dir = target_dir
+        .map(|path| {
+            path.to_str()
+                .ok_or("inventory proof target directory is not valid UTF-8")
+        })
+        .transpose()?;
+    let mut listings = BTreeMap::<&str, BTreeSet<String>>::new();
+    let mut checks = Vec::new();
+    for proof_id in proof_ids {
+        let (package, selector) = inventory_proof_target(proof_id)?;
+        validate_inventory_proof_source(root, proof_id, package, selector)?;
+        let listed = if let Some(listed) = listings.get(package) {
+            listed
+        } else {
+            let mut args = vec!["test", "--manifest-path", "build/Cargo.toml", cargo_mode];
+            if let Some(target_dir) = target_dir {
+                args.extend(["--target-dir", target_dir]);
+            }
+            args.extend(["-p", package, "--lib", "--", "--list"]);
+            let output = cargo_proof_output(root, "cargo", &args)?;
+            let discovered = output
+                .lines()
+                .filter_map(|line| line.trim().strip_suffix(": test"))
+                .map(ToOwned::to_owned)
+                .collect::<BTreeSet<_>>();
+            if discovered.is_empty() {
+                return Err(format!(
+                    "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: {package} exposed no runnable lib tests"
+                ));
+            }
+            listings.insert(package, discovered);
+            listings
+                .get(package)
+                .expect("inserted proof listing must be present")
+        };
+        if !listed.contains(selector) {
+            return Err(format!(
+                "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: {proof_id} does not resolve to a registered {package} test"
+            ));
+        }
+        let mut args = vec!["test", "--manifest-path", "build/Cargo.toml", cargo_mode];
+        if let Some(target_dir) = target_dir {
+            args.extend(["--target-dir", target_dir]);
+        }
+        args.extend([
+            "-p",
+            package,
+            "--lib",
+            selector,
+            "--",
+            "--exact",
+            "--nocapture",
+        ]);
+        let output = cargo_proof_output(root, "cargo", &args)?;
+        if !exact_test_execution_passed(&output, selector) {
+            return Err(format!(
+                "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: {proof_id} was not executed as a non-ignored exact test"
+            ));
+        }
+        checks.push(Check {
+            id: format!("inventory-proof-{}", sanitize_id(proof_id)),
+            status: "PASS",
+            proof_class: inventory_proof_class(proof_id),
+            concrete_input: proof_id.clone(),
+            executed_boundary: format!("cargo exact test boundary for package {package}"),
+            expected_result: format!("registered test {selector} executes and passes"),
+            observed_result: format!("{selector} executed as a non-ignored exact test"),
+            skipped_semantic_dependencies: vec![
+                "Inventory proof execution validates Phase 0 contracts only; no shipped Ferric entrypoint was executed."
+                    .to_owned(),
+            ],
+            detail: "inventory proof ID resolved through cargo test --list and exact execution"
+                .to_owned(),
+        });
+    }
+    Ok(checks)
+}
+
+fn exact_test_execution_passed(output: &str, selector: &str) -> bool {
+    let expected_test = format!("test {selector} ... ok");
+    output.lines().any(|line| line.trim() == "running 1 test")
+        && output.lines().any(|line| line.trim() == expected_test)
+        && output.lines().any(|line| {
+            let line = line.trim();
+            line.starts_with("test result: ok.")
+                && line.contains("1 passed;")
+                && line.contains("0 failed;")
+                && line.contains("0 ignored;")
+        })
+}
+
+fn inventory_proof_target(proof_id: &str) -> Result<(&'static str, &str), String> {
+    let prefixes = [
+        ("contracts::", "fforager-contracts"),
+        ("core::", "fforager-core"),
+        ("testkit::", "fforager-testkit"),
+        ("diagnostics::", "fforager-diagnostics-contract"),
+    ];
+    for (prefix, package) in prefixes {
+        if let Some(selector) = proof_id.strip_prefix(prefix) {
+            if selector.trim().is_empty() {
+                break;
+            }
+            return Ok((package, selector));
+        }
+    }
+    Err(format!(
+        "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: unsupported proof ID namespace {proof_id}"
+    ))
+}
+
+fn inventory_proof_class(proof_id: &str) -> &'static str {
+    if proof_id == PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID {
+        "public_boundary"
+    } else if proof_id.starts_with("core::lifecycle::") {
+        "state_effect"
+    } else if proof_id.starts_with("contracts::graph::") {
+        "graph"
+    } else if proof_id.starts_with("diagnostics::") {
+        "wire_boundary"
+    } else {
+        "semantic"
+    }
+}
+
+/// Inventory metadata is not evidence by itself.  Before executing a mapped
+/// test, reject the smallest known hollow form so `cargo test --exact` cannot
+/// turn an `assert!(true)` body into a semantic PASS claim.
+fn validate_inventory_proof_source(
+    root: &Path,
+    proof_id: &str,
+    package: &str,
+    selector: &str,
+) -> Result<(), String> {
+    let source_path = inventory_proof_source_path(root, package, selector)?;
+    let source = fs::read_to_string(&source_path)
+        .map_err(|error| format!("read {}: {error}", source_path.display()))?;
+    let test_name = selector
+        .rsplit("::")
+        .next()
+        .ok_or("inventory selector has no test name")?;
+    let body = named_test_body(&source, test_name).ok_or_else(|| {
+        format!(
+            "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: {proof_id} has no source body for exact test {test_name}"
+        )
+    })?;
+    if inventory_proof_trivial_body(body)
+        || named_test_attributes(&source, test_name)
+            .is_some_and(|attributes| attributes.contains("#[should_panic]"))
+    {
+        return Err(format!(
+            "FF-ARCH-E-INVENTORY-PROOF-STUB: {proof_id} resolves to a neutralized test body"
+        ));
+    }
+    Ok(())
+}
+
+fn inventory_proof_source_path(
+    root: &Path,
+    package: &str,
+    selector: &str,
+) -> Result<PathBuf, String> {
+    if package == "fforager-testkit" {
+        return Ok(root.join("build/crates/fforager-testkit/src/lib.rs"));
+    }
+    let module = selector
+        .split("::tests::")
+        .next()
+        .filter(|module| !module.is_empty() && !module.contains("::"))
+        .ok_or_else(|| {
+            format!(
+                "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: unsupported inventory selector module {selector}"
+            )
+        })?;
+    let crate_root = match package {
+        "fforager-contracts" => "product/crates/fforager-contracts/src",
+        "fforager-core" => "product/crates/fforager-core/src",
+        "fforager-diagnostics-contract" => "product/crates/fforager-diagnostics-contract/src",
+        _ => {
+            return Err(format!(
+                "FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED: unsupported inventory package {package}"
+            ));
+        }
+    };
+    Ok(root.join(crate_root).join(format!("{module}.rs")))
+}
+
+fn named_test_body<'a>(source: &'a str, test_name: &str) -> Option<&'a str> {
+    let marker = format!("fn {test_name}(");
+    let start = source.find(&marker)?;
+    let opening = source[start..].find('{')? + start;
+    let mut depth = 0_u32;
+    for (offset, byte) in source.as_bytes()[opening..].iter().enumerate() {
+        match byte {
+            b'{' => depth = depth.saturating_add(1),
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return source.get(opening..=opening + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn named_test_attributes<'a>(source: &'a str, test_name: &str) -> Option<&'a str> {
+    let marker = format!("fn {test_name}(");
+    let function = source.find(&marker)?;
+    let prefix = source.get(..function)?;
+    let start = prefix
+        .rfind("\n\n")
+        .map_or(0, |offset| offset.saturating_add(2));
+    source.get(start..function)
+}
+
+fn inventory_proof_trivial_body(body: &str) -> bool {
+    let compact = body
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    let inner = compact
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .unwrap_or(compact.as_str())
+        .trim_end_matches(';');
+    if matches!(
+        inner,
+        "" | "return" | "assert!(true)" | "assert!(1==1)" | "debug_assert!(true)"
+    ) {
+        return true;
+    }
+    if single_assertion_arguments(inner).is_some_and(assertion_arguments_are_constant_only) {
+        return true;
+    }
+    if local_constant_assertion_body(inner) {
+        return true;
+    }
+    let Some(arguments) = inner
+        .strip_prefix("assert_eq!(")
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let mut values = arguments.split(',');
+    let Some(left) = values.next() else {
+        return false;
+    };
+    let Some(right) = values.next() else {
+        return false;
+    };
+    values.next().is_none() && left == right
+}
+
+fn single_assertion_arguments(value: &str) -> Option<&str> {
+    ["assert!", "debug_assert!", "assert_eq!", "assert_ne!"]
+        .into_iter()
+        .find_map(|name| {
+            value
+                .strip_prefix(name)
+                .and_then(|arguments| arguments.strip_prefix('('))
+                .and_then(|arguments| arguments.strip_suffix(')'))
+        })
+}
+
+/// A single assertion over literals and operators observes no product behavior.
+/// This is deliberately conservative: any identifier other than boolean
+/// literals keeps the body eligible for the compiled behavior checks.
+fn assertion_arguments_are_constant_only(arguments: &str) -> bool {
+    assertion_identifiers(arguments)
+        .iter()
+        .all(|identifier| constant_identifier(identifier))
+}
+
+fn local_constant_assertion_body(body: &str) -> bool {
+    let statements = body
+        .split(';')
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+        .collect::<Vec<_>>();
+    let Some((assertion, declarations)) = statements.split_last() else {
+        return false;
+    };
+    let Some(arguments) = single_assertion_arguments(assertion) else {
+        return false;
+    };
+    let mut locals = BTreeSet::new();
+    for declaration in declarations {
+        // `inventory_proof_trivial_body` intentionally operates on compacted
+        // source so whitespace cannot disguise a local literal tautology.
+        // Accept the compact `letvalue=...` and `constVALUE=...` forms here;
+        // the binding validation below still rejects non-identifiers.
+        let Some(declaration) = declaration
+            .strip_prefix("let")
+            .or_else(|| declaration.strip_prefix("const"))
+        else {
+            return false;
+        };
+        let Some((binding, value)) = declaration.split_once('=') else {
+            return false;
+        };
+        if assertion_identifiers(value)
+            .iter()
+            .any(|identifier| !constant_identifier(identifier) && !locals.contains(identifier))
+        {
+            return false;
+        }
+        let binding = binding
+            .split(':')
+            .next()
+            .unwrap_or(binding)
+            .split_whitespace()
+            .last()
+            .unwrap_or_default()
+            .trim();
+        if binding.is_empty()
+            || !binding
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        {
+            return false;
+        }
+        locals.insert(binding.to_owned());
+    }
+    assertion_identifiers(arguments)
+        .iter()
+        .all(|identifier| constant_identifier(identifier) || locals.contains(identifier))
+}
+
+fn constant_identifier(identifier: &str) -> bool {
+    matches!(
+        identifier,
+        "true"
+            | "false"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "f32"
+            | "f64"
+    )
+}
+
+fn assertion_identifiers(arguments: &str) -> Vec<String> {
+    let mut identifiers = Vec::new();
+    let mut current = String::new();
+    let mut quoted = None;
+    let mut escaped = false;
+    for character in arguments.chars() {
+        if let Some(quote) = quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == quote {
+                quoted = None;
+            }
+            continue;
+        }
+        if matches!(character, '"' | '\'') {
+            quoted = Some(character);
+            continue;
+        }
+        if character.is_ascii_alphabetic() || character == '_' {
+            current.push(character);
+        } else if !current.is_empty() {
+            identifiers.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        identifiers.push(current);
+    }
+    identifiers
+}
+
+fn validate_public_boundary_counterexample_declaration(root: &Path) -> Result<(), String> {
+    let source_path = root.join("build/crates/fforager-testkit/src/lib.rs");
+    let source = fs::read_to_string(&source_path)
+        .map_err(|error| format!("read {}: {error}", source_path.display()))?;
+    public_boundary_counterexample_declaration_diagnostic(&source)
+        .map_or(Ok(()), |diagnostic| Err(diagnostic.to_owned()))
+}
+
+fn public_boundary_counterexample_declaration_diagnostic(source: &str) -> Option<&'static str> {
+    let marker = "fn public_boundary_counterexamples_reject_audit_failures()";
+    let Some(function_offset) = source.find(marker) else {
+        return Some("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-MISSING");
+    };
+    let preceding = &source[..function_offset];
+    let attributes = preceding
+        .lines()
+        .rev()
+        .take(8)
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    if !attributes.contains(&"#[test]") || attributes.contains(&"#[ignore]") {
+        return Some("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-SKIPPED");
+    }
+    None
+}
+
+fn execute_public_boundary_counterexample_test(
+    root: &Path,
+    checks: &mut Vec<Check>,
+) -> Result<(), String> {
+    validate_public_boundary_counterexample_declaration(root)?;
+    let listed = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            "--",
+            "--list",
+        ],
+    )?;
+    let expected = format!("{PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST}: test");
+    if !listed.lines().any(|line| line.trim() == expected) {
+        return Err("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-MISSING".to_owned());
+    }
+    checks.push(Check {
+        id: "public-boundary-counterexample-listed".to_owned(),
+        status: "PASS",
+        proof_class: "structural",
+        concrete_input: PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID.to_owned(),
+        executed_boundary: "cargo test --list test registration boundary".to_owned(),
+        expected_result: "the exact public counterexample test is registered and runnable"
+            .to_owned(),
+        observed_result: format!("registered {PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID}"),
+        skipped_semantic_dependencies: vec![
+            "Registration alone does not execute the public counterexamples.".to_owned(),
+        ],
+        detail: "the exact public counterexample test is registered".to_owned(),
+    });
+    let output = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST,
+            "--",
+            "--exact",
+            "--nocapture",
+        ],
+    )?;
+    if !output.contains(PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT) {
+        return Err("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-RECEIPT".to_owned());
+    }
+    checks.push(Check {
+        id: "public-boundary-counterexamples".to_owned(),
+        status: "PASS",
+        proof_class: "public_boundary",
+        concrete_input: PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID.to_owned(),
+        executed_boundary: "exact compiled fforager-testkit public contract boundary".to_owned(),
+        expected_result: format!(
+            "{PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST} emits the required counterexample receipt"
+        ),
+        observed_result: PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT.to_owned(),
+        skipped_semantic_dependencies: vec![
+            "This proves prerequisite public contract boundaries, not a shipped Ferric entrypoint."
+                .to_owned(),
+        ],
+        detail: format!(
+            "cargo test --exact --nocapture executed {PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID} and emitted the required counterexample receipt"
+        ),
+    });
     Ok(())
 }
 
@@ -790,15 +1527,15 @@ fn expected_inventory_proof(id: &str) -> Option<&'static str> {
         "FF-CONTRACT-IDENTITY-001" => {
             Some("contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase")
         }
-        "FF-CONTRACT-SOURCE-GRAPH-001"
-        | "FF-CONTRACT-PLUGIN-IPC-001"
+        "FF-CONTRACT-PLUGIN-IPC-001"
         | "FF-CONTRACT-JS-WORKER-001"
         | "FF-CONTRACT-DURABILITY-001"
-        | "FF-CONTRACT-DIAGNOSTIC-ENVELOPE-001"
-        | "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001"
         | "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001" => Some(
             "testkit::tests::canonical_wire_fixtures_decode_as_their_registered_contract_types",
         ),
+        "FF-CONTRACT-SOURCE-GRAPH-001"
+        | "FF-CONTRACT-DIAGNOSTIC-ENVELOPE-001"
+        | "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001" => Some(PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID),
         "FF-CONTRACT-ACQUISITION-001"
         | "FF-CONTRACT-OUTPUT-SINK-001"
         | "FF-CONTRACT-CONFIG-001"
@@ -835,16 +1572,16 @@ fn expected_inventory_proof(id: &str) -> Option<&'static str> {
             Some("core::lifecycle::tests::every_named_lifecycle_has_a_success_path")
         }
         "FF-STATE-SINK-001" => Some(
-            "core::lifecycle::tests::failure_and_restart_preserve_diagnostics_and_reset_safely",
+            "core::lifecycle::tests::failure_paths_complete_required_effects_before_their_outcome_state",
         ),
-        "FF-STATE-FFMPEG-001" | "FF-STATE-PLUGIN-IPC-001" | "FF-STATE-WATCHER-001" => {
-            Some("core::lifecycle::tests::cancellation_paths_are_explicit_and_release_or_drain")
+        "FF-STATE-PLUGIN-IPC-001" | "FF-STATE-WATCHER-001" => {
+            Some("core::lifecycle::tests::cancellation_paths_reach_expected_states")
+        }
+        "FF-STATE-FFMPEG-001" | "FF-STATE-FILESYSTEM-CAPABILITY-001" => {
+            Some(PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID)
         }
         "FF-STATE-JS-WORKER-001" => {
             Some("core::lifecycle::tests::illegal_transitions_are_typed_and_do_not_mutate_or_trace")
-        }
-        "FF-STATE-FILESYSTEM-CAPABILITY-001" => {
-            Some("core::lifecycle::tests::degraded_filesystem_never_claims_confinement")
         }
         _ => None,
     }
@@ -1008,7 +1745,7 @@ fn required_inventory_fixture(id: &str) -> Option<&'static str> {
         "FF-CONTRACT-DURABILITY-001" => Some("archive-candidate-v1.0.json"),
         "FF-CONTRACT-FILESYSTEM-001" => Some("filesystem-capability-v1.0.json"),
         "FF-CONTRACT-DIAGNOSTIC-ENVELOPE-001" => Some("diagnostic-envelope-v1.2.json"),
-        "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001" => Some("diagnostic-protocol-offer-v1.0.json"),
+        "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001" => Some("diagnostic-protocol-offer-v2.0.json"),
         "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001" => Some("diagnostic-lifecycle-v1.0.json"),
         "FF-CONTRACT-RESOURCE-VECTOR-001"
         | "FF-STATE-ADMISSION-001"
@@ -1335,18 +2072,20 @@ fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let proof_classes = rule_map
+    let declared_supported_proof_classes = rule_map
         .rules
         .iter()
         .flat_map(|rule| rule.proof_classes.iter().cloned())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
+    let executed_proof_classes = executed_proof_classes(&checks, &fixtures);
     Ok(ArchitectureResult {
         checks,
         rules: canonical_rules.into_iter().collect(),
         fixtures,
-        proof_classes,
+        declared_supported_proof_classes,
+        executed_proof_classes,
         limitations,
     })
 }
@@ -1687,7 +2426,9 @@ fn validate_member_metadata(
     }
     let manifest_text =
         fs::read_to_string(root.join(&member.manifest)).map_err(|e| e.to_string())?;
-    if !manifest_inherits_workspace_lints(&manifest_text)? {
+    if !manifest_inherits_workspace_lints(&manifest_text)?
+        && !product_local_lint_manifest(&member.manifest, &manifest_text)?
+    {
         return Err(format!(
             "{} does not inherit workspace lints",
             member.manifest
@@ -1760,6 +2501,45 @@ fn manifest_inherits_workspace_lints(manifest_text: &str) -> Result<bool, String
         .and_then(|lints| lints.get("workspace"))
         .and_then(toml::Value::as_bool)
         == Some(true))
+}
+
+fn product_local_lint_manifest(manifest_path: &str, manifest_text: &str) -> Result<bool, String> {
+    if !matches!(
+        manifest_path,
+        "product/crates/fforager-contracts/Cargo.toml"
+            | "product/crates/fforager-diagnostics-contract/Cargo.toml"
+            | "product/crates/fforager-core/Cargo.toml"
+    ) {
+        return Ok(false);
+    }
+    let manifest = manifest_text
+        .parse::<toml::Table>()
+        .map_err(|error| format!("parse product member manifest: {error}"))?;
+    let lints = manifest
+        .get("lints")
+        .and_then(toml::Value::as_table)
+        .ok_or("product member omits lints table")?;
+    let rust = lints
+        .get("rust")
+        .and_then(toml::Value::as_table)
+        .ok_or("product member omits lints.rust")?;
+    let clippy = lints
+        .get("clippy")
+        .and_then(toml::Value::as_table)
+        .ok_or("product member omits lints.clippy")?;
+    Ok(lints.get("workspace").is_none()
+        && rust.get("unsafe_code").and_then(toml::Value::as_str) == Some("forbid")
+        && rust
+            .get("missing_debug_implementations")
+            .and_then(toml::Value::as_str)
+            == Some("warn")
+        && [
+            "disallowed_types",
+            "disallowed_methods",
+            "disallowed_macros",
+        ]
+        .into_iter()
+        .all(|key| clippy.get(key).and_then(toml::Value::as_str) == Some("forbid")))
 }
 
 fn validate_workspace_manifest(root: &Path, policy: &ArchitecturePolicy) -> Result<(), String> {
@@ -2109,6 +2889,8 @@ fn validate_three_roots(
         return Err("exception authority does not expose the canonical empty allowlist".to_owned());
     }
     scan_product_runtime_literals(root)?;
+    scan_product_oracle_boundary(root)?;
+    validate_product_clippy_guard(root)?;
     checks.push(pass(
         "three-root-boundary",
         ".GOV, product, and build ownership is exclusive; root selector is unique",
@@ -2179,6 +2961,162 @@ fn scan_product_runtime_literals(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn scan_product_oracle_boundary(root: &Path) -> Result<(), String> {
+    let product = root.join("product");
+    if !product.exists() {
+        return Ok(());
+    }
+    for path in walk_files(&product)? {
+        let relative = slash(path.strip_prefix(root).map_err(|error| error.to_string())?);
+        let bytes = fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
+        if let Some(diagnostic) = product_oracle_boundary_diagnostic(&relative, &bytes) {
+            return Err(format!(
+                "{diagnostic}: product package input, asset, installer, script, source, or manifest delegates to forbidden oracle/runtime: {relative}",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn product_oracle_boundary_diagnostic(relative: &str, bytes: &[u8]) -> Option<&'static str> {
+    if !relative.starts_with("product/")
+        || relative == "product/clippy.toml"
+        || product_oracle_documentation_exception(relative, bytes)
+    {
+        return None;
+    }
+    product_oracle_path_diagnostic(relative)
+        .or_else(|| product_oracle_source_diagnostic(&String::from_utf8_lossy(bytes)))
+        .or_else(|| {
+            product_documentation_asset_reference_diagnostic(&String::from_utf8_lossy(bytes))
+        })
+}
+
+fn product_oracle_documentation_exception(relative: &str, bytes: &[u8]) -> bool {
+    let permitted_path = relative == "product/MODEL_MANUAL.md"
+        || relative.ends_with("/README.md")
+        || (relative.contains("/docs/")
+            && Path::new(relative)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("md")));
+    permitted_path && std::str::from_utf8(bytes).is_ok() && !bytes.contains(&0)
+}
+
+fn product_oracle_path_diagnostic(relative: &str) -> Option<&'static str> {
+    let extension = Path::new(relative)
+        .extension()
+        .and_then(OsStr::to_str)
+        .map(str::to_ascii_lowercase);
+    if matches!(
+        extension.as_deref(),
+        Some(
+            "py" | "pyw"
+                | "pyi"
+                | "exe"
+                | "com"
+                | "dll"
+                | "so"
+                | "dylib"
+                | "bin"
+                | "msi"
+                | "ps1"
+                | "sh"
+                | "bat"
+                | "cmd"
+                | "zip"
+                | "7z"
+                | "rar"
+                | "tar"
+                | "gz"
+                | "bz2"
+                | "xz"
+                | "jar"
+        )
+    ) || relative
+        .split('/')
+        .any(|component| component.eq_ignore_ascii_case("__pycache__"))
+    {
+        return Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME");
+    }
+    product_oracle_source_diagnostic(relative)
+}
+
+fn product_documentation_asset_reference_diagnostic(source: &str) -> Option<&'static str> {
+    let compact = source
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    let macro_compact = source
+        .chars()
+        .filter(|character| !character.is_ascii_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if macro_compact.contains("include!(")
+        || macro_compact.contains("include_bytes!(")
+        || macro_compact.contains("include_str!(")
+    {
+        return Some("FF-ARCH-E-PRODUCT-DOC-ASSET-REFERENCE");
+    }
+    if compact.contains("stdprocesscommand") || compact.contains("commandnew") {
+        return Some("FF-ARCH-E-PRODUCT-UNGOVERNED-PROCESS");
+    }
+    compact
+        .contains("allowclippydisallowed")
+        .then_some("FF-ARCH-E-PRODUCT-SCANNER-ESCAPE")
+}
+
+/// Compiler-resolved protection complements the lexical scanner: aliases of
+/// `Command`, `Command::new`, `include_bytes!`, and `include_str!` are denied
+/// by Clippy even when token spelling changes.  `include!` and local lint
+/// escapes remain scanner-enforced because Clippy has no equivalent rule.
+fn validate_product_clippy_guard(root: &Path) -> Result<(), String> {
+    validate_rust_verification_environment(root)?;
+    let config = fs::read_to_string(root.join("product/clippy.toml")).map_err(|error| {
+        format!("FF-ARCH-E-PRODUCT-CLIPPY-GUARD: read product/clippy.toml: {error}")
+    })?;
+    for required in [
+        "path = \"std::process::Command\"",
+        "path = \"std::process::Command::new\"",
+        "path = \"core::include_bytes\"",
+        "path = \"core::include_str\"",
+    ] {
+        if !config.contains(required) {
+            return Err(format!(
+                "FF-ARCH-E-PRODUCT-CLIPPY-GUARD: product/clippy.toml omits required compiler guard {required}"
+            ));
+        }
+    }
+    for manifest in [
+        "product/crates/fforager-contracts/Cargo.toml",
+        "product/crates/fforager-diagnostics-contract/Cargo.toml",
+        "product/crates/fforager-core/Cargo.toml",
+    ] {
+        let text = fs::read_to_string(root.join(manifest))
+            .map_err(|error| format!("FF-ARCH-E-PRODUCT-CLIPPY-GUARD: read {manifest}: {error}"))?;
+        if !product_local_lint_manifest(manifest, &text)? {
+            return Err(format!(
+                "FF-ARCH-E-PRODUCT-CLIPPY-GUARD: {manifest} does not locally forbid the compiler guard lints"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn product_oracle_source_diagnostic(source: &str) -> Option<&'static str> {
+    let compact = source
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    (compact.contains("ytdlp")
+        || compact.contains("python")
+        || compact.contains("pyo3")
+        || compact.contains("cpython")
+        || compact.contains("pipinstall"))
+    .then_some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
+}
+
 fn validate_dependencies(
     policy: &ArchitecturePolicy,
     metadata: &Metadata,
@@ -2194,6 +3132,7 @@ fn validate_dependencies(
         .map(|package| package.name.as_str())
         .collect::<BTreeSet<_>>();
     for package in packages {
+        validate_product_oracle_dependencies(package, policy, &workspace_names)?;
         validate_direct_dependencies(package, &decisions, &workspace_names)?;
     }
     validate_transitive_dependencies(policy, metadata)?;
@@ -2201,6 +3140,34 @@ fn validate_dependencies(
         "dependency-policy",
         "all direct external dependencies have exact per-consumer decisions; transitive build/proc-macro packages match policy and no package declares native links",
     ));
+    Ok(())
+}
+
+fn validate_product_oracle_dependencies(
+    package: &cargo_metadata::Package,
+    policy: &ArchitecturePolicy,
+    workspace_names: &BTreeSet<&str>,
+) -> Result<(), String> {
+    let is_product_package = policy.members.iter().any(|member| {
+        member.name == package.name.as_str()
+            && (member.shipped || member.manifest.starts_with("product/"))
+    });
+    if !is_product_package {
+        return Ok(());
+    }
+    let forbidden = package
+        .dependencies
+        .iter()
+        .map(|dependency| dependency.name.as_str())
+        .chain(std::iter::once(package.name.as_str()))
+        .find(|name| product_oracle_source_diagnostic(name).is_some());
+    if let Some(name) = forbidden {
+        return Err(format!(
+            "FF-ARCH-E-PRODUCT-ORACLE-DEPENDENCY: product package {} declares or is forbidden oracle/runtime dependency {name}",
+            package.name
+        ));
+    }
+    let _ = workspace_names;
     Ok(())
 }
 
@@ -2363,8 +3330,19 @@ fn required_architecture_rules(path: &Path) -> Result<BTreeSet<String>, String> 
         let id = yaml_string(row, "id")?;
         let category = yaml_string(row, "category")?;
         let enforcement = yaml_string(row, "enforcement")?;
-        if matches!(category, "architecture" | "runtime_truth")
-            && enforcement == "REQUIRED"
+        if matches!(
+            category,
+            "architecture"
+                | "runtime_truth"
+                | "product_dependency_boundary"
+                | "proof_integrity"
+                | "effect_integrity"
+                | "compatibility_integrity"
+                | "wire_integrity"
+                | "graph_integrity"
+                | "finding_remediation"
+                | "validation_reporting"
+        ) && enforcement == "REQUIRED"
             && !rules.insert(id.to_owned())
         {
             return Err(format!("duplicate REQUIRED architecture rule {id}"));
@@ -2557,6 +3535,83 @@ fn validate_rule_map(
                 &["runtime-proof-contract", "runtime-truth-check"],
                 &["runtime-missing-counterfactual"],
             ),
+            "FF-BUILD-089" => (
+                &["source", "dependency", "process_plan", "negative_fixture"],
+                &["product-native-boundary"],
+                &[
+                    "indirect-oracle-runtime-wrapper",
+                    "documentation-asset-bypass",
+                    "readme-include-bypass",
+                    "dynamic-product-process",
+                    "include-doc-macro-bypass",
+                    "clippy-allow-escape",
+                    "product-clippy-guard-missing",
+                    "clippy-conf-dir-poison",
+                    "cargo-home-poison",
+                ],
+            ),
+            "FF-BUILD-090" => (
+                &["structural", "semantic", "negative_fixture"],
+                &["compatibility-semantic-replay"],
+                &[
+                    "structural-replay-behavioral-pass",
+                    "source-content-fingerprint",
+                ],
+            ),
+            "FF-BUILD-091" => (
+                &["semantic", "counterfactual", "negative_fixture"],
+                &["public-boundary-counterexample"],
+                &["declaration-only-proof"],
+            ),
+            "FF-BUILD-092" => (
+                &["state_effect", "counterfactual", "negative_fixture"],
+                &["effect-acknowledgement-boundary"],
+                &["effect-acknowledgement-subset"],
+            ),
+            "FF-BUILD-093" => (
+                &["wire_boundary", "counterfactual", "negative_fixture"],
+                &["schema-transition-authority"],
+                &["unrelated-schema-transition"],
+            ),
+            "FF-BUILD-094" => (
+                &["wire_boundary", "negative_fixture"],
+                &["wire-boundary"],
+                &["wire-zero-or-unknown-field", "sequence-zero-replay"],
+            ),
+            "FF-BUILD-095" => (
+                &["graph", "counterfactual", "negative_fixture"],
+                &["source-graph-cycle-boundary"],
+                &["source-graph-cycle"],
+            ),
+            "FF-BUILD-096" => (
+                &["public_boundary", "counterfactual", "negative_fixture"],
+                &["finding-regression-boundary"],
+                &[
+                    "counterexample-not-public-boundary",
+                    "remove-public-boundary-counterexample-test",
+                    "receipt-only-public-counterexample-test",
+                ],
+            ),
+            "FF-BUILD-097" => (
+                &["semantic", "negative_fixture"],
+                &["behavior-sensitive-proof-map"],
+                &[
+                    "proof-map-string-only",
+                    "proof-map-behavior-stub",
+                    "proof-map-constant-tautology",
+                ],
+            ),
+            "FF-BUILD-098" => (
+                &[
+                    "structural",
+                    "semantic",
+                    "integration",
+                    "production_runtime",
+                    "negative_fixture",
+                ],
+                &["proof-class-aggregation"],
+                &["proof-class-promotion", "gate-report-runtime-claim"],
+            ),
             other => return Err(format!("FF-ARCH-E-UNKNOWN-RULE: {other}")),
         };
         require_exact_strings(&rule.rule_id, "proof_classes", &rule.proof_classes, proof)?;
@@ -2630,19 +3685,29 @@ fn validate_fixtures(
         if !observed.insert(case.fixture_id.clone()) {
             return Err(format!("duplicate fixture ID {}", case.fixture_id));
         }
-        let diagnostic = diagnostic_from_production_validator(&case.mutation)?;
-        if diagnostic != case.expected_diagnostic {
+        let execution = proof_integrity_fixture_execution(root, &case.mutation)?;
+        if !execution
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == &case.expected_diagnostic)
+        {
             return Err(format!(
-                "fixture {} failed for wrong reason: expected {}, observed {diagnostic}",
-                case.fixture_id, case.expected_diagnostic
+                "fixture {} failed for wrong reason: expected {}, observed {:?}",
+                case.fixture_id, case.expected_diagnostic, execution.diagnostics
             ));
         }
         results.push(FixtureResult {
             fixture_id: case.fixture_id,
             status: "PASS",
-            execution_path: "production-validator",
+            proof_class: execution.proof_class,
+            concrete_input: execution.concrete_input,
+            executed_boundary: execution.executed_boundary,
+            expected_result: format!("reject mutation with {}", case.expected_diagnostic),
+            observed_result: execution.observed_result,
+            skipped_semantic_dependencies: execution.skipped_semantic_dependencies,
+            execution_path: execution.execution_path,
             expected_diagnostic: case.expected_diagnostic,
-            observed_diagnostics: vec![diagnostic.to_owned()],
+            observed_diagnostics: execution.diagnostics,
         });
     }
     if observed != referenced {
@@ -2663,7 +3728,1206 @@ fn validate_fixtures(
     Ok(results)
 }
 
+fn proof_integrity_fixture_execution(
+    root: &Path,
+    mutation: &str,
+) -> Result<FixtureExecution, String> {
+    match mutation {
+        "add_indirect_oracle_runtime_wrapper" => indirect_oracle_wrapper_fixture_execution(root),
+        "documentation_asset_bypass" => documentation_asset_bypass_fixture_execution(root),
+        "readme_include_bypass" => readme_include_bypass_fixture_execution(root),
+        "dynamic_product_process" => dynamic_product_process_fixture_execution(root),
+        "include_doc_macro_bypass" => include_doc_macro_bypass_fixture_execution(root),
+        "clippy_allow_escape" => clippy_allow_escape_fixture_execution(root),
+        "product_clippy_guard_missing" => product_clippy_guard_fixture_execution(root),
+        "clippy_conf_dir_poison" => clippy_conf_dir_poison_fixture_execution(root),
+        "cargo_home_poison" => cargo_home_poison_fixture_execution(root),
+        "source_content_fingerprint" => source_content_fingerprint_fixture_execution(root),
+        "structural_replay_behavioral_pass" => {
+            let diagnostic = compatibility::structural_replay_report_mutation_diagnostic()
+                .expect_err(
+                    "full replay artifact validator accepted structural-only semantic status",
+                );
+            Ok(proof_fixture(
+                vec![
+                    diagnostic
+                        .split(':')
+                        .next()
+                        .unwrap_or(&diagnostic)
+                        .to_owned(),
+                ],
+                "negative_fixture",
+                "serialized-compatibility-report-artifact",
+                "complete serialized replay report mutated to semantic status with no semantic executions",
+                "compatibility replay artifact validator used by report construction and deep composition",
+            ))
+        }
+        "declaration_only_proof"
+        | "counterexample_not_public_boundary"
+        | "proof_class_promotion"
+        | "gate_report_unknown_proof_class"
+        | "gate_report_undeclared_execution"
+        | "gate_report_nonpass_result"
+        | "gate_report_runtime_claim" => proof_report_fixture_execution(mutation),
+        "proof_map_string_only" => proof_map_string_only_fixture_execution(root),
+        "proof_map_behavior_stub" => proof_map_behavior_stub_fixture_execution(root),
+        "proof_map_constant_tautology" => proof_map_constant_tautology_fixture_execution(root),
+        "effect_acknowledgement_subset" => public_invariant_mutation_fixture_execution(
+            root,
+            "effect_acknowledgement_subset",
+            "FF-ARCH-E-EFFECT-ACK-SUBSET",
+            "state_effect",
+        ),
+        "unrelated_schema_transition" => public_invariant_mutation_fixture_execution(
+            root,
+            "unrelated_schema_transition",
+            "FF-ARCH-E-SCHEMA-SELF-AUTHORIZATION",
+            "wire_boundary",
+        ),
+        "wire_zero_or_unknown_field" => public_invariant_mutation_fixture_execution(
+            root,
+            "wire_zero_or_unknown_field",
+            "FF-ARCH-E-WIRE-BOUNDARY",
+            "wire_boundary",
+        ),
+        "sequence_zero_replay" => public_invariant_mutation_fixture_execution(
+            root,
+            "sequence_zero_replay",
+            "FF-ARCH-E-SEQUENCE-ZERO",
+            "wire_boundary",
+        ),
+        "source_graph_cycle" => public_invariant_mutation_fixture_execution(
+            root,
+            "source_graph_cycle",
+            "FF-ARCH-E-SOURCE-GRAPH-CYCLE",
+            "graph",
+        ),
+        "remove_public_boundary_counterexample_test" => {
+            isolated_public_counterexample_mutations(root)
+        }
+        "receipt_only_public_counterexample_test" => {
+            receipt_only_public_counterexample_fixture_execution(root)
+        }
+        _ => {
+            let diagnostic = diagnostic_from_production_validator(mutation)?;
+            Ok(proof_fixture(
+                vec![diagnostic.to_owned()],
+                "negative_fixture",
+                "architecture-validator",
+                mutation,
+                "architecture_check validator family",
+            ))
+        }
+    }
+}
+
+fn indirect_oracle_wrapper_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = isolated_product_oracle_diagnostic(
+        root,
+        "indirect-oracle-runtime-wrapper",
+        "product/src/runtime_wrapper.rs",
+        b"pub fn run() { let oracle = \"yt-dlp\"; let _ = std::process::Command::new(oracle); }",
+    )?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-product-tree",
+        "product/src/runtime_wrapper.rs contains an indirect yt-dlp process wrapper",
+        "scan_product_oracle_boundary over an isolated product tree",
+    ))
+}
+
+fn documentation_asset_bypass_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let script = isolated_product_oracle_diagnostic(
+        root,
+        "docs-script",
+        "product/docs/bootstrap.py",
+        b"exit(0)\n",
+    )?;
+    let binary = isolated_product_oracle_diagnostic(
+        root,
+        "docs-binary",
+        "product/docs/oracle.bin",
+        &[0, 1, 2, 3],
+    )?;
+    let source = isolated_product_oracle_diagnostic(
+        root,
+        "docs-include",
+        "product/src/lib.rs",
+        b"const PAYLOAD: &[u8] = include_bytes!(\"../docs/research.md\");",
+    )?;
+    Ok(proof_fixture(
+        vec![script, binary, source],
+        "negative_fixture",
+        "isolated-product-tree",
+        "product/docs executable, binary, and source include_bytes mutations",
+        "scan_product_oracle_boundary over three isolated product trees",
+    ))
+}
+
+fn readme_include_bypass_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = isolated_product_oracle_tree_diagnostic(
+        root,
+        "readme-include",
+        &[
+            (
+                "product/README.md",
+                b"yt-dlp payload text that must remain documentation-only\n",
+            ),
+            (
+                "product/src/lib.rs",
+                b"const PAYLOAD: &[u8] = include_bytes!(\"../README.md\");",
+            ),
+        ],
+    )?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-product-tree",
+        "product README containing oracle text embedded through include_bytes",
+        "scan_product_oracle_boundary over an isolated product tree",
+    ))
+}
+
+fn dynamic_product_process_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = isolated_product_oracle_diagnostic(
+        root,
+        "dynamic-product-process",
+        "product/src/lib.rs",
+        b"use std::process::Command as C; pub fn run() { let mut program = \"future\".to_string(); program.push_str(\"-tool\"); let _ = C::new(program); }",
+    )?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-product-tree",
+        "product source aliases Command and dynamically assembles a program name before C::new",
+        "scan_product_oracle_boundary over an isolated product tree",
+    ))
+}
+
+fn include_doc_macro_bypass_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = isolated_product_oracle_tree_diagnostic(
+        root,
+        "include-doc-macro",
+        &[
+            ("product/docs/payload.md", b"documentation payload\n"),
+            ("product/src/lib.rs", b"include!(\"../docs/payload.md\");"),
+        ],
+    )?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-product-tree",
+        "product source expands documentation through include!",
+        "scan_product_oracle_boundary over an isolated product tree",
+    ))
+}
+
+fn clippy_allow_escape_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = isolated_product_oracle_diagnostic(
+        root,
+        "clippy-allow-escape",
+        "product/src/lib.rs",
+        b"#[allow(clippy::disallowed_methods)]\npub fn bypass() {}\n",
+    )?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-product-tree",
+        "product source locally suppresses a disallowed Clippy lint",
+        "scan_product_oracle_boundary rejects local compiler-guard escape text",
+    ))
+}
+
+fn product_clippy_guard_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = with_isolated_fixture_root(root, "product-clippy-guard-missing", |sandbox| {
+        for relative in [
+            "product/clippy.toml",
+            "product/crates/fforager-contracts/Cargo.toml",
+            "product/crates/fforager-diagnostics-contract/Cargo.toml",
+            "product/crates/fforager-core/Cargo.toml",
+        ] {
+            let destination = sandbox.join(relative);
+            fs::create_dir_all(
+                destination
+                    .parent()
+                    .ok_or("isolated Clippy fixture path has no parent")?,
+            )
+            .map_err(|error| error.to_string())?;
+            fs::copy(root.join(relative), &destination).map_err(|error| error.to_string())?;
+        }
+        replace_text_in_file(
+            &sandbox.join("product/clippy.toml"),
+            "  { path = \"std::process::Command::new\", reason = \"Process construction requires a future typed FFmpeg/ffprobe boundary.\" },\n",
+            "",
+        )?;
+        let error = validate_product_clippy_guard(sandbox)
+            .expect_err("product Clippy guard accepted a missing Command::new rule");
+        if error.contains("FF-ARCH-E-PRODUCT-CLIPPY-GUARD") {
+            Ok("FF-ARCH-E-PRODUCT-CLIPPY-GUARD".to_owned())
+        } else {
+            Err(error)
+        }
+    })?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-product-clippy-config",
+        "remove the product Command::new compiler guard",
+        "validate_product_clippy_guard over an isolated product configuration",
+    ))
+}
+
+fn clippy_conf_dir_poison_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    compiler_guard_environment_poison_fixture_execution(
+        root,
+        "clippy-conf-dir-poison",
+        "CLIPPY_CONF_DIR",
+        "attempted CLIPPY_CONF_DIR override plus aliased std::process::Command",
+    )
+}
+
+fn cargo_home_poison_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    compiler_guard_environment_poison_fixture_execution(
+        root,
+        "cargo-home-poison",
+        "CARGO_HOME",
+        "attempted CARGO_HOME config with --cap-lints=allow plus aliased std::process::Command",
+    )
+}
+
+fn compiler_guard_environment_poison_fixture_execution(
+    root: &Path,
+    label: &str,
+    environment_key: &str,
+    concrete_input: &str,
+) -> Result<FixtureExecution, String> {
+    let diagnostic = with_isolated_fixture_root(root, label, |sandbox| {
+        let product = sandbox.join("product");
+        let probe = product.join("crates/compiler-guard-probe");
+        let poison = sandbox.join("poisoned-clippy-config");
+        fs::create_dir_all(probe.join("src")).map_err(|error| error.to_string())?;
+        fs::create_dir_all(&poison).map_err(|error| error.to_string())?;
+        fs::copy(
+            root.join("product/clippy.toml"),
+            product.join("clippy.toml"),
+        )
+        .map_err(|error| error.to_string())?;
+        fs::write(
+            poison.join("clippy.toml"),
+            b"# intentionally empty override\n",
+        )
+        .map_err(|error| error.to_string())?;
+        fs::write(
+            poison.join("config.toml"),
+            b"[build]\nrustflags = [\"--cap-lints=allow\"]\n",
+        )
+        .map_err(|error| error.to_string())?;
+        fs::write(
+            probe.join("Cargo.toml"),
+            b"[workspace]\n\n[package]\nname = \"compiler-guard-probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[lints.clippy]\ndisallowed_types = \"forbid\"\ndisallowed_methods = \"forbid\"\ndisallowed_macros = \"forbid\"\n",
+        )
+        .map_err(|error| error.to_string())?;
+        fs::write(
+            probe.join("src/lib.rs"),
+            b"use std::process::Command as C;\npub fn probe() { let _ = C::new(\"ffprobe\"); }\n",
+        )
+        .map_err(|error| error.to_string())?;
+        let poison_text = poison
+            .to_str()
+            .ok_or("poisoned Clippy path is not valid UTF-8")?;
+        let error = command_output_bytes_with_timeout_and_environment(
+            sandbox,
+            "cargo",
+            &[
+                "clippy",
+                "--manifest-path",
+                "product/crates/compiler-guard-probe/Cargo.toml",
+                "--offline",
+                "--target-dir",
+                "build/target/compiler-guard-probe",
+                "--",
+                "-D",
+                "warnings",
+            ],
+            CARGO_PROOF_COMMAND_TIMEOUT,
+            &[(environment_key, poison_text)],
+        )
+        .expect_err("poisoned Cargo environment hid the aliased Command compiler violation");
+        if error.contains("disallowed") && error.contains("Command") {
+            Ok("FF-ARCH-E-RUST-ENV-OVERRIDE".to_owned())
+        } else {
+            Err(format!(
+                "compiler guard failed without the expected aliased Command diagnostic: {error}"
+            ))
+        }
+    })?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-compiler-guard-probe",
+        concrete_input,
+        "sanitized cargo environment and compiler-resolved product Clippy configuration",
+    ))
+}
+
+fn source_content_fingerprint_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = with_isolated_fixture_root(root, "source-content-fingerprint", |sandbox| {
+        let relative = "source/current.rs".to_owned();
+        fs::create_dir_all(sandbox.join("source")).map_err(|error| error.to_string())?;
+        fs::write(sandbox.join(&relative), b"first dirty content\n")
+            .map_err(|error| error.to_string())?;
+        let before = SourceState {
+            git_commit: "same-head".to_owned(),
+            dirty: true,
+            dirty_paths: vec![relative.clone()],
+            content_fingerprint: content_fingerprint_for_paths(
+                sandbox,
+                std::slice::from_ref(&relative),
+            )?,
+        };
+        fs::write(sandbox.join(&relative), b"different dirty content\n")
+            .map_err(|error| error.to_string())?;
+        let after = SourceState {
+            git_commit: before.git_commit.clone(),
+            dirty: before.dirty,
+            dirty_paths: before.dirty_paths.clone(),
+            content_fingerprint: content_fingerprint_for_paths(sandbox, &[relative])?,
+        };
+        if source_states_equal(&before, &after) {
+            Err(
+                "source-state comparison accepted changed content at the same dirty path"
+                    .to_owned(),
+            )
+        } else {
+            Ok("FF-COMP-E-REPLAY-REPORT-SOURCE-STALE".to_owned())
+        }
+    })?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "source-state-content-boundary",
+        "same HEAD and dirty path set with changed file bytes",
+        "the exact source-state equality predicate used by deep replay composition",
+    ))
+}
+
+fn proof_fixture(
+    diagnostics: Vec<String>,
+    proof_class: &'static str,
+    execution_path: &'static str,
+    concrete_input: &str,
+    executed_boundary: &str,
+) -> FixtureExecution {
+    FixtureExecution {
+        observed_result: format!("observed stable diagnostics {diagnostics:?}"),
+        diagnostics,
+        proof_class,
+        execution_path,
+        concrete_input: concrete_input.to_owned(),
+        executed_boundary: executed_boundary.to_owned(),
+        skipped_semantic_dependencies: vec![
+            "This is prerequisite proof; no shipped Ferric entrypoint was executed.".to_owned(),
+        ],
+    }
+}
+
+fn proof_map_string_only_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    const DELETED_PROOF_ID: &str =
+        "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
+    let target_dir = root.join("build/target/proof-integrity-fixtures/contract-inventory-resolver");
+    fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
+    let diagnostic = with_isolated_fixture_root(root, "proof-map-deleted-test", |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let source = sandbox.join("product/crates/fforager-contracts/src/identity.rs");
+        replace_text_in_file(
+            &source,
+            "fn typed_ids_reject_wrong_prefix_and_uppercase()",
+            "fn deleted_typed_ids_reject_wrong_prefix_and_uppercase()",
+        )?;
+        let error = resolve_and_execute_inventory_proofs_with_cargo_mode(
+            sandbox,
+            &[DELETED_PROOF_ID.to_owned()],
+            "--offline",
+            Some(&target_dir),
+        )
+        .expect_err("deleted mapped contract test unexpectedly resolved through cargo test --list");
+        if !error.contains("FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED") {
+            return Err(error);
+        }
+        Ok("FF-ARCH-E-INVENTORY-PROOF-UNRESOLVED".to_owned())
+    })?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-compiled-contract-workspace",
+        "deleted non-public contracts::identity inventory proof target",
+        "cargo test --list against an isolated workspace before exact proof execution",
+    ))
+}
+
+fn proof_map_behavior_stub_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    const PROOF_ID: &str =
+        "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
+    const SELECTOR: &str = "identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
+    let target_dir = root.join("build/target/proof-integrity-fixtures/contract-inventory-behavior");
+    fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
+    let diagnostic = with_isolated_fixture_root(root, "proof-map-behavior-stub", |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let identity = sandbox.join("product/crates/fforager-contracts/src/identity.rs");
+        replace_named_test_body(
+            &identity,
+            "fn typed_ids_reject_wrong_prefix_and_uppercase()",
+            "{ assert!(true); }",
+        )?;
+        replace_text_in_file(
+            &identity,
+            "    if !value.starts_with(prefix) || value.len() == prefix.len() {",
+            "    if false {",
+        )?;
+        let target_dir_text = target_dir
+            .to_str()
+            .ok_or("inventory behavior target directory is not valid UTF-8")?;
+        let exact_output = cargo_proof_output(
+            sandbox,
+            "cargo",
+            &[
+                "test",
+                "--manifest-path",
+                "build/Cargo.toml",
+                "--offline",
+                "--target-dir",
+                target_dir_text,
+                "-p",
+                "fforager-contracts",
+                "--lib",
+                SELECTOR,
+                "--",
+                "--exact",
+                "--nocapture",
+            ],
+        )?;
+        if exact_output.contains("running 0 tests") {
+            return Err(
+                "behavior-stub counterfactual did not execute its mapped exact test".to_owned(),
+            );
+        }
+        let tests = sandbox.join("product/crates/fforager-contracts/tests");
+        fs::create_dir_all(&tests).map_err(|error| error.to_string())?;
+        fs::write(
+            tests.join("inventory_identity_behavior.rs"),
+            "use fforager_contracts::ItemId;\n\n#[test]\nfn inventory_identity_behavior_rejects_wrong_prefix() {\n    assert!(ItemId::new(\"node_wrong\").is_err());\n}\n",
+        )
+        .map_err(|error| error.to_string())?;
+        let independent_failure = cargo_proof_output(
+            sandbox,
+            "cargo",
+            &[
+                "test",
+                "--manifest-path",
+                "build/Cargo.toml",
+                "--offline",
+                "--target-dir",
+                target_dir_text,
+                "-p",
+                "fforager-contracts",
+                "--test",
+                "inventory_identity_behavior",
+                "--",
+                "--exact",
+                "--nocapture",
+            ],
+        )
+        .expect_err(
+            "stubbed inventory proof unexpectedly preserved the independent ItemId behavior",
+        );
+        if independent_failure.contains("error: test failed")
+            && independent_failure.contains("inventory_identity_behavior_rejects_wrong_prefix")
+        {
+            Ok("FF-ARCH-E-INVENTORY-PROOF-BEHAVIOR".to_owned())
+        } else {
+            Err(format!(
+                "inventory behavior-stub counterfactual failed without the required independent public behavior evidence: {independent_failure}"
+            ))
+        }
+    })?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-compiled-contract-workspace",
+        PROOF_ID,
+        "mapped exact test is stubbed while ItemId prefix validation is mutated and independently re-executed",
+    ))
+}
+
+fn proof_map_constant_tautology_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    const PROOF_ID: &str =
+        "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
+    const SELECTOR: &str = "identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
+    let diagnostic = with_isolated_fixture_root(root, "proof-map-constant-tautology", |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let identity = sandbox.join("product/crates/fforager-contracts/src/identity.rs");
+        replace_named_test_body(
+            &identity,
+            "fn typed_ids_reject_wrong_prefix_and_uppercase()",
+            "{ let observed = 1; assert_eq!(observed, 1); }",
+        )?;
+        let error =
+            validate_inventory_proof_source(sandbox, PROOF_ID, "fforager-contracts", SELECTOR)
+                .expect_err(
+                    "literal-only mapped assertion unexpectedly passed the normal proof guard",
+                );
+        if error.contains("FF-ARCH-E-INVENTORY-PROOF-STUB") {
+            Ok("FF-ARCH-E-INVENTORY-PROOF-STUB".to_owned())
+        } else {
+            Err(error)
+        }
+    })?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-proof-source-guard",
+        "mapped test body replaced by a locally bound constant tautology",
+        "the normal inventory proof source validator used before exact execution",
+    ))
+}
+
+fn isolated_product_oracle_diagnostic(
+    root: &Path,
+    label: &str,
+    relative: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
+    isolated_product_oracle_tree_diagnostic(root, label, &[(relative, bytes)])
+}
+
+fn isolated_product_oracle_tree_diagnostic(
+    root: &Path,
+    label: &str,
+    files: &[(&str, &[u8])],
+) -> Result<String, String> {
+    with_isolated_fixture_root(root, label, |sandbox| {
+        for (relative, bytes) in files {
+            let target = sandbox.join(relative);
+            let parent = target
+                .parent()
+                .ok_or("isolated product mutation has no parent")?;
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            fs::write(&target, bytes).map_err(|error| error.to_string())?;
+        }
+        scan_product_oracle_boundary(sandbox)
+            .expect_err("isolated product mutation unexpectedly passed native product boundary")
+            .split(':')
+            .next()
+            .map(ToOwned::to_owned)
+            .ok_or("isolated product boundary emitted no stable diagnostic".to_owned())
+    })
+}
+
+fn with_isolated_fixture_root<T>(
+    root: &Path,
+    label: &str,
+    action: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let sandbox = root
+        .join("build/target/proof-integrity-fixtures")
+        .join(format!("{label}-{}-{nonce}", std::process::id()));
+    fs::create_dir_all(&sandbox).map_err(|error| error.to_string())?;
+    let result = action(&sandbox);
+    let cleanup = fs::remove_dir_all(&sandbox).map_err(|error| error.to_string());
+    match (result, cleanup) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(format!("isolated fixture cleanup failed: {error}")),
+        (Err(action_error), Err(cleanup_error)) => Err(format!(
+            "{action_error}; isolated fixture cleanup also failed: {cleanup_error}"
+        )),
+    }
+}
+
+fn public_invariant_mutation_fixture_execution(
+    root: &Path,
+    mutation: &str,
+    diagnostic: &str,
+    proof_class: &'static str,
+) -> Result<FixtureExecution, String> {
+    let target_dir = root.join("build/target/proof-integrity-fixtures/public-invariant-mutations");
+    fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
+    let observed = with_isolated_fixture_root(root, mutation, |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let failure_marker = match mutation {
+            "effect_acknowledgement_subset" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-core/src/lifecycle.rs"),
+                "        (State::FilesystemProbed, Event::Confine) => step(\n            State::FilesystemConfining,\n            &[EffectIntent::EstablishConfinedPath],\n        ),",
+                "        (State::FilesystemProbed, Event::Confine) => step(State::FilesystemConfined, &[]),",
+            )
+            .map(|()| "FilesystemConfining")?,
+            "unrelated_schema_transition" => fs::write(
+                sandbox.join("build/fixtures/contracts/diagnostic-protocol-offer-v2.0.json"),
+                br#"{"versions":{"major":1,"minimum_minor":0,"maximum_minor":2},"accepted_schemas":[{"algorithm":"sha256","canonical_input_version":1,"digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#,
+            )
+            .map_err(|error| error.to_string())
+            .map(|()| "SchemaIncompatible")?,
+            "wire_zero_or_unknown_field" => replace_text_in_file(
+                &sandbox.join("build/crates/fforager-testkit/src/lib.rs"),
+                "envelope[\"undeclared_top_level\"] = serde_json::json!(true);",
+                "envelope[\"capability_id\"] = serde_json::json!(\"ff.capability.transport\");",
+            )
+            .map(|()| "decode_json_frame")?,
+            "sequence_zero_replay" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-diagnostics-contract/src/protocol.rs"),
+                "        identity.validate()?;\n",
+                "",
+            )
+            .map(|()| "InvalidStart")?,
+            "source_graph_cycle" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-contracts/src/graph.rs"),
+                "        validate_relationship_cycles(self)",
+                "        Ok(())",
+            )
+            .map(|()| "RelationshipCycle")?,
+            other => return Err(format!("unknown public invariant mutation {other}")),
+        };
+        isolated_public_test_failure_diagnostic(sandbox, &target_dir, diagnostic, failure_marker)
+    })?;
+    Ok(proof_fixture(
+        vec![observed],
+        proof_class,
+        "isolated-compiled-public-boundary",
+        mutation,
+        "mutated input or implementation through the exact compiled public counterexample boundary",
+    ))
+}
+
+fn isolated_public_test_failure_diagnostic(
+    root: &Path,
+    target_dir: &Path,
+    diagnostic: &str,
+    failure_marker: &str,
+) -> Result<String, String> {
+    let target_dir = target_dir
+        .to_str()
+        .ok_or("isolated target directory is not valid UTF-8")?;
+    let error = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--offline",
+            "--target-dir",
+            target_dir,
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST,
+            "--",
+            "--exact",
+            "--nocapture",
+        ],
+    )
+    .expect_err("public invariant mutation unexpectedly passed the exact compiled boundary");
+    if !error.contains("error: test failed") || !error.contains(failure_marker) {
+        return Err(format!(
+            "public invariant mutation failed without its required {failure_marker} boundary marker: {error}"
+        ));
+    }
+    Ok(diagnostic.to_owned())
+}
+
+#[allow(clippy::too_many_lines)]
+fn proof_report_fixture_execution(mutation: &str) -> Result<FixtureExecution, String> {
+    let (check, executed, aggregate) = match mutation {
+        "declaration_only_proof" => (
+            Check {
+                id: "declared-proof".to_owned(),
+                status: "PASS",
+                proof_class: "semantic",
+                concrete_input: "proof-id-only".to_owned(),
+                executed_boundary: String::new(),
+                expected_result: "semantic evidence".to_owned(),
+                observed_result: "matching string".to_owned(),
+                skipped_semantic_dependencies: Vec::new(),
+                detail: "declaration only".to_owned(),
+            },
+            vec!["semantic".to_owned()],
+            "semantic".to_owned(),
+        ),
+        "counterexample_not_public_boundary" => (
+            Check {
+                id: "local-counterexample".to_owned(),
+                status: "PASS",
+                proof_class: "semantic",
+                concrete_input: "local assertion".to_owned(),
+                executed_boundary: "implementation-local unit test".to_owned(),
+                expected_result: "rejection".to_owned(),
+                observed_result: "rejection".to_owned(),
+                skipped_semantic_dependencies: Vec::new(),
+                detail: "not public".to_owned(),
+            },
+            vec!["semantic".to_owned()],
+            "semantic".to_owned(),
+        ),
+        "proof_class_promotion" => (
+            pass("structural-evidence", "executed structural validation"),
+            vec!["semantic".to_owned()],
+            "semantic".to_owned(),
+        ),
+        "gate_report_unknown_proof_class" => (
+            Check {
+                id: "unknown-class".to_owned(),
+                status: "PASS",
+                proof_class: "unbounded",
+                concrete_input: "counterfactual gate report".to_owned(),
+                executed_boundary: "serialized gate report boundary".to_owned(),
+                expected_result: "schema rejects unknown proof class".to_owned(),
+                observed_result: "unknown proof class was supplied".to_owned(),
+                skipped_semantic_dependencies: Vec::new(),
+                detail: "schema counterfactual".to_owned(),
+            },
+            vec!["unbounded".to_owned()],
+            "none".to_owned(),
+        ),
+        "gate_report_undeclared_execution" => (
+            Check {
+                id: "undeclared-execution".to_owned(),
+                status: "PASS",
+                proof_class: "semantic",
+                concrete_input: "counterfactual gate report".to_owned(),
+                executed_boundary: "serialized gate report boundary".to_owned(),
+                expected_result: "schema rejects executed class outside declaration".to_owned(),
+                observed_result: "semantic execution was supplied".to_owned(),
+                skipped_semantic_dependencies: Vec::new(),
+                detail: "schema counterfactual".to_owned(),
+            },
+            vec!["semantic".to_owned()],
+            "semantic".to_owned(),
+        ),
+        "gate_report_nonpass_result" => (
+            Check {
+                id: "nonpass-result".to_owned(),
+                status: "PASS",
+                proof_class: "semantic",
+                concrete_input: "counterfactual gate report".to_owned(),
+                executed_boundary: "serialized gate report boundary".to_owned(),
+                expected_result: "schema requires PASS result rows in a PASS report".to_owned(),
+                observed_result: "PASS result was constructed before serialized mutation"
+                    .to_owned(),
+                skipped_semantic_dependencies: Vec::new(),
+                detail: "schema counterfactual".to_owned(),
+            },
+            vec!["semantic".to_owned()],
+            "semantic".to_owned(),
+        ),
+        "gate_report_runtime_claim" => (
+            Check {
+                id: "runtime-claim".to_owned(),
+                status: "PASS",
+                proof_class: "runtime_observable",
+                concrete_input: "counterfactual gate report".to_owned(),
+                executed_boundary: "serialized gate report boundary".to_owned(),
+                expected_result:
+                    "schema rejects runtime-class execution without staged-artifact evidence"
+                        .to_owned(),
+                observed_result: "runtime_observable was supplied".to_owned(),
+                skipped_semantic_dependencies: Vec::new(),
+                detail: "schema counterfactual".to_owned(),
+            },
+            vec!["runtime_observable".to_owned()],
+            "runtime_observable".to_owned(),
+        ),
+        _ => return Err(format!("unknown proof report mutation {mutation}")),
+    };
+    let declared_supported_proof_classes = if mutation == "gate_report_undeclared_execution" {
+        vec!["structural".to_owned()]
+    } else {
+        vec![check.proof_class.to_owned()]
+    };
+    let report = GateReport {
+        schema_id: "ff.gate-report@1",
+        schema_version: "1.0.0",
+        gate_id: ARCH_GATE.to_owned(),
+        gate_version: 1,
+        status: "PASS",
+        exit_code: 0,
+        source: SourceState {
+            git_commit: "fixture".to_owned(),
+            dirty: false,
+            dirty_paths: Vec::new(),
+            content_fingerprint: "0".repeat(64),
+        },
+        invocation: Invocation {
+            repository_root: ".",
+            gate_args: vec!["architecture-check".to_owned()],
+            canonical_command: invocation(&["architecture-check".to_owned()]).canonical_command,
+        },
+        inputs: Vec::new(),
+        checks: vec![check],
+        rules: Vec::new(),
+        fixtures: Vec::new(),
+        declared_supported_proof_classes,
+        executed_proof_classes: executed,
+        aggregate_executed_proof_class: aggregate,
+        proof_limitations: Vec::new(),
+        artifacts: Vec::new(),
+    };
+    let diagnostic = if let Err(error) = validate_gate_report_evidence(&report) {
+        error
+    } else {
+        let mut value = serde_json::to_value(&report)
+            .map_err(|error| format!("serialize gate-report fixture: {error}"))?;
+        if mutation == "gate_report_nonpass_result" {
+            value["checks"][0]["status"] = Value::String("NOT_APPLICABLE".to_owned());
+        }
+        let artifact: GateReportArtifact = serde_json::from_value(value)
+            .map_err(|error| format!("parse gate-report fixture: {error}"))?;
+        validate_gate_report_artifact(&artifact)
+            .expect_err("gate-report artifact validator accepted proof-integrity mutation")
+    };
+    Ok(proof_fixture(
+        vec![
+            diagnostic
+                .split(':')
+                .next()
+                .unwrap_or(&diagnostic)
+                .to_owned(),
+        ],
+        "negative_fixture",
+        "gate-report-contract",
+        mutation,
+        "validate_gate_report_evidence used before every gate report write",
+    ))
+}
+
+fn isolated_public_counterexample_mutations(root: &Path) -> Result<FixtureExecution, String> {
+    let target_dir = root.join("build/target/proof-integrity-fixtures/compiled-testkit");
+    fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
+    let missing = with_isolated_fixture_root(root, "public-counterexample-removed", |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let source = sandbox.join("build/crates/fforager-testkit/src/lib.rs");
+        replace_text_in_file(
+            &source,
+            "fn public_boundary_counterexamples_reject_audit_failures()",
+            "fn removed_public_boundary_counterexamples_reject_audit_failures()",
+        )?;
+        isolated_public_test_diagnostic(sandbox, "removed", &target_dir)
+    })?;
+    let skipped = with_isolated_fixture_root(root, "public-counterexample-ignored", |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let source = sandbox.join("build/crates/fforager-testkit/src/lib.rs");
+        replace_text_in_file(
+            &source,
+            "#[test]\n    fn public_boundary_counterexamples_reject_audit_failures()",
+            "#[test]\n    #[ignore]\n    fn public_boundary_counterexamples_reject_audit_failures()",
+        )?;
+        isolated_public_test_diagnostic(sandbox, "ignored", &target_dir)
+    })?;
+    let empty = with_isolated_fixture_root(root, "public-counterexample-empty", |sandbox| {
+        prepare_isolated_testkit_workspace(root, sandbox)?;
+        let source = sandbox.join("build/crates/fforager-testkit/src/lib.rs");
+        empty_named_test_body(
+            &source,
+            "fn public_boundary_counterexamples_reject_audit_failures()",
+        )?;
+        isolated_public_test_diagnostic(sandbox, "empty", &target_dir)
+    })?;
+    Ok(proof_fixture(
+        vec![missing, skipped, empty],
+        "negative_fixture",
+        "isolated-compiled-testkit-workspace",
+        "isolated source mutations that delete, ignore, or empty the exact public counterexample test",
+        "cargo test --list and cargo test --exact --nocapture against an isolated compiled workspace",
+    ))
+}
+
+fn receipt_only_public_counterexample_fixture_execution(
+    root: &Path,
+) -> Result<FixtureExecution, String> {
+    let target_dir = root.join("build/target/proof-integrity-fixtures/public-receipt-only");
+    fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
+    let diagnostic = with_isolated_fixture_root(
+        root,
+        "public-counterexample-receipt-only",
+        |sandbox| {
+            prepare_isolated_testkit_workspace(root, sandbox)?;
+            let source = sandbox.join("build/crates/fforager-testkit/src/lib.rs");
+            replace_named_test_body(
+                &source,
+                "fn public_boundary_counterexamples_reject_audit_failures()",
+                &format!("{{ println!(\"{PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT}\"); }}"),
+            )?;
+            replace_text_in_file(
+                &sandbox.join("product/crates/fforager-contracts/src/graph.rs"),
+                "        validate_relationship_cycles(self)",
+                "        Ok(())",
+            )?;
+            let public_output = cargo_proof_output(
+                sandbox,
+                "cargo",
+                &[
+                    "test",
+                    "--manifest-path",
+                    "build/Cargo.toml",
+                    "--offline",
+                    "--target-dir",
+                    target_dir
+                        .to_str()
+                        .ok_or("isolated target directory is not valid UTF-8")?,
+                    "-p",
+                    "fforager-testkit",
+                    "--lib",
+                    PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST,
+                    "--",
+                    "--exact",
+                    "--nocapture",
+                ],
+            )?;
+            if !public_output.contains(PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT) {
+                return Err(
+                    "receipt-only mutation did not preserve the test's superficial receipt"
+                        .to_owned(),
+                );
+            }
+            let independent_failure = cargo_proof_output(
+                sandbox,
+                "cargo",
+                &[
+                    "test",
+                    "--manifest-path",
+                    "build/Cargo.toml",
+                    "--offline",
+                    "--target-dir",
+                    target_dir
+                        .to_str()
+                        .ok_or("isolated target directory is not valid UTF-8")?,
+                    "-p",
+                    "fforager-contracts",
+                    "--lib",
+                    "graph::tests::every_traversable_relationship_rejects_cycles_and_accepts_exact_limit_acyclic_graphs",
+                    "--",
+                    "--exact",
+                    "--nocapture",
+                ],
+            )
+            .expect_err(
+                "receipt-only public test left a graph-cycle implementation mutation undetected",
+            );
+            if independent_failure.contains("running 1 test")
+                && independent_failure.contains("error: test failed")
+                && independent_failure.contains("RelationshipCycle")
+            {
+                Ok("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-RECEIPT-ONLY".to_owned())
+            } else {
+                Err(format!(
+                    "receipt-only public test mutation did not produce the required independent graph failure: {independent_failure}"
+                ))
+            }
+        },
+    )?;
+    Ok(proof_fixture(
+        vec![diagnostic],
+        "negative_fixture",
+        "isolated-compiled-testkit-workspace",
+        "public test reduced to a static receipt while a source-graph implementation mutation is applied",
+        "the receipt-only public test passes, while an independent exact public contract test fails on the same mutation",
+    ))
+}
+
+fn prepare_isolated_testkit_workspace(source_root: &Path, sandbox: &Path) -> Result<(), String> {
+    for relative in [
+        "build/crates/fforager-testkit",
+        "build/fixtures/contracts",
+        "product/crates/fforager-contracts",
+        "product/crates/fforager-diagnostics-contract",
+        "product/crates/fforager-core",
+    ] {
+        copy_fixture_tree(&source_root.join(relative), &sandbox.join(relative))?;
+    }
+    let manifest = r#"[workspace]
+members = [
+    "crates/fforager-testkit",
+    "../product/crates/fforager-contracts",
+    "../product/crates/fforager-diagnostics-contract",
+    "../product/crates/fforager-core",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+"#;
+    let path = sandbox.join("build/Cargo.toml");
+    fs::create_dir_all(
+        path.parent()
+            .ok_or("isolated workspace has no build parent")?,
+    )
+    .map_err(|error| error.to_string())?;
+    fs::write(&path, manifest).map_err(|error| error.to_string())?;
+    fs::copy(
+        source_root.join("build/Cargo.lock"),
+        sandbox.join("build/Cargo.lock"),
+    )
+    .map_err(|error| format!("copy isolated workspace lockfile: {error}"))?;
+    Ok(())
+}
+
+fn copy_fixture_tree(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    for entry in
+        fs::read_dir(source).map_err(|error| format!("read {}: {error}", source.display()))?
+    {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let target = destination.join(entry.file_name());
+        if entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
+            copy_fixture_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn replace_text_in_file(path: &Path, before: &str, after: &str) -> Result<(), String> {
+    let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    if !source.contains(before) {
+        return Err(format!("isolated mutation anchor is absent: {before}"));
+    }
+    fs::write(path, source.replacen(before, after, 1)).map_err(|error| error.to_string())
+}
+
+fn empty_named_test_body(path: &Path, marker: &str) -> Result<(), String> {
+    replace_named_test_body(path, marker, "{}")
+}
+
+fn replace_named_test_body(path: &Path, marker: &str, replacement: &str) -> Result<(), String> {
+    let mut source = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let start = source
+        .find(marker)
+        .ok_or_else(|| format!("isolated empty-body marker is absent: {marker}"))?;
+    let opening = source[start..]
+        .find('{')
+        .map(|offset| start + offset)
+        .ok_or("isolated public test has no opening body brace")?;
+    let mut depth = 0_u32;
+    let mut closing = None;
+    for (offset, byte) in source.as_bytes()[opening..].iter().enumerate() {
+        match byte {
+            b'{' => depth = depth.saturating_add(1),
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    closing = Some(opening + offset);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let closing = closing.ok_or("isolated public test has unbalanced body braces")?;
+    source.replace_range(opening..=closing, replacement);
+    fs::write(path, source).map_err(|error| error.to_string())
+}
+
+fn isolated_public_test_diagnostic(
+    root: &Path,
+    mutation: &str,
+    target_dir: &Path,
+) -> Result<String, String> {
+    let target_dir = target_dir
+        .to_str()
+        .ok_or("isolated target directory is not valid UTF-8")?;
+    let listed = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--offline",
+            "--target-dir",
+            target_dir,
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            "--",
+            "--list",
+        ],
+    )?;
+    let expected = format!("{PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST}: test");
+    if mutation == "removed" && !listed.lines().any(|line| line.trim() == expected) {
+        return Ok("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-MISSING".to_owned());
+    }
+    let output = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--offline",
+            "--target-dir",
+            target_dir,
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST,
+            "--",
+            "--exact",
+            "--nocapture",
+        ],
+    )?;
+    if mutation == "ignored" && output.contains("ignored") {
+        return Ok("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-SKIPPED".to_owned());
+    }
+    if mutation == "empty" && !output.contains(PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT) {
+        return Ok("FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-RECEIPT".to_owned());
+    }
+    Err(format!(
+        "isolated public counterexample mutation {mutation} was not rejected by the compiled boundary"
+    ))
+}
+
 fn diagnostic_from_production_validator(mutation: &str) -> Result<&'static str, String> {
+    if let Some(diagnostic) = architecture_fixture_diagnostic(mutation)? {
+        return Ok(diagnostic);
+    }
+    match mutation {
+        "runtime_test_only_substitute"
+        | "runtime_mock_boundary"
+        | "runtime_scaffold_completion"
+        | "runtime_noop_success"
+        | "runtime_missing_artifact_identity"
+        | "runtime_missing_clean_stage"
+        | "runtime_missing_counterfactual"
+        | "runtime_stage_collision" => runtime_fixture_diagnostic(mutation),
+        other => Err(format!("unknown fixture mutation {other}")),
+    }
+}
+
+fn architecture_fixture_diagnostic(mutation: &str) -> Result<Option<&'static str>, String> {
     let diagnostic = match mutation {
         "mark_bootstrap_member_shipped" => "FF-ARCH-E-SHIPPED-BUILD-TOOLING",
         "add_unapproved_exception" => unapproved_exception_diagnostic(1)
@@ -2716,17 +4980,9 @@ fn diagnostic_from_production_validator(mutation: &str) -> Result<&'static str, 
             .ok_or("production three-root validator accepted wrong-root mutation")?,
         "add_duplicate_toolchain_selector" => root_state_diagnostic(0, 2)
             .ok_or("production selector validator accepted duplicate mutation")?,
-        "runtime_test_only_substitute"
-        | "runtime_mock_boundary"
-        | "runtime_scaffold_completion"
-        | "runtime_noop_success"
-        | "runtime_missing_artifact_identity"
-        | "runtime_missing_clean_stage"
-        | "runtime_missing_counterfactual"
-        | "runtime_stage_collision" => runtime_fixture_diagnostic(mutation)?,
-        other => return Err(format!("unknown fixture mutation {other}")),
+        _ => return Ok(None),
     };
-    Ok(diagnostic)
+    Ok(Some(diagnostic))
 }
 
 fn run_runtime_truth_gate(root: &Path, gate_args: &[String]) -> Result<(), String> {
@@ -2740,6 +4996,8 @@ fn run_runtime_truth_gate(root: &Path, gate_args: &[String]) -> Result<(), Strin
 
 fn run_runtime_truth_gate_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let result = runtime_truth_check(root)?;
+    let executed_proof_classes = executed_proof_classes(&result.checks, &[]);
+    let aggregate_executed_proof_class = aggregate_executed_proof_class(&executed_proof_classes);
     let report = GateReport {
         schema_id: "ff.gate-report@1",
         schema_version: "1.0.0",
@@ -2755,7 +5013,9 @@ fn run_runtime_truth_gate_inner(root: &Path, gate_args: &[String]) -> Result<(),
             .map(|number| format!("FF-BUILD-{number:03}"))
             .collect(),
         fixtures: Vec::new(),
-        proof_classes: result.proof_classes,
+        aggregate_executed_proof_class,
+        declared_supported_proof_classes: result.proof_classes,
+        executed_proof_classes,
         proof_limitations: result.limitations,
         artifacts: result.artifacts,
     };
@@ -2829,13 +5089,20 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
         }
         return Ok(RuntimeTruthResult {
             checks: vec![
-                pass("runtime-impact", &format!("packet {id} is governance/build-only")),
-                pass(
+                pass_with_class(
+                    "runtime-impact",
+                    "policy",
+                    "active packet impact and changed-path classification",
+                    &format!("packet {id} is governance/build-only"),
+                ),
+                pass_with_class(
                     "runtime-nonproduct-ceiling",
+                    "policy",
+                    "active packet completion-claim ceiling",
                     "no product capability, phase, packaging, or runtime-completion claim is permitted",
                 ),
             ],
-            proof_classes: vec!["policy".to_owned(), "negative_fixture".to_owned()],
+            proof_classes: vec!["policy".to_owned()],
             limitations: vec![
                 "No shipped product path changed; this PASS validates runtime-truth governance only and proves no Ferric runtime behavior.".to_owned(),
             ],
@@ -2867,22 +5134,7 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
         validate_non_product_prerequisite(&declaration)?;
         validate_prerequisite_zero_claim_surface(&packet)?;
         return Ok(RuntimeTruthResult {
-            checks: vec![
-                pass(
-                    "runtime-impact",
-                    &format!(
-                        "packet {id} changes product paths only as a predeclared Phase 0 non-product prerequisite: {product_paths:?}"
-                    ),
-                ),
-                pass(
-                    "runtime-prerequisite-contract",
-                    "the exact non-product prerequisite declaration was committed at the packet's first non-STUB checkpoint",
-                ),
-                pass(
-                    "runtime-prerequisite-zero-claims",
-                    "zero product completion; zero capability completion; zero phase completion; zero runtime completion; zero packaging or release progress",
-                ),
-            ],
+            checks: prerequisite_runtime_checks(&id, &product_paths),
             proof_classes: vec!["policy".to_owned(), "scenario_contract".to_owned()],
             limitations: vec![
                 "This PASS is supporting policy/contract proof only: it proves no product progress, capability progress, phase progress, runtime completion, packaging progress, or release progress.".to_owned(),
@@ -2915,6 +5167,31 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
         .map_err(|error| format!("FF-RUNTIME-E-SCHEMA: {error}"))?;
     validate_runtime_proof_contract(&proof)?;
     execute_runtime_proof(root, &proof, &id, &product_paths)
+}
+
+fn prerequisite_runtime_checks(id: &str, product_paths: &[String]) -> Vec<Check> {
+    vec![
+        pass_with_class(
+            "runtime-impact",
+            "policy",
+            "active packet impact and changed-path classification",
+            &format!(
+                "packet {id} changes product paths only as a predeclared Phase 0 non-product prerequisite: {product_paths:?}"
+            ),
+        ),
+        pass_with_class(
+            "runtime-prerequisite-contract",
+            "scenario_contract",
+            "activation checkpoint and non-product prerequisite contract",
+            "the exact non-product prerequisite declaration was committed at the packet's first non-STUB checkpoint",
+        ),
+        pass_with_class(
+            "runtime-prerequisite-zero-claims",
+            "policy",
+            "active packet completion-claim ceiling",
+            "zero product completion; zero capability completion; zero phase completion; zero runtime completion; zero packaging or release progress",
+        ),
+    ]
 }
 
 fn validate_prerequisite_zero_claim_surface(packet: &Value) -> Result<(), String> {
@@ -3754,9 +6031,11 @@ fn execute_runtime_proof(
     }
     let build_refs = build_args.iter().map(String::as_str).collect::<Vec<_>>();
     let mut checks = Vec::new();
-    run_command(
+    run_command_with_proof_class(
         root,
         "runtime-release-build",
+        "external_process",
+        "locked Cargo release build process",
         "cargo",
         &build_refs,
         &mut checks,
@@ -3769,8 +6048,10 @@ fn execute_runtime_proof(
     }
     validate_built_runtime_artifact(root, &artifact)?;
     let artifact_digest = sha256_file(&artifact)?;
-    checks.push(pass(
+    checks.push(pass_with_class(
         "runtime-artifact-identity",
+        "artifact",
+        "contained release artifact identity and digest boundary",
         &format!(
             "packet={packet_id}; package={}; binary={}; profile=release; sha256={artifact_digest}; product_paths={product_paths:?}",
             proof.artifact.package, proof.artifact.binary
@@ -3782,8 +6063,9 @@ fn execute_runtime_proof(
             .map_err(|error| error.to_string())?,
     )];
     for scenario in &proof.scenarios {
-        let (check, stage) = execute_runtime_scenario(root, &artifact, scenario, &artifact_digest)?;
-        checks.push(check);
+        let (scenario_checks, stage) =
+            execute_runtime_scenario(root, &artifact, scenario, &artifact_digest)?;
+        checks.extend(scenario_checks);
         artifacts.push(stage);
     }
     Ok(RuntimeTruthResult {
@@ -3835,26 +6117,34 @@ fn execute_runtime_scenario(
     artifact: &Path,
     scenario: &RuntimeScenario,
     artifact_digest: &str,
-) -> Result<(Check, String), String> {
+) -> Result<(Vec<Check>, String), String> {
     let (stage, staged_artifact) =
         stage_runtime_scenario(root, artifact, scenario, artifact_digest)?;
     let observation = run_staged_artifact(&stage, &staged_artifact, scenario)?;
     validate_runtime_observation(&scenario.expected, &observation)?;
     validate_runtime_counterfactual(scenario, &observation)?;
     let stage_path = slash(&stage);
-    Ok((
-        pass(
-            &format!("runtime-scenario-{}", scenario.id),
-            &format!(
-                "kind={}; artifact_sha256={artifact_digest}; exit={}; boundaries={:?}; stage={stage_path}; counterfactual={}",
-                scenario.kind,
-                observation.exit_code,
-                scenario.production_boundaries,
-                scenario.counterfactual.is_some()
-            ),
+    let mut checks = vec![pass_with_class(
+        &format!("runtime-scenario-{}", scenario.id),
+        "runtime_observable",
+        "clean-stage production artifact observation",
+        &format!(
+            "kind={}; artifact_sha256={artifact_digest}; exit={}; boundaries={:?}; stage={stage_path}; counterfactual={}",
+            scenario.kind,
+            observation.exit_code,
+            scenario.production_boundaries,
+            scenario.counterfactual.is_some()
         ),
-        stage_path,
-    ))
+    )];
+    if scenario.counterfactual.is_some() {
+        checks.push(pass_with_class(
+            &format!("runtime-scenario-counterfactual-{}", scenario.id),
+            "counterfactual",
+            "runtime observation oracle with one expected fact removed",
+            "the same runtime observation oracle rejected the mutated observation",
+        ));
+    }
+    Ok((checks, stage_path))
 }
 
 fn stage_runtime_scenario(
@@ -4246,28 +6536,19 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
     verify_advisory_databases(root, &mut checks)?;
     let runtime = runtime_truth_check(root)?;
     checks.extend(runtime.checks);
-    if root.join("product/watcher/Cargo.toml").exists() {
-        return Err(
-            "watcher-check is applicable because product/watcher/Cargo.toml exists, but the gate is NOT_IMPLEMENTED"
-                .to_owned(),
-        );
-    }
-    checks.push(Check { id: "watcher-check".to_owned(), status: "NOT_APPLICABLE", detail: "product/watcher/Cargo.toml is absent; activation trigger is the watcher package or a watcher/release claim.".to_owned() });
-    checks.push(Check {
-        id: "verify-release".to_owned(),
-        status: "NOT_IMPLEMENTED",
-        detail: "Future gate outside the Phase 0 verify-pr applicable child set.".to_owned(),
-    });
-    let mut proof_classes = architecture.proof_classes;
-    proof_classes.extend(runtime.proof_classes);
-    proof_classes.sort();
-    proof_classes.dedup();
+    verify_future_gate_applicability(root, &mut checks)?;
+    let mut declared_supported_proof_classes = architecture.declared_supported_proof_classes;
+    declared_supported_proof_classes.extend(runtime.proof_classes);
+    declared_supported_proof_classes.sort();
+    declared_supported_proof_classes.dedup();
     let mut proof_limitations = architecture.limitations;
     proof_limitations.extend(runtime.limitations);
     let mut artifacts = vec!["build/target".to_owned(), "build/reports".to_owned()];
     artifacts.extend(runtime.artifacts);
     artifacts.sort();
     artifacts.dedup();
+    let executed_proof_classes = executed_proof_classes(&checks, &architecture.fixtures);
+    let aggregate_executed_proof_class = aggregate_executed_proof_class(&executed_proof_classes);
     let report = GateReport {
         schema_id: "ff.gate-report@1",
         schema_version: "1.0.0",
@@ -4281,12 +6562,46 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         checks,
         rules: architecture.rules,
         fixtures: architecture.fixtures,
-        proof_classes,
+        aggregate_executed_proof_class,
+        declared_supported_proof_classes,
+        executed_proof_classes,
         proof_limitations,
         artifacts,
     };
     let path = write_report(root, "verify-pr", &report)?;
     println!("PASS {PR_GATE}; report={}", slash(&path));
+    Ok(())
+}
+
+fn verify_future_gate_applicability(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
+    if root.join("product/watcher/Cargo.toml").exists() {
+        return Err(
+            "watcher-check is applicable because product/watcher/Cargo.toml exists, but the gate is NOT_IMPLEMENTED"
+                .to_owned(),
+        );
+    }
+    checks.push(Check {
+        id: "watcher-check".to_owned(),
+        status: "PASS",
+        proof_class: "structural",
+        concrete_input: "product/watcher/Cargo.toml".to_owned(),
+        executed_boundary: "watcher package activation check".to_owned(),
+        expected_result: "watcher package is absent".to_owned(),
+        observed_result: "NOT_APPLICABLE: product/watcher/Cargo.toml is absent".to_owned(),
+        skipped_semantic_dependencies: vec!["Watcher package is not present.".to_owned()],
+        detail: "product/watcher/Cargo.toml is absent; activation trigger is the watcher package or a watcher/release claim.".to_owned(),
+    });
+    checks.push(Check {
+        id: "verify-release".to_owned(),
+        status: "PASS",
+        proof_class: "structural",
+        concrete_input: "verify-release".to_owned(),
+        executed_boundary: "release gate applicability check".to_owned(),
+        expected_result: "release gate remains unavailable in Phase 0".to_owned(),
+        observed_result: "NOT_IMPLEMENTED: release gate has no Phase 0 activation".to_owned(),
+        skipped_semantic_dependencies: vec!["No release artifact exists.".to_owned()],
+        detail: "Future gate outside the Phase 0 verify-pr applicable child set.".to_owned(),
+    });
     Ok(())
 }
 
@@ -4301,7 +6616,23 @@ fn fail_with_report(
         git_commit: "UNKNOWN".to_owned(),
         dirty: true,
         dirty_paths: vec![format!("source-state-error:{source_error}")],
+        content_fingerprint: "0".repeat(64),
     });
+    let checks = vec![Check {
+        id: "gate-failure".to_owned(),
+        status: "FAIL",
+        proof_class: FAILURE_PROOF_CLASS,
+        concrete_input: gate_id.to_owned(),
+        executed_boundary: "fforager-xtask gate".to_owned(),
+        expected_result: "gate succeeds".to_owned(),
+        observed_result: error.to_owned(),
+        skipped_semantic_dependencies: vec![
+            "Gate stopped before later semantic dependencies could execute.".to_owned(),
+        ],
+        detail: error.to_owned(),
+    }];
+    let executed_proof_classes = executed_proof_classes(&checks, &[]);
+    let aggregate_executed_proof_class = aggregate_executed_proof_class(&executed_proof_classes);
     let report = GateReport {
         schema_id: "ff.gate-report@1",
         schema_version: "1.0.0",
@@ -4312,14 +6643,12 @@ fn fail_with_report(
         source,
         invocation: invocation(gate_args),
         inputs: collect_inputs(root).unwrap_or_default(),
-        checks: vec![Check {
-            id: "gate-failure".to_owned(),
-            status: "FAIL",
-            detail: error.to_owned(),
-        }],
+        checks,
         rules: Vec::new(),
         fixtures: Vec::new(),
-        proof_classes: Vec::new(),
+        declared_supported_proof_classes: vec![FAILURE_PROOF_CLASS.to_owned()],
+        executed_proof_classes,
+        aggregate_executed_proof_class,
         proof_limitations: vec![
             "Gate stopped at the recorded failure; later checks were NOT_RUN.".to_owned(),
         ],
@@ -4334,6 +6663,7 @@ fn fail_with_report(
 }
 
 fn run_rust_verification(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
+    validate_rust_verification_environment(root)?;
     run_command(
         root,
         "format",
@@ -4674,15 +7004,7 @@ fn validate_change_evidence(root: &Path, checks: &mut Vec<Check>) -> Result<(), 
     {
         return Err("applicable_rule_ids omits a canonical REQUIRED architecture rule".to_owned());
     }
-    for field in ["pre_simplification_verdict", "post_simplification_verdict"] {
-        let verdict = evidence
-            .get(field)
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("{field} is not a string"))?;
-        if !verdict.starts_with("PASS:") || verdict.trim().len() < 40 {
-            return Err(format!("{field} is not a substantive PASS verdict"));
-        }
-    }
+    validate_simplification_verdicts(evidence)?;
     if string_array(evidence, "simplification_changes")?.is_empty()
         || string_array(evidence, "complete_post_change_verification")?.len() < 6
     {
@@ -4699,6 +7021,26 @@ fn validate_change_evidence(root: &Path, checks: &mut Vec<Check>) -> Result<(), 
         "active-packet-evidence",
         &format!("active packet {id} has complete non-placeholder change evidence"),
     ));
+    Ok(())
+}
+
+fn validate_simplification_verdicts(evidence: &Value) -> Result<(), String> {
+    let pre = evidence
+        .get("pre_simplification_verdict")
+        .and_then(Value::as_str)
+        .ok_or("pre_simplification_verdict is not a string")?;
+    if !(pre.starts_with("PASS:") || pre.starts_with("FAIL")) || pre.trim().len() < 40 {
+        return Err(
+            "pre_simplification_verdict is not a substantive PASS or FAIL verdict".to_owned(),
+        );
+    }
+    let post = evidence
+        .get("post_simplification_verdict")
+        .and_then(Value::as_str)
+        .ok_or("post_simplification_verdict is not a string")?;
+    if !post.starts_with("PASS:") || post.trim().len() < 40 {
+        return Err("post_simplification_verdict is not a substantive PASS verdict".to_owned());
+    }
     Ok(())
 }
 
@@ -4884,6 +7226,42 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         }
         "WP-FF-005-FINDING-GATE-INVENTORY-001" => {
             Some("xtask::tests::contract_inventory_rejects_required_field_and_stable_id_mutations")
+        }
+        "WP-FF-013-FINDING-SEMANTIC-REPLAY-001" => Some(
+            "xtask::compatibility::tests::native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes",
+        ),
+        "WP-FF-013-FINDING-LIFECYCLE-EFFECTS-001" => {
+            Some("core::lifecycle::tests::recovery_retries_reject_prior_generation_effect_outcomes")
+        }
+        "WP-FF-013-FINDING-DIAGNOSTIC-AUTHORITY-001" => {
+            Some("testkit::tests::public_boundary_counterexamples_reject_audit_failures")
+        }
+        "WP-FF-013-FINDING-GRAPH-CYCLES-001" => Some(
+            "contracts::graph::tests::every_traversable_relationship_rejects_cycles_and_accepts_exact_limit_acyclic_graphs",
+        ),
+        "WP-FF-013-FINDING-ZERO-TEST-001" => Some(
+            "xtask::tests::receipt_only_public_counterexample_runs_the_independent_graph_boundary",
+        ),
+        "WP-FF-013-FINDING-WINDOWS-REPORT-PATH-001" => Some(
+            "xtask::compatibility::tests::replay_report_evidence_accepts_canonicalized_windows_path",
+        ),
+        "WP-FF-013-FINDING-INVENTORY-EXACT-001" => {
+            Some("xtask::tests::exact_inventory_proof_requires_one_named_non_ignored_test")
+        }
+        "WP-FF-013-FINDING-REPORT-ATTRIBUTION-001" => {
+            Some("xtask::tests::runtime_gate_result_classes_match_declared_capabilities")
+        }
+        "WP-FF-013-FINDING-AGGREGATE-RANK-001" => {
+            Some("xtask::tests::every_gate_report_proof_class_has_an_aggregate_rank")
+        }
+        "WP-FF-013-FINDING-PREVERDICT-TRUTH-001" => {
+            Some("xtask::tests::remediation_evidence_preserves_truthful_pre_fix_failure")
+        }
+        "WP-FF-013-FINDING-CAPTURE-COLLISION-001" => {
+            Some("xtask::tests::parallel_command_capture_stems_are_unique")
+        }
+        "WP-FF-013-FINDING-PRODUCT-ORACLE-BOUNDARY-001" => {
+            Some("xtask::tests::native_product_boundary_and_report_contract_guards_fail_closed")
         }
         _ => None,
     }
@@ -5072,11 +7450,37 @@ fn run_command(
     args: &[&str],
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
+    run_command_with_proof_class(
+        root,
+        id,
+        "structural",
+        "fforager-xtask gate check",
+        program,
+        args,
+        checks,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_command_with_proof_class(
+    root: &Path,
+    id: &str,
+    proof_class: &'static str,
+    executed_boundary: &'static str,
+    program: &str,
+    args: &[&str],
+    checks: &mut Vec<Check>,
+) -> Result<(), String> {
     let status = command_status_with_timeout(root, program, args, None, GATE_COMMAND_TIMEOUT)?;
     if !status.success() {
         return Err(format!("check {id} failed with {status}"));
     }
-    checks.push(pass(id, &format!("{program} {} exited 0", args.join(" "))));
+    checks.push(pass_with_class(
+        id,
+        proof_class,
+        executed_boundary,
+        &format!("{program} {} exited 0", args.join(" ")),
+    ));
     Ok(())
 }
 
@@ -5178,21 +7582,168 @@ fn active_evidence_inputs(root: &Path) -> Result<Vec<String>, String> {
 fn source_state(root: &Path) -> Result<SourceState, String> {
     let commit = command_output(root, "git", &["rev-parse", "HEAD"])?;
     let status = command_output(root, "git", &["status", "--porcelain"])?;
-    let dirty_paths = status
+    let mut dirty_paths = status
         .lines()
         .filter_map(|line| line.get(3..))
         .map(str::trim)
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
+    dirty_paths.sort();
+    dirty_paths.dedup();
     Ok(SourceState {
         git_commit: commit.trim().to_owned(),
         dirty: !dirty_paths.is_empty(),
         dirty_paths,
+        content_fingerprint: repository_content_fingerprint(root)?,
     })
+}
+
+fn source_states_equal(left: &SourceState, right: &SourceState) -> bool {
+    left.git_commit == right.git_commit
+        && left.dirty == right.dirty
+        && left.dirty_paths == right.dirty_paths
+        && left.content_fingerprint == right.content_fingerprint
+}
+
+fn repository_content_fingerprint(root: &Path) -> Result<String, String> {
+    let listed = command_output(
+        root,
+        "git",
+        &["ls-files", "--cached", "--others", "--exclude-standard"],
+    )?;
+    let mut paths = listed
+        .lines()
+        .filter(|path| !path.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    content_fingerprint_for_paths(root, &paths)
+}
+
+fn content_fingerprint_for_paths(root: &Path, paths: &[String]) -> Result<String, String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut hasher = Sha256::new();
+    for path in paths {
+        hasher.update((path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        match fs::read(root.join(path)) {
+            Ok(bytes) => {
+                hasher.update([1]);
+                hasher.update((bytes.len() as u64).to_le_bytes());
+                hasher.update(&bytes);
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                hasher.update([0]);
+            }
+            Err(error) => return Err(format!("fingerprint source path {path}: {error}")),
+        }
+    }
+    let bytes = hasher.finalize();
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
 }
 
 fn command_output(root: &Path, program: &str, args: &[&str]) -> Result<String, String> {
     command_output_with_timeout(root, program, args, TOOL_COMMAND_TIMEOUT)
+}
+
+fn cargo_proof_output(root: &Path, program: &str, args: &[&str]) -> Result<String, String> {
+    if program != "cargo" {
+        return Err(format!(
+            "cargo proof path received non-cargo program {program}"
+        ));
+    }
+    command_output_with_timeout(root, program, args, CARGO_PROOF_COMMAND_TIMEOUT)
+}
+
+fn child_report_path(root: &Path, output: &str, prefix: &str) -> Result<PathBuf, String> {
+    let reports = root
+        .join("build/reports")
+        .canonicalize()
+        .map_err(|error| format!("canonicalize build/reports: {error}"))?;
+    let candidates = output
+        .split("report=")
+        .skip(1)
+        .map(|suffix| suffix.split(';').next().unwrap_or_default().trim())
+        .filter(|candidate| !candidate.is_empty())
+        .collect::<Vec<_>>();
+    if candidates.len() != 1 {
+        return Err(format!(
+            "FF-COMP-E-REPLAY-REPORT-PATH: expected exactly one child report path, observed {candidates:?}"
+        ));
+    }
+    let relative = Path::new(candidates[0]);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-PATH: child report path is not repository-relative".to_owned(),
+        );
+    }
+    let observed = root.join(relative).canonicalize().map_err(|error| {
+        format!("FF-COMP-E-REPLAY-REPORT-PATH: canonicalize child report: {error}")
+    })?;
+    if !observed.starts_with(&reports)
+        || observed.extension().and_then(OsStr::to_str) != Some("json")
+        || !observed
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| name.starts_with(prefix))
+    {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-PATH: child report escapes the expected report boundary"
+                .to_owned(),
+        );
+    }
+    Ok(observed)
+}
+
+/// A deep gate accepts only a report created by the child it just executed.
+/// Retained reports are useful audit history, but are never fresh evidence.
+fn report_file_snapshot(root: &Path) -> Result<BTreeSet<PathBuf>, String> {
+    let reports = root
+        .join("build/reports")
+        .canonicalize()
+        .map_err(|error| format!("canonicalize build/reports: {error}"))?;
+    fs::read_dir(&reports)
+        .map_err(|error| format!("read build/reports: {error}"))?
+        .map(|entry| {
+            let entry = entry.map_err(|error| format!("read build/reports entry: {error}"))?;
+            let kind = entry
+                .file_type()
+                .map_err(|error| format!("inspect build/reports entry: {error}"))?;
+            if kind.is_file() && entry.path().extension().and_then(OsStr::to_str) == Some("json") {
+                entry
+                    .path()
+                    .canonicalize()
+                    .map_err(|error| format!("canonicalize report entry: {error}"))
+                    .map(Some)
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|paths| paths.into_iter().flatten().collect())
+}
+
+fn validate_fresh_child_report(
+    report_path: &Path,
+    reports_before: &BTreeSet<PathBuf>,
+) -> Result<(), String> {
+    if reports_before.contains(report_path) {
+        return Err(
+            "FF-COMP-E-REPLAY-REPORT-STALE: child selected a replay report that existed before this deep-gate invocation"
+                .to_owned(),
+        );
+    }
+    Ok(())
 }
 
 fn command_status_with_timeout(
@@ -5207,6 +7758,7 @@ fn command_status_with_timeout(
     if let Some((key, value)) = environment {
         command.env(key, value);
     }
+    sanitize_rust_command_environment(&mut command, program);
     configure_quiet_process(&mut command);
     let mut child = command
         .spawn()
@@ -5231,14 +7783,20 @@ fn command_output_bytes_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Result<Vec<u8>, String> {
+    command_output_bytes_with_timeout_and_environment(root, program, args, timeout, &[])
+}
+
+fn command_output_bytes_with_timeout_and_environment(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+    environment: &[(&str, &str)],
+) -> Result<Vec<u8>, String> {
     let capture_root = root.join("build/target/command-capture");
     fs::create_dir_all(&capture_root)
         .map_err(|error| format!("create command capture directory: {error}"))?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| error.to_string())?
-        .as_nanos();
-    let stem = format!("{}-{nonce}-{}", std::process::id(), sanitize_id(program));
+    let stem = command_capture_stem(program)?;
     let stdout_path = capture_root.join(format!("{stem}.stdout"));
     let stderr_path = capture_root.join(format!("{stem}.stderr"));
     let stdout = OpenOptions::new()
@@ -5264,6 +7822,10 @@ fn command_output_bytes_with_timeout(
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
+    for (key, value) in environment {
+        command.env(key, value);
+    }
+    sanitize_rust_command_environment(&mut command, program);
     configure_quiet_process(&mut command);
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -5283,11 +7845,130 @@ fn command_output_bytes_with_timeout(
     let stderr = stderr?;
     if !status.success() {
         return Err(format!(
-            "{program} {args:?} failed with {status}; stderr={:?}",
+            "{program} {args:?} failed with {status}; stdout={:?}; stderr={:?}",
+            bounded_diagnostic(&stdout),
             bounded_diagnostic(&stderr)
         ));
     }
     Ok(stdout)
+}
+
+fn command_capture_stem(program: &str) -> Result<String, String> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let sequence = COMMAND_CAPTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    Ok(format!(
+        "{}-{nonce}-{sequence}-{}",
+        std::process::id(),
+        sanitize_id(program)
+    ))
+}
+
+fn validate_rust_verification_environment(root: &Path) -> Result<(), String> {
+    let mut overrides = std::env::vars_os()
+        .filter_map(|(key, value)| {
+            // Cargo supplies its default home to child test processes.  It is
+            // not an override when it is exactly the controlled home that
+            // nested validator commands will use as well.
+            if key == OsStr::new("CARGO_HOME")
+                && controlled_cargo_home().as_deref() == Some(Path::new(&value))
+            {
+                None
+            } else {
+                rust_environment_override(&key).then_some(key)
+            }
+        })
+        .map(|key| key.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    overrides.sort();
+    overrides.dedup();
+    if !overrides.is_empty() {
+        return Err(format!(
+            "FF-ARCH-E-RUST-ENV-OVERRIDE: verification refuses compiler, lint, wrapper, or toolchain overrides: {overrides:?}"
+        ));
+    }
+    let mut config_paths = root
+        .ancestors()
+        .flat_map(|ancestor| {
+            [
+                ancestor.join(".cargo/config.toml"),
+                ancestor.join(".cargo/config"),
+            ]
+        })
+        .collect::<Vec<_>>();
+    if let Some(cargo_home) = controlled_cargo_home() {
+        config_paths.push(cargo_home.join("config.toml"));
+        config_paths.push(cargo_home.join("config"));
+    }
+    let present = config_paths
+        .into_iter()
+        .filter(|path| path.exists())
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    if present.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "FF-ARCH-E-RUST-ENV-OVERRIDE: verification refuses effective Cargo configuration files: {present:?}"
+        ))
+    }
+}
+
+fn sanitize_rust_command_environment(command: &mut Command, program: &str) {
+    let executable = Path::new(program)
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    if !matches!(executable.as_str(), "cargo" | "cargo.exe") {
+        return;
+    }
+    for key in RUST_ENVIRONMENT_OVERRIDES {
+        command.env_remove(key);
+    }
+    // `cargo run` sets this for its child even when the repository selector is
+    // authoritative. Nested verification removes it so rust-toolchain.toml is
+    // selected again rather than rejecting the canonical launcher itself.
+    command.env_remove("RUSTUP_TOOLCHAIN");
+    // Remove both inherited overrides and explicitly configured values on
+    // this command.  `Command::env_remove` only affects inherited state, so
+    // a caller-supplied target runner would otherwise survive sanitization.
+    let configured_overrides = command
+        .get_envs()
+        .filter(|(key, _)| rust_environment_override(key))
+        .map(|(key, _)| key.to_owned())
+        .collect::<Vec<_>>();
+    for key in configured_overrides {
+        command.env_remove(key);
+    }
+    for (key, _) in std::env::vars_os() {
+        if rust_environment_override(&key) {
+            command.env_remove(key);
+        }
+    }
+    if let Some(cargo_home) = controlled_cargo_home() {
+        command.env("CARGO_HOME", cargo_home);
+    }
+}
+
+fn controlled_cargo_home() -> Option<PathBuf> {
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|home| home.join(".cargo"))
+}
+
+fn rust_environment_override(key: &OsStr) -> bool {
+    let key = key.to_string_lossy().to_ascii_uppercase();
+    RUST_ENVIRONMENT_OVERRIDES.contains(&key.as_str())
+        || key.starts_with("CARGO_ALIAS_")
+        || key.starts_with("CARGO_BUILD_")
+        || (key.starts_with("CARGO_TARGET_")
+            && (key.ends_with("_RUSTFLAGS")
+                || key.ends_with("_RUNNER")
+                || key.ends_with("_LINKER")))
 }
 
 fn wait_for_child(
@@ -5305,11 +7986,140 @@ fn wait_for_child(
             return Ok(status);
         }
         if Instant::now() >= deadline {
+            let tree_termination = terminate_child_process_tree(child);
+            let cleanup = cleanup_timed_out_child(child, &tree_termination);
+            return Err(format!(
+                "{program} {args:?} timed out after {}s; result is incomplete evidence; {cleanup}",
+                timeout.as_secs()
+            ));
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn cleanup_timed_out_child(child: &mut Child, tree_termination: &Result<(), String>) -> String {
+    let mut direct_kill = None;
+    if tree_termination.is_err() {
+        direct_kill = Some(child.kill());
+    }
+    let first_reap = wait_for_child_bounded(child, Duration::from_secs(2));
+    if !matches!(&first_reap, Ok(Some(_))) && direct_kill.is_none() {
+        direct_kill = Some(child.kill());
+    }
+    let final_reap = if matches!(&first_reap, Ok(Some(_))) {
+        first_reap
+    } else {
+        wait_for_child_bounded(child, Duration::from_secs(1))
+    };
+    format!(
+        "tree_termination={tree_termination:?}; direct_kill={direct_kill:?}; bounded_reap={final_reap:?}"
+    )
+}
+
+fn wait_for_child_bounded(
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<Option<ExitStatus>, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("bounded child reap failed: {error}"))?
+        {
+            return Ok(Some(status));
+        }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[cfg(windows)]
+fn terminate_child_process_tree(child: &mut Child) -> Result<(), String> {
+    let pid = child.id().to_string();
+    let mut command = Command::new("taskkill");
+    command
+        .args(["/PID", &pid, "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    configure_quiet_process(&mut command);
+    let mut terminator = command
+        .spawn()
+        .map_err(|error| format!("terminate process tree rooted at {pid}: {error}"))?;
+    let status = wait_for_termination_command(&mut terminator)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "terminate process tree rooted at {pid} exited with {status}"
+        ))
+    }
+}
+
+#[cfg(unix)]
+fn terminate_child_process_tree(child: &mut Child) -> Result<(), String> {
+    let process_group = format!("-{}", child.id());
+    terminate_unix_process_group("-TERM", &process_group)?;
+    let grace_deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < grace_deadline {
+        if child
+            .try_wait()
+            .map_err(|error| format!("wait for terminated process group: {error}"))?
+            .is_some()
+        {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    terminate_unix_process_group("-KILL", &process_group)
+}
+
+#[cfg(unix)]
+fn terminate_unix_process_group(signal: &str, process_group: &str) -> Result<(), String> {
+    let mut command = Command::new("kill");
+    command
+        .args([signal, process_group])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    configure_quiet_process(&mut command);
+    let mut terminator = command
+        .spawn()
+        .map_err(|error| format!("send {signal} to process group {process_group}: {error}"))?;
+    let status = wait_for_termination_command(&mut terminator)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "send {signal} to process group {process_group} exited with {status}"
+        ))
+    }
+}
+
+#[cfg(all(not(windows), not(unix)))]
+fn terminate_child_process_tree(child: &mut Child) -> Result<(), String> {
+    child
+        .kill()
+        .map_err(|error| format!("terminate child process: {error}"))
+}
+
+fn wait_for_termination_command(child: &mut Child) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + TERMINATION_COMMAND_TIMEOUT;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("wait for process-tree terminator: {error}"))?
+        {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
             let kill_result = child.kill();
             let reap_result = child.wait();
             return Err(format!(
-                "{program} {args:?} timed out after {}s; result is incomplete evidence; kill={kill_result:?}; reap={reap_result:?}",
-                timeout.as_secs()
+                "process-tree terminator timed out after {}s; kill={kill_result:?}; reap={reap_result:?}",
+                TERMINATION_COMMAND_TIMEOUT.as_secs()
             ));
         }
         thread::sleep(Duration::from_millis(25));
@@ -5354,7 +8164,13 @@ fn configure_quiet_process(command: &mut Command) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+fn configure_quiet_process(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(all(not(windows), not(unix)))]
 fn configure_quiet_process(_command: &mut Command) {}
 
 fn invocation(gate_args: &[String]) -> Invocation {
@@ -5377,6 +8193,12 @@ fn invocation(gate_args: &[String]) -> Invocation {
 }
 
 fn write_report(root: &Path, prefix: &str, report: &GateReport) -> Result<PathBuf, String> {
+    validate_gate_report_evidence(report)?;
+    let bytes = serde_json::to_vec_pretty(report).map_err(|e| e.to_string())?;
+    let artifact: GateReportArtifact = serde_json::from_slice(&bytes).map_err(|error| {
+        format!("FF-ARCH-E-GATE-REPORT-SCHEMA: serialize/parse report: {error}")
+    })?;
+    validate_gate_report_artifact(&artifact)?;
     let reports = root.join("build/reports");
     fs::create_dir_all(&reports).map_err(|e| e.to_string())?;
     let nonce = SystemTime::now()
@@ -5386,7 +8208,6 @@ fn write_report(root: &Path, prefix: &str, report: &GateReport) -> Result<PathBu
     let stem = format!("{prefix}-{nonce}-{}", std::process::id());
     let temporary = reports.join(format!(".{stem}.tmp"));
     let final_path = reports.join(format!("{stem}.json"));
-    let bytes = serde_json::to_vec_pretty(report).map_err(|e| e.to_string())?;
     let result = (|| -> io::Result<()> {
         let mut file = OpenOptions::new()
             .write(true)
@@ -5403,10 +8224,314 @@ fn write_report(root: &Path, prefix: &str, report: &GateReport) -> Result<PathBu
         let _ = fs::remove_file(&temporary);
         return Err(format!("atomic report write failed: {error}"));
     }
+    let persisted = fs::read(&final_path).map_err(|error| {
+        format!("FF-ARCH-E-GATE-REPORT-SCHEMA: reread persisted report: {error}")
+    })?;
+    let persisted_artifact: GateReportArtifact =
+        serde_json::from_slice(&persisted).map_err(|error| {
+            format!("FF-ARCH-E-GATE-REPORT-SCHEMA: parse persisted report: {error}")
+        })?;
+    validate_gate_report_artifact(&persisted_artifact)?;
     final_path
         .strip_prefix(root)
         .map(Path::to_path_buf)
         .map_err(|e| e.to_string())
+}
+
+fn validate_gate_report_evidence(report: &GateReport) -> Result<(), String> {
+    let actual = executed_proof_classes(&report.checks, &report.fixtures);
+    if report.executed_proof_classes != actual {
+        return Err("FF-ARCH-E-PROOF-CLASS-PROMOTION: report executed classes do not match executed result evidence".to_owned());
+    }
+    if report.aggregate_executed_proof_class != aggregate_executed_proof_class(&actual) {
+        return Err("FF-ARCH-E-PROOF-CLASS-PROMOTION: aggregate is not derived from executed result evidence".to_owned());
+    }
+    if report.status == "PASS" && actual.is_empty() {
+        return Err(
+            "FF-ARCH-E-DECLARATION-ONLY-PROOF: PASS report has no executed evidence".to_owned(),
+        );
+    }
+    let malformed_check = report.checks.iter().any(|check| {
+        check.proof_class.trim().is_empty()
+            || check.concrete_input.trim().is_empty()
+            || check.executed_boundary.trim().is_empty()
+            || check.expected_result.trim().is_empty()
+            || check.observed_result.trim().is_empty()
+    });
+    let malformed_fixture = report.fixtures.iter().any(|fixture| {
+        fixture.proof_class.trim().is_empty()
+            || fixture.concrete_input.trim().is_empty()
+            || fixture.executed_boundary.trim().is_empty()
+            || fixture.expected_result.trim().is_empty()
+            || fixture.observed_result.trim().is_empty()
+    });
+    if malformed_check || malformed_fixture {
+        return Err(
+            "FF-ARCH-E-DECLARATION-ONLY-PROOF: report result omits executed-boundary evidence"
+                .to_owned(),
+        );
+    }
+    if report.checks.iter().any(|check| {
+        matches!(
+            check.proof_class,
+            "semantic" | "state_effect" | "wire_boundary" | "graph" | "public_boundary"
+        ) && check.executed_boundary.contains("implementation-local")
+    }) {
+        return Err("FF-ARCH-E-DECLARATION-ONLY-PROOF: local helper is not a public/composed proof boundary".to_owned());
+    }
+    Ok(())
+}
+
+const GATE_REPORT_PROOF_CLASSES: &[&str] = &[
+    "artifact",
+    "counterfactual",
+    "dependency",
+    "external_process",
+    "graph",
+    "integration",
+    "integration_observation",
+    "negative_fixture",
+    "policy",
+    "process_plan",
+    "production_runtime",
+    "public_boundary",
+    "runtime_fault",
+    "runtime_observable",
+    "scenario_contract",
+    "semantic",
+    "source",
+    "state_effect",
+    "structural",
+    "wire_boundary",
+];
+
+#[allow(clippy::too_many_lines)]
+fn validate_gate_report_artifact(report: &GateReportArtifact) -> Result<(), String> {
+    if report.schema_id != "ff.gate-report@1" || report.schema_version != "1.0.0" {
+        return Err("FF-ARCH-E-GATE-REPORT-SCHEMA: invalid gate report identity".to_owned());
+    }
+    let expected_args: &[&str] = match report.gate_id.as_str() {
+        ARCH_GATE => &["architecture-check"],
+        DEEP_GATE => &["verify-deep", "--evidence-from-taskboard"],
+        PR_GATE => &["verify-pr", "--evidence-from-taskboard"],
+        RUNTIME_GATE => &["runtime-truth-check", "--evidence-from-taskboard"],
+        _ => {
+            return Err(
+                "FF-ARCH-E-GATE-REPORT-SCHEMA: report names an unknown gate identity".to_owned(),
+            );
+        }
+    };
+    if report.gate_version != 1
+        || report.invocation.repository_root != "."
+        || report
+            .invocation
+            .gate_args
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            != expected_args
+        || report.invocation.canonical_command
+            != invocation(&report.invocation.gate_args).canonical_command
+    {
+        return Err(
+            "FF-ARCH-E-GATE-REPORT-SCHEMA: report invocation is not the canonical gate invocation"
+                .to_owned(),
+        );
+    }
+    if report.source.git_commit.trim().is_empty()
+        || report.source.dirty == report.source.dirty_paths.is_empty()
+        || report.source.content_fingerprint.len() != 64
+        || !report
+            .source
+            .content_fingerprint
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+        || report
+            .source
+            .dirty_paths
+            .iter()
+            .any(|path| path.trim().is_empty())
+    {
+        return Err(
+            "FF-ARCH-E-GATE-REPORT-SCHEMA: report source provenance is malformed".to_owned(),
+        );
+    }
+    let input_paths = report
+        .inputs
+        .iter()
+        .map(|input| input.path.as_str())
+        .collect::<BTreeSet<_>>();
+    if report.inputs.iter().any(|input| {
+        input.path.trim().is_empty()
+            || !matches!(input.git_blob.len(), 40 | 64)
+            || !input.git_blob.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) || input_paths.len() != report.inputs.len()
+    {
+        return Err("FF-ARCH-E-GATE-REPORT-SCHEMA: report inputs are malformed".to_owned());
+    }
+    validate_gate_report_class_set(
+        &report.declared_supported_proof_classes,
+        "FF-ARCH-E-GATE-REPORT-DECLARED",
+        report.status == "PASS",
+    )?;
+    validate_gate_report_class_set(
+        &report.executed_proof_classes,
+        "FF-ARCH-E-GATE-REPORT-EXECUTED",
+        false,
+    )?;
+    if report
+        .executed_proof_classes
+        .iter()
+        .any(|class| !report.declared_supported_proof_classes.contains(class))
+    {
+        return Err(
+            "FF-ARCH-E-GATE-REPORT-DECLARATION: executed proof class is not declared by the gate"
+                .to_owned(),
+        );
+    }
+    if report.executed_proof_classes.iter().any(|class| {
+        matches!(
+            class.as_str(),
+            "production_runtime" | "runtime_observable" | "runtime_fault"
+        )
+    }) {
+        return Err(
+            "FF-ARCH-E-GATE-REPORT-RUNTIME: runtime-class execution is forbidden until a gate schema includes direct staged-artifact runtime evidence"
+                .to_owned(),
+        );
+    }
+    match report.status.as_str() {
+        "PASS" => {
+            if report.exit_code != 0
+                || report.checks.is_empty()
+                || report.checks.iter().any(|check| check.status != "PASS")
+                || report
+                    .fixtures
+                    .iter()
+                    .any(|fixture| fixture.status != "PASS")
+            {
+                return Err(
+                    "FF-ARCH-E-GATE-REPORT-RESULT: PASS report has a non-PASS result or nonzero exit"
+                        .to_owned(),
+                );
+            }
+        }
+        "FAIL" => {
+            if report.exit_code == 0
+                || report.checks.is_empty()
+                || report.checks.iter().any(|check| check.status != "FAIL")
+                || !report.fixtures.is_empty()
+            {
+                return Err(
+                    "FF-ARCH-E-GATE-REPORT-RESULT: FAIL report has an invalid result shape"
+                        .to_owned(),
+                );
+            }
+        }
+        _ => {
+            return Err(
+                "FF-ARCH-E-GATE-REPORT-RESULT: gate report status must be PASS or FAIL".to_owned(),
+            );
+        }
+    }
+    let actual = executed_gate_artifact_proof_classes(report);
+    if report.executed_proof_classes != actual
+        || report.aggregate_executed_proof_class != aggregate_executed_proof_class(&actual)
+    {
+        return Err(
+            "FF-ARCH-E-PROOF-CLASS-PROMOTION: persisted report proof classes do not derive from PASS result evidence"
+                .to_owned(),
+        );
+    }
+    if report.status == "PASS" && actual.is_empty() {
+        return Err(
+            "FF-ARCH-E-DECLARATION-ONLY-PROOF: PASS report has no PASS evidence".to_owned(),
+        );
+    }
+    if report.rules.iter().any(|value| value.trim().is_empty())
+        || report.artifacts.iter().any(|value| value.trim().is_empty())
+        || report
+            .proof_limitations
+            .iter()
+            .any(|value| value.trim().is_empty())
+        || report.checks.iter().any(gate_report_check_malformed)
+        || report.fixtures.iter().any(gate_report_fixture_malformed)
+    {
+        return Err(
+            "FF-ARCH-E-GATE-REPORT-SCHEMA: persisted report omits required result evidence"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_gate_report_class_set(
+    classes: &[String],
+    diagnostic: &str,
+    required: bool,
+) -> Result<(), String> {
+    let observed = classes.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    if (required && classes.is_empty())
+        || classes
+            .iter()
+            .any(|class| !GATE_REPORT_PROOF_CLASSES.contains(&class.as_str()))
+        || observed.len() != classes.len()
+        || classes.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return Err(format!(
+            "{diagnostic}: proof classes must be known, unique, and sorted"
+        ));
+    }
+    Ok(())
+}
+
+fn executed_gate_artifact_proof_classes(report: &GateReportArtifact) -> Vec<String> {
+    let mut classes = report
+        .checks
+        .iter()
+        .filter(|check| check.status == "PASS")
+        .map(|check| check.proof_class.clone())
+        .chain(
+            report
+                .fixtures
+                .iter()
+                .filter(|fixture| fixture.status == "PASS")
+                .map(|fixture| fixture.proof_class.clone()),
+        )
+        .collect::<Vec<_>>();
+    classes.sort();
+    classes.dedup();
+    classes
+}
+
+fn gate_report_check_malformed(check: &GateReportCheckArtifact) -> bool {
+    check.id.trim().is_empty()
+        || !GATE_REPORT_PROOF_CLASSES.contains(&check.proof_class.as_str())
+        || check.concrete_input.trim().is_empty()
+        || check.executed_boundary.trim().is_empty()
+        || check.expected_result.trim().is_empty()
+        || check.observed_result.trim().is_empty()
+        || check.detail.trim().is_empty()
+        || check
+            .skipped_semantic_dependencies
+            .iter()
+            .any(|value| value.trim().is_empty())
+}
+
+fn gate_report_fixture_malformed(fixture: &GateReportFixtureArtifact) -> bool {
+    fixture.fixture_id.trim().is_empty()
+        || !GATE_REPORT_PROOF_CLASSES.contains(&fixture.proof_class.as_str())
+        || fixture.concrete_input.trim().is_empty()
+        || fixture.executed_boundary.trim().is_empty()
+        || fixture.expected_result.trim().is_empty()
+        || fixture.observed_result.trim().is_empty()
+        || fixture.execution_path.trim().is_empty()
+        || fixture.expected_diagnostic.trim().is_empty()
+        || fixture.observed_diagnostics.is_empty()
+        || fixture
+            .skipped_semantic_dependencies
+            .iter()
+            .any(|value| value.trim().is_empty())
 }
 
 fn read_toml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
@@ -5532,11 +8657,62 @@ fn active_packet_id_from_text(text: &str, context: &str) -> Result<Option<String
 }
 
 fn pass(id: &str, detail: &str) -> Check {
+    pass_with_class(id, "structural", "fforager-xtask gate check", detail)
+}
+
+fn pass_with_class(
+    id: &str,
+    proof_class: &'static str,
+    executed_boundary: &'static str,
+    detail: &str,
+) -> Check {
     Check {
         id: id.to_owned(),
         status: "PASS",
+        proof_class,
+        concrete_input: id.to_owned(),
+        executed_boundary: executed_boundary.to_owned(),
+        expected_result: "check succeeds".to_owned(),
+        observed_result: detail.to_owned(),
+        skipped_semantic_dependencies: vec![
+            "No shipped Ferric production entrypoint was executed by this gate check.".to_owned(),
+        ],
         detail: detail.to_owned(),
     }
+}
+
+fn executed_proof_classes(checks: &[Check], fixtures: &[FixtureResult]) -> Vec<String> {
+    let mut classes = checks
+        .iter()
+        .filter(|check| check.status == "PASS")
+        .map(|check| check.proof_class.to_owned())
+        .chain(
+            fixtures
+                .iter()
+                .filter(|fixture| fixture.status == "PASS")
+                .map(|fixture| fixture.proof_class.to_owned()),
+        )
+        .collect::<Vec<_>>();
+    classes.sort();
+    classes.dedup();
+    classes
+}
+
+fn aggregate_executed_proof_class(classes: &[String]) -> String {
+    let rank = |class: &str| match class {
+        "structural" | "policy" | "source" | "dependency" | "process_plan" => Some(0_u8),
+        "negative_fixture" | "artifact" => Some(1_u8),
+        "counterfactual" | "scenario_contract" | "semantic" | "state_effect" | "wire_boundary"
+        | "graph" | "public_boundary" => Some(2_u8),
+        "integration" | "integration_observation" | "external_process" => Some(3_u8),
+        "production_runtime" | "runtime_observable" | "runtime_fault" => Some(4_u8),
+        _ => None,
+    };
+    classes
+        .iter()
+        .filter_map(|class| rank(class).map(|rank| (rank, class)))
+        .min_by_key(|(rank, _)| *rank)
+        .map_or_else(|| "none".to_owned(), |(_, class)| class.clone())
 }
 
 #[cfg(test)]
@@ -5711,6 +8887,7 @@ mod tests {
     fn contract_manual_validation_rejects_comment_and_command_stuffing() {
         let manual = include_str!("../../../../product/MODEL_MANUAL.md");
         validate_contract_manual_text(manual).unwrap();
+        let normalized = manual.replace("\r\n", "\n");
         let commented = manual.replace(
             "Wire versions use incompatible major versions",
             "<!-- Wire versions use incompatible major versions -->",
@@ -5740,7 +8917,11 @@ mod tests {
             canonical_contract_manual_commands()[5],
         ]
         .join("\n");
-        let stuffed = manual.replace(&canonical_block, &stuffed_block);
+        let stuffed = normalized.replace(&canonical_block, &stuffed_block);
+        assert_ne!(
+            stuffed, normalized,
+            "canonical command block must be present"
+        );
         assert!(
             validate_contract_manual_text(&stuffed)
                 .unwrap_err()
@@ -5770,6 +8951,26 @@ mod tests {
             .unwrap();
         assert!(pr.contains("run_verify_deep_checks(root, &mut checks)?;"));
         assert!(!pr.contains("checks.push(pass(\n        \"verify-deep\""));
+    }
+
+    #[test]
+    fn deep_gate_reports_canonical_rules_without_packet_acceptance_attribution() {
+        let source = include_str!("main.rs");
+        let report = source
+            .split_once("fn run_verify_deep_inner")
+            .and_then(|(_, remainder)| remainder.split_once("fn run_verify_deep_checks"))
+            .map(|(function, _)| function)
+            .expect("deep report implementation");
+        assert!(report.contains("rules: architecture.rules.clone()"));
+        assert!(!report.contains("WP-FF-005"));
+
+        let checks = source
+            .split_once("fn run_verify_deep_checks")
+            .and_then(|(_, remainder)| remainder.split_once("fn validate_contract_inventory"))
+            .map(|(function, _)| function)
+            .expect("deep check implementation");
+        assert!(checks.contains("\"deep-proof-surface\""));
+        assert!(!checks.contains("WP-FF-005"));
     }
 
     #[test]
@@ -5815,6 +9016,277 @@ mod tests {
     fn proof_binding_requires_all_three_surfaces() {
         assert!(proof_binding_counts_valid(1, 1, 1));
         assert!(!proof_binding_counts_valid(1, 1, 0));
+    }
+
+    #[test]
+    fn native_product_boundary_and_report_contract_guards_fail_closed() {
+        assert_eq!(
+            product_oracle_source_diagnostic(
+                "let wrapped = \"yt-dlp\"; std::process::Command::new(wrapped);"
+            ),
+            Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
+        );
+        assert_eq!(
+            product_oracle_source_diagnostic("use pyo3::prelude::*;"),
+            Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic("product/scripts/bootstrap.py", b"exit 0"),
+            Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic(
+                "product/assets/defaults.json",
+                br#"{"delegate":"yt-dlp"}"#,
+            ),
+            Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic(
+                "product/MODEL_MANUAL.md",
+                b"yt-dlp is a research-only oracle",
+            ),
+            None
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic(
+                "build/target/research-oracle/yt-dlp.exe",
+                b"yt-dlp",
+            ),
+            None
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic("product/docs/oracle.bin", &[0, 1, 2],),
+            Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic(
+                "product/src/lib.rs",
+                b"const PAYLOAD: &[u8] = include_bytes!(\"../docs/research.md\");",
+            ),
+            Some("FF-ARCH-E-PRODUCT-DOC-ASSET-REFERENCE")
+        );
+        assert_eq!(
+            product_oracle_boundary_diagnostic(
+                "product/src/lib.rs",
+                b"let mut program = \"yt\".to_string(); program.push_str(\"-dlp\"); std::process::Command::new(program);",
+            ),
+            Some("FF-ARCH-E-PRODUCT-UNGOVERNED-PROCESS")
+        );
+        assert!(
+            compatibility::structural_replay_report_mutation_diagnostic()
+                .expect_err("full replay artifact mutation must fail closed")
+                .starts_with("FF-COMP-E-SEMANTIC-EMPTY")
+        );
+    }
+
+    #[test]
+    fn gate_report_artifact_rejects_schema_and_runtime_class_promotions() {
+        for (mutation, diagnostic) in [
+            (
+                "gate_report_unknown_proof_class",
+                "FF-ARCH-E-GATE-REPORT-DECLARED",
+            ),
+            (
+                "gate_report_undeclared_execution",
+                "FF-ARCH-E-GATE-REPORT-DECLARATION",
+            ),
+            ("gate_report_nonpass_result", "FF-ARCH-E-GATE-REPORT-RESULT"),
+            ("gate_report_runtime_claim", "FF-ARCH-E-GATE-REPORT-RUNTIME"),
+        ] {
+            let result = proof_report_fixture_execution(mutation)
+                .unwrap_or_else(|error| panic!("{mutation} fixture failed: {error}"));
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|observed| observed == diagnostic),
+                "{mutation} did not produce {diagnostic}: {:?}",
+                result.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn inventory_proof_guard_rejects_obvious_neutralized_test_bodies() {
+        for body in [
+            "{}",
+            "{ return; }",
+            "{ assert!(true); }",
+            "{ assert!(1 == 1); }",
+            "{ assert!(1 + 1 == 2); }",
+            "{ assert_eq!(2 * 3, 6); }",
+            "{ assert_ne!(\"left\", \"right\"); }",
+            "{ assert_eq!(value, value); }",
+            "{ let observed = 1; assert_eq!(observed, 1); }",
+            "{ let one = 1; let two = one + 1; assert_eq!(two, 2); }",
+            "{ const OBSERVED: usize = 1; assert_eq!(OBSERVED, 1); }",
+            "{ debug_assert!(true); }",
+        ] {
+            assert!(
+                inventory_proof_trivial_body(body),
+                "inventory proof neutralization was not rejected: {body}"
+            );
+        }
+        assert!(!inventory_proof_trivial_body(
+            "{ assert!(fforager_contracts::ItemId::new(\"node_wrong\").is_err()); }"
+        ));
+    }
+
+    #[test]
+    fn exact_inventory_proof_requires_one_named_non_ignored_test() {
+        let selector = "graph::tests::round_trip_preserves_tri_state";
+        let passing = format!(
+            "running 1 test\ntest {selector} ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out"
+        );
+        assert!(exact_test_execution_passed(&passing, selector));
+
+        for rejected in [
+            "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out"
+                .to_owned(),
+            format!(
+                "running 1 test\ntest {selector} ... ignored\n\ntest result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 34 filtered out"
+            ),
+            "running 1 test\ntest unrelated::tests::passes ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured"
+                .to_owned(),
+        ] {
+            assert!(!exact_test_execution_passed(&rejected, selector));
+        }
+    }
+
+    #[test]
+    fn runtime_gate_result_classes_match_declared_capabilities() {
+        let checks = prerequisite_runtime_checks(
+            "WP-FF-013-proof-integrity-remediation-v2",
+            &["product/crates/fforager-core/src/lifecycle.rs".to_owned()],
+        );
+        assert_eq!(
+            executed_proof_classes(&checks, &[]),
+            ["policy".to_owned(), "scenario_contract".to_owned()]
+        );
+        assert!(checks.iter().all(|check| {
+            check.proof_class != "structural"
+                && !check.concrete_input.trim().is_empty()
+                && !check.executed_boundary.trim().is_empty()
+                && !check.observed_result.trim().is_empty()
+        }));
+    }
+
+    #[test]
+    fn every_gate_report_proof_class_has_an_aggregate_rank() {
+        for proof_class in GATE_REPORT_PROOF_CLASSES {
+            assert_ne!(
+                aggregate_executed_proof_class(&[(*proof_class).to_owned()]),
+                "none",
+                "allowed proof class has no aggregate rank: {proof_class}"
+            );
+        }
+        assert_eq!(aggregate_executed_proof_class(&[]), "none");
+    }
+
+    #[test]
+    fn remediation_evidence_preserves_truthful_pre_fix_failure() {
+        let evidence = serde_json::json!({
+            "pre_simplification_verdict": "FAIL: independently executed counterexamples reproduced the proof-integrity defects before remediation.",
+            "post_simplification_verdict": "PASS: independently executed counterexamples and canonical gates reject every remediated defect."
+        });
+        validate_simplification_verdicts(&evidence).unwrap();
+
+        let false_history = serde_json::json!({
+            "pre_simplification_verdict": "PENDING: no pre-fix verdict was recorded for this remediation.",
+            "post_simplification_verdict": "PASS: independently executed counterexamples and canonical gates reject every remediated defect."
+        });
+        assert!(validate_simplification_verdicts(&false_history).is_err());
+    }
+
+    #[test]
+    fn parallel_command_capture_stems_are_unique() {
+        let workers = (0..16)
+            .map(|_| {
+                thread::spawn(|| {
+                    (0..32)
+                        .map(|_| command_capture_stem("cargo").unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        let stems = workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(stems.iter().collect::<BTreeSet<_>>().len(), stems.len());
+    }
+
+    #[test]
+    fn receipt_only_public_counterexample_runs_the_independent_graph_boundary() {
+        let root = repo_root().expect("repository root");
+        let execution = receipt_only_public_counterexample_fixture_execution(&root)
+            .expect("receipt-only mutation must be rejected by an executed graph test");
+        assert_eq!(
+            execution.diagnostics,
+            ["FF-ARCH-E-PUBLIC-COUNTEREXAMPLE-RECEIPT-ONLY"]
+        );
+    }
+
+    #[test]
+    fn cargo_verification_strips_lint_and_compiler_overrides() {
+        for key in [
+            "CARGO_HOME",
+            "CLIPPY_CONF_DIR",
+            "RUSTFLAGS",
+            "CARGO_ENCODED_RUSTFLAGS",
+            "RUSTC_WRAPPER",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS",
+            "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER",
+        ] {
+            assert!(rust_environment_override(OsStr::new(key)), "{key}");
+        }
+        let mut command = Command::new("cargo");
+        command
+            .env("CLIPPY_CONF_DIR", "poison")
+            .env("RUSTFLAGS", "--cap-lints=allow")
+            .env("RUSTUP_TOOLCHAIN", "poison-toolchain")
+            .env("CARGO_HOME", "poison-home")
+            .env("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER", "fake-runner");
+        sanitize_rust_command_environment(&mut command, "cargo");
+        let environment = command
+            .get_envs()
+            .map(|(key, value)| (key.to_owned(), value.map(ToOwned::to_owned)))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(environment.get(OsStr::new("CLIPPY_CONF_DIR")), Some(&None));
+        assert_eq!(environment.get(OsStr::new("RUSTFLAGS")), Some(&None));
+        let expected_cargo_home = controlled_cargo_home().map(PathBuf::into_os_string);
+        assert_eq!(
+            environment.get(OsStr::new("CARGO_HOME")),
+            Some(&expected_cargo_home)
+        );
+        assert_eq!(environment.get(OsStr::new("RUSTUP_TOOLCHAIN")), Some(&None));
+        assert_eq!(
+            environment.get(OsStr::new("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER")),
+            Some(&None)
+        );
+    }
+
+    #[test]
+    fn deep_replay_rejects_a_report_that_predates_the_child_invocation() {
+        let report = PathBuf::from("build/reports/compatibility-replay-old.json");
+        let error = validate_fresh_child_report(&report, &BTreeSet::from([report.clone()]))
+            .expect_err("preexisting replay report must not be accepted as fresh child evidence");
+        assert!(error.starts_with("FF-COMP-E-REPLAY-REPORT-STALE"));
+    }
+
+    #[test]
+    fn source_fingerprint_changes_when_dirty_content_changes_at_the_same_path() {
+        let root = test_root("source-content-fingerprint");
+        fs::create_dir_all(&root).unwrap();
+        let relative = "same-path.rs".to_owned();
+        fs::write(root.join(&relative), b"first dirty contents\n").unwrap();
+        let before = content_fingerprint_for_paths(&root, std::slice::from_ref(&relative)).unwrap();
+        fs::write(root.join(&relative), b"second dirty contents\n").unwrap();
+        let after = content_fingerprint_for_paths(&root, &[relative]).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert_ne!(before, after);
     }
 
     #[test]
@@ -6111,6 +9583,33 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("timed out"));
         assert!(error.contains("incomplete evidence"));
+        assert!(error.contains("tree_termination=Ok"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_tree_terminator_uses_bounded_direct_kill_fallback() {
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        configure_quiet_process(&mut command);
+        let mut child = command.spawn().unwrap();
+        let started = Instant::now();
+        let detail = cleanup_timed_out_child(
+            &mut child,
+            &Err("forced tree-terminator failure".to_owned()),
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(detail.contains("direct_kill=Some(Ok"), "{detail}");
+        assert!(child.try_wait().unwrap().is_some(), "{detail}");
     }
 
     #[test]
@@ -6516,6 +10015,28 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("timed out"));
         assert!(error.contains("incomplete evidence"));
+        assert!(error.contains("tree_termination=Ok"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_tree_terminator_uses_bounded_direct_kill_fallback() {
+        let mut command = Command::new("sleep");
+        command
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        configure_quiet_process(&mut command);
+        let mut child = command.spawn().unwrap();
+        let started = Instant::now();
+        let detail = cleanup_timed_out_child(
+            &mut child,
+            &Err("forced tree-terminator failure".to_owned()),
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(detail.contains("direct_kill=Some(Ok"), "{detail}");
+        assert!(child.try_wait().unwrap().is_some(), "{detail}");
     }
 
     fn test_root(label: &str) -> PathBuf {
@@ -6534,10 +10055,16 @@ mod tests {
         mutate: impl FnOnce(&Path),
         expected_diagnostic: &str,
     ) {
-        let root = architecture_sandbox(label);
-        architecture_check(&root).unwrap_or_else(|error| {
-            panic!("fixture positive control failed before mutation: {error}")
+        static POSITIVE_CONTROL: std::sync::OnceLock<Result<(), String>> =
+            std::sync::OnceLock::new();
+        let positive_control = POSITIVE_CONTROL.get_or_init(|| {
+            let root = architecture_sandbox("shared-positive-control");
+            architecture_check(&root).map(|_| ())
         });
+        if let Err(error) = positive_control {
+            panic!("fixture shared positive control failed: {error}");
+        }
+        let root = architecture_sandbox(label);
         mutate(&root);
         let error = architecture_check(&root).unwrap_err();
         fs::remove_dir_all(&root).unwrap();
@@ -6560,6 +10087,7 @@ mod tests {
             "build/rule-to-proof.toml",
             "build/tools/fforager-xtask/Cargo.toml",
             "build/tools/fforager-xtask/src/main.rs",
+            "product/clippy.toml",
             "product/MODEL_MANUAL.md",
         ] {
             let from = source.join(relative);
@@ -6570,6 +10098,10 @@ mod tests {
         copy_test_tree(
             &source.join("build/fixtures/architecture"),
             &root.join("build/fixtures/architecture"),
+        );
+        copy_test_tree(
+            &source.join("build/fixtures/contracts"),
+            &root.join("build/fixtures/contracts"),
         );
         copy_test_tree(&source.join("product/crates"), &root.join("product/crates"));
         copy_test_tree(&source.join("build/crates"), &root.join("build/crates"));

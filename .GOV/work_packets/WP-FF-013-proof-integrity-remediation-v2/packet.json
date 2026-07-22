@@ -41,15 +41,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
+    "closure_commit": "1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
     "main_containment_status": "NOT_VERIFIED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Remediate every validator finding with real public-boundary, mutation-sensitive proof and no product yt-dlp coupling.",
+    "next_action": "Commit validator evidence, push the work branch, merge the closure commit into main, and verify containment before VALIDATED.",
     "supersedes": [
       "WP-FF-013-proof-integrity-remediation-v1"
     ],
@@ -198,35 +198,44 @@
       "proof_class": "aggregate_validation",
       "status": "PASS",
       "evidence": [
-        "FF-GATE-DEEP-001 prerequisite report build/reports/verify-deep-1784748339555073500-36064.json",
-        "FF-GATE-RUNTIME-001 zero-progress ceiling report build/reports/runtime-truth-check-1784748580922773300-34420.json",
+        "FF-GATE-DEEP-001 clean prerequisite report build/reports/verify-deep-1784751568326234100-36336.json",
+        "FF-GATE-RUNTIME-001 clean zero-progress ceiling report build/reports/runtime-truth-check-1784751593532112300-44976.json",
+        "FF-GATE-PR-001 clean aggregate report build/reports/verify-pr-1784751995367889100-43664.json",
         "Prerequisite report records zero product, capability, phase, runtime, packaging, and release progress"
       ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-22T13:49:15Z",
+      "recorded_at_utc": "2026-07-22T20:27:26Z",
       "branch": "codex/wp-ff-013-proof-integrity-remediation",
       "base_sha": "8a9dc0ba0c7966a407c51afb3cb3feacc9eb81ff",
-      "head_sha": "8a9dc0ba0c7966a407c51afb3cb3feacc9eb81ff",
-      "dirty_paths": [
-        ".GOV/archive/work_packets/WP-FF-013-proof-integrity-remediation/WP-FF-013-proof-integrity-remediation-v1/packet.json",
-        ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/packet.json",
-        ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/refinement.json",
-        ".GOV/taskboard/taskboard.yaml",
-        ".GOV/id-registry.yaml"
-      ],
+      "head_sha": "1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
+      "dirty_paths": [],
       "checks_run": [
-        "Independent validators reproduced the v1 activation-history defect and required supersession rather than backfill.",
-        "The exact non-product prerequisite declaration was added before the first committed non-STUB v2 checkpoint."
+        "FF-GATE-ARCH-001 clean report build/reports/architecture-check-1784751090776067900-43776.json.",
+        "Complete native Rust replay clean report build/reports/compatibility-replay-1784751094707265200-17412.json plus FF-COMP-E-SHARD-EMPTY negative probe.",
+        "FF-GATE-DEEP-001 clean report build/reports/verify-deep-1784751568326234100-36336.json.",
+        "FF-GATE-RUNTIME-001 clean prerequisite ceiling report build/reports/runtime-truth-check-1784751593532112300-44976.json.",
+        "FF-GATE-PR-001 clean report build/reports/verify-pr-1784751995367889100-43664.json."
       ],
       "blockers": [],
-      "next_action": "Commit this v2 activation checkpoint before further remediation."
+      "next_action": "Commit MERGE_PENDING evidence, push the work branch, merge to main, and verify closure-commit containment."
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "PASS: cargo fmt, warnings-denied workspace Clippy, 35 contract tests, 45 core tests, diagnostics suites, 77 proof-tool tests, and all doctests at clean commit 1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
+      "PASS: FF-GATE-ARCH-001 clean report build/reports/architecture-check-1784751090776067900-43776.json",
+      "PASS: seven-case complete native Rust semantic replay build/reports/compatibility-replay-1784751094707265200-17412.json",
+      "PASS: empty shard rejected with FF-COMP-E-SHARD-EMPTY",
+      "PASS: FF-GATE-DEEP-001 clean report build/reports/verify-deep-1784751568326234100-36336.json",
+      "VERIFIED: FF-GATE-RUNTIME-001 prerequisite zero-progress ceiling build/reports/runtime-truth-check-1784751593532112300-44976.json",
+      "PASS: FF-GATE-PR-001 clean report build/reports/verify-pr-1784751995367889100-43664.json",
+      "PASS: every replay row records proof class, concrete input, boundary, expected result, observed result, and skipped semantic dependencies",
+      "PASS: AGENTS.md and CLAUDE.md SHA-256 remain byte-identical; JSON parses; git diff --check and packet allowed-path containment succeed",
+      "PASS: product runtime source contains no yt-dlp or Python dependency, subprocess, wrapper, fallback, sidecar, package payload, or service"
+    ],
     "not_proven": [
       "NOT_PROVEN: Ferric entrypoint execution",
       "yt-dlp replacement parity",

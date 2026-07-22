@@ -37,9 +37,9 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/wp-ff-013-proof-integrity-remediation",
+      "head_sha": "92f3bfbeeac2bb3aeef2414d174faf116c285534",
+      "verified_at_utc": "2026-07-22T20:28:40Z"
     },
     "closure_commit": "1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
     "main_containment_status": "NOT_VERIFIED",

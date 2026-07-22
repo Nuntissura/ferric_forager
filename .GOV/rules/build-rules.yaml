@@ -1,6 +1,6 @@
 schema_id: ff.build_rules@2
 file_id: FF-GOV-RULES-001
-updated_at: "2026-07-19"
+updated_at: "2026-07-22"
 authority: canonical
 verification_gates:
   - id: FF-GATE-ARCH-001
@@ -428,4 +428,45 @@ rules:
     category: runtime_truth
     statement: Code unreachable from a current accepted production entrypoint is not implemented product behavior; it MUST be removed or classified as non-product experimental or design-authorized Phase 0 prerequisite work, and prerequisite code may advance only its named prerequisite packet while remaining unable to advance product, capability, runtime, packaging, release, or phase status until consumed and re-proven.
     revision: 2
+    enforcement: REQUIRED
+
+  - id: FF-BUILD-089
+    category: product_dependency_boundary
+    statement: Architecture, dependency, packaging, and source-policy gates MUST reject yt-dlp or Python imports, dependencies, bundled artifacts, installers, downloaders, subprocess plans, fallbacks, sidecars, plugins, services, or delegated runtime work under product/ or any shipped artifact; only version-pinned non-shipped build or research oracle execution is permitted, and a negative fixture MUST prove an indirect runtime wrapper is rejected.
+    enforcement: REQUIRED
+  - id: FF-BUILD-090
+    category: proof_integrity
+    statement: Validators and reports MUST classify evidence as structural, semantic, integration, or production-runtime and MUST reject behavioral PASS labels when only schema, existence, digest, inventory, fixture-load, or expected-label checks executed.
+    enforcement: REQUIRED
+  - id: FF-BUILD-091
+    category: proof_integrity
+    statement: A behavioral proof MUST observe a public producer-consumer or state-effect boundary and include a counterfactual that alters behavior without altering its declaration; equality of constants, proof IDs, inventory rows, fixture expectations, permissive flags, or generated claims is declaration-only evidence and MUST fail behavioral acceptance.
+    enforcement: REQUIRED
+  - id: FF-BUILD-092
+    category: effect_integrity
+    statement: State-machine tests and model gates MUST prove that every emitted required external effect is pending until acknowledged and that durable, terminal, release, success, cancellation, confinement, commit, and recovery states are unreachable after any strict subset of required acknowledgements; FFmpeg termination and reap and filesystem confinement establishment require explicit separate proof.
+    enforcement: REQUIRED
+  - id: FF-BUILD-093
+    category: compatibility_integrity
+    statement: Schema negotiation MUST accept drift only through a versioned exact source-to-target compatibility transition validated by both wire semantics and negative unrelated-hash cases; boolean opt-in, wildcard, or mutual permissiveness is forbidden.
+    enforcement: REQUIRED
+  - id: FF-BUILD-094
+    category: wire_integrity
+    statement: Diagnostic and other durable wire gates MUST reject sequence zero unless an exact contract registers a different origin, reject undeclared top-level and nested fields unless registered as bounded optional extensions, and retain malformed, unknown-field, prior/current, and sequence-boundary fixtures.
+    enforcement: REQUIRED
+  - id: FF-BUILD-095
+    category: graph_integrity
+    statement: SourceGraph validation and model tests MUST cover each traversable relationship kind with acyclic, self-cycle, multi-node cycle, and limit-boundary cases and MUST reject prohibited cycles before any consumer traversal.
+    enforcement: REQUIRED
+  - id: FF-BUILD-096
+    category: finding_remediation
+    statement: Every confirmed counterexample MUST become a public-boundary regression that preserves the original failing input and expected correction, and validation MUST demonstrate a counterfactual or mutation that reintroduces the defect and is rejected.
+    enforcement: REQUIRED
+  - id: FF-BUILD-097
+    category: proof_integrity
+    statement: Proof inventories and rule-to-proof maps MUST resolve each behavioral rule to an executable behavior-sensitive check; gates MUST reject missing, unknown, duplicate, skipped, declaration-only, or proof-ID-string-only mappings and MUST not treat map consistency as the mapped proof result.
+    enforcement: REQUIRED
+  - id: FF-BUILD-098
+    category: validation_reporting
+    statement: Every gate result MUST record proof class, concrete input, executed boundary, expected result, observed result, and skipped semantic dependencies; aggregation MUST preserve the weakest proof class and MUST NOT promote structural-only evidence to semantic, integration, or runtime PASS.
     enforcement: REQUIRED

@@ -1,19 +1,19 @@
 schema_id: ff.id_registry@1
 file_id: FF-GOV-ID-REGISTRY-001
-updated_at: "2026-07-19"
+updated_at: "2026-07-22"
 namespaces:
   FF-PROJ:
     entity_kind: project
     next_numeric_id: 2
   FF-CODEX:
     entity_kind: project_rule
-    next_numeric_id: 62
+    next_numeric_id: 72
   FF-BOOT:
     entity_kind: bootstrap_rule
     next_numeric_id: 3
   FF-BUILD:
     entity_kind: build_rule
-    next_numeric_id: 89
+    next_numeric_id: 99
   FF-GATE:
     entity_kind: validation_gate
     next_numeric_id: 2
@@ -38,13 +38,13 @@ namespaces:
     next_numeric_id: 9
   FF-WPR:
     entity_kind: work_packet_requirement
-    next_numeric_id: 53
+    next_numeric_id: 59
   FF-START-BOUNDARY:
     entity_kind: model_entrypoint_boundary
     next_numeric_id: 7
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 13
+    next_numeric_id: 14
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -137,6 +137,12 @@ registered_files:
     path: .GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/refinement.json
   - id: WP-FF-012-runtime-truth-gates-v1-CEILING-001
     path: .GOV/work_packets/WP-FF-012-runtime-truth-gates-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
+  - id: WP-FF-013-proof-integrity-remediation-v1
+    path: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/packet.json
+  - id: WP-FF-013-proof-integrity-remediation-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/refinement.json
+  - id: WP-FF-013-proof-integrity-remediation-v1-CEILING-001
+    path: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
@@ -146,13 +152,13 @@ registered_rule_ranges:
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX
     first: FF-CODEX-001
-    last: FF-CODEX-061
-    count: 61
+    last: FF-CODEX-071
+    count: 71
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001
-    last: FF-BUILD-088
-    count: 88
+    last: FF-BUILD-098
+    count: 98
     path: .GOV/rules/build-rules.yaml
   - namespace: FF-TASKBOARD-RULE
     first: FF-TASKBOARD-RULE-001
@@ -161,8 +167,8 @@ registered_rule_ranges:
     path: .GOV/taskboard/taskboard.yaml
   - namespace: FF-WPR
     first: FF-WPR-001
-    last: FF-WPR-052
-    count: 52
+    last: FF-WPR-058
+    count: 58
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
   - namespace: FF-START-BOUNDARY
     first: FF-START-BOUNDARY-001

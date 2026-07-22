@@ -1,6 +1,6 @@
 schema_id: ff.project_codex@2
 file_id: FF-GOV-CODEX-001
-updated_at: "2026-07-19"
+updated_at: "2026-07-22"
 authority: canonical_project_codex
 always_reads:
   - START_HERE.yaml
@@ -213,4 +213,35 @@ rules:
   - id: FF-CODEX-061
     category: delegated_execution
     statement: Assign delegated agents only to the lanes the Operator requested; an instruction to use subagents for implementation and adversarial review of the implementation does not authorize research, research review, planning review, or replacement of direct implementation work.
+
+  - id: FF-CODEX-062
+    category: product_direction
+    statement: "Ferric Forager MUST implement media discovery, extraction, selection, download, post-processing orchestration, and compatibility behavior natively in shipped Rust code; no product crate, shipped binary, package, installer, runtime subprocess plan, fallback, sidecar, plugin, service, or runtime network dependency may import, invoke, bundle, install, download, or delegate work to yt-dlp or a Python runtime. A version-pinned yt-dlp executable may be used only by non-shipped build or research tooling to generate or compare provenance-bound oracle observations, and Ferric execution MUST remain independent of it."
+  - id: FF-CODEX-063
+    category: proof_integrity
+    statement: "A command, report, acceptance row, or review may use behavioral terms such as replay, oracle comparison, parity, equivalence, compatible, durable, integrated, or PASS only when it executes and observes the named semantics; schema validation, file existence, digest matching, inventory agreement, fixture loading, or expected-label echoing MUST be reported as structural evidence only and MUST NOT satisfy behavioral proof."
+  - id: FF-CODEX-064
+    category: proof_integrity
+    statement: "Required proof MUST be independent of the implementation declaration it judges: comparing two copies of the same constant, proof ID, inventory row, fixture expectation, permissive flag, or generated claim is self-validation and cannot close acceptance. The validator MUST observe a public producer-consumer or state-effect boundary and execute a counterfactual that changes or removes the behavior while leaving the declaration intact and proves rejection."
+  - id: FF-CODEX-065
+    category: effect_integrity
+    statement: "A lifecycle transition that emits external effects MUST remain non-durable and non-terminal until every effect required for that transition is explicitly acknowledged; resource release, success, cancellation completion, confinement, commit, or recovery completion before the complete acknowledgement set is forbidden. Process cancellation and failure proof MUST include termination and reap outcomes, and filesystem confinement proof MUST distinguish requested establishment from acknowledged confinement."
+  - id: FF-CODEX-066
+    category: compatibility_integrity
+    statement: "Protocol or schema drift MUST be authorized by an explicit, versioned, reviewed compatibility transition identifying the exact source and target schema identities and validated semantics; peer-supplied booleans, wildcard ranges, matching permissive preferences, or unrelated hashes MUST NOT self-authorize compatibility."
+  - id: FF-CODEX-067
+    category: wire_integrity
+    statement: "Every wire boundary MUST define sequence origin and unknown-field policy explicitly: durable sequences begin at one unless a named contract says otherwise, and undeclared fields are rejected unless the exact schema boundary registers them as bounded optional forward-compatible extensions. Top-level and nested deserializers MUST apply the same declared policy and have negative fixtures."
+  - id: FF-CODEX-068
+    category: graph_integrity
+    statement: "Every traversable SourceGraph relationship kind MUST declare whether cycles are forbidden or bounded, and validation MUST reject every prohibited self-cycle and multi-node cycle before traversal; node and edge count limits do not substitute for cycle or recursion policy proof."
+  - id: FF-CODEX-069
+    category: finding_remediation
+    statement: "A confirmed inspection or validator counterexample is not remediated by prose, renamed labels, or an implementation-local test alone; closure requires an executable regression at the public boundary that reproduces the original failing input, observes the corrected result, and fails when the correction is reverted or bypassed."
+  - id: FF-CODEX-070
+    category: proof_integrity
+    statement: "Proof inventories and rule-to-proof maps are routing metadata, not proof. Each mapped proof ID MUST resolve to and execute a behavior-sensitive check, and canonical gates MUST reject unknown, duplicate, declaration-only, skipped, or structurally successful mappings when the governing requirement is behavioral."
+  - id: FF-CODEX-071
+    category: validation_reporting
+    statement: "Every generated validation result MUST record the proof class actually executed, the concrete input and boundary observed, the expected and observed outcomes, and any skipped semantic dependency; a structural-only result MUST never be promoted to behavioral PASS by aggregation, naming, or packet prose."
 

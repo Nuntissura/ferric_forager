@@ -88,7 +88,7 @@
       "build/tooling-policy.toml",
       "build/rule-to-proof.toml",
       "product/crates/fforager-contracts/",
-      "product/crates/fforager-javascript/",
+      "build/crates/fforager-javascript/",
       "build/crates/fforager-testkit/",
       "build/tools/fforager-xtask/",
       "build/fixtures/",
@@ -266,7 +266,7 @@
         "linked_evidence": [
           ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
           ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
-          "product/crates/fforager-javascript/",
+          "build/crates/fforager-javascript/",
           "build/fixtures/javascript/",
           "build/reports/"
         ]

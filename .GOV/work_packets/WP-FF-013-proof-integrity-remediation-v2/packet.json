@@ -38,18 +38,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/wp-ff-013-proof-integrity-remediation",
-      "head_sha": "92f3bfbeeac2bb3aeef2414d174faf116c285534",
-      "verified_at_utc": "2026-07-22T20:28:40Z"
+      "head_sha": "bfbc1d0b978ad74e98a851fd6a236b3e5b23322a",
+      "verified_at_utc": "2026-07-22T20:30:12Z"
     },
     "closure_commit": "1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
-    "main_containment_status": "NOT_VERIFIED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "2af6356943e441a0fb71e335c7ef2b9f75bcaf2f"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit validator evidence, push the work branch, merge the closure commit into main, and verify containment before VALIDATED.",
+    "next_action": "Await Operator selection before activating another work packet.",
     "supersedes": [
       "WP-FF-013-proof-integrity-remediation-v1"
     ],
@@ -234,7 +234,8 @@
       "PASS: FF-GATE-PR-001 clean report build/reports/verify-pr-1784751995367889100-43664.json",
       "PASS: every replay row records proof class, concrete input, boundary, expected result, observed result, and skipped semantic dependencies",
       "PASS: AGENTS.md and CLAUDE.md SHA-256 remain byte-identical; JSON parses; git diff --check and packet allowed-path containment succeed",
-      "PASS: product runtime source contains no yt-dlp or Python dependency, subprocess, wrapper, fallback, sidecar, package payload, or service"
+      "PASS: product runtime source contains no yt-dlp or Python dependency, subprocess, wrapper, fallback, sidecar, package payload, or service",
+      "PASS: closure commit 1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e, MERGE_PENDING evidence 92f3bfbeeac2bb3aeef2414d174faf116c285534, and remote-backup record bfbc1d0b978ad74e98a851fd6a236b3e5b23322a are ancestors of main merge 2af6356943e441a0fb71e335c7ef2b9f75bcaf2f"
     ],
     "not_proven": [
       "NOT_PROVEN: Ferric entrypoint execution",

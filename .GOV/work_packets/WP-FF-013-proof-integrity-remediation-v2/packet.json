@@ -497,6 +497,12 @@
             "proof_id": "xtask::tests::parallel_command_capture_stems_are_unique"
           },
           {
+            "finding_id": "WP-FF-013-FINDING-LINE-ENDINGS-001",
+            "finding": "Post-checkout CRLF files broke multiline isolated mutation anchors; mutation replacement now normalizes matching and preserves original line endings.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::isolated_multiline_mutations_are_line_ending_portable"
+          },
+          {
             "finding_id": "WP-FF-013-FINDING-PRODUCT-ORACLE-BOUNDARY-001",
             "finding": "Documentation exceptions could hide an embedded or indirect oracle wrapper; product scanning and compiler lints now reject those paths.",
             "status": "REMEDIATED",

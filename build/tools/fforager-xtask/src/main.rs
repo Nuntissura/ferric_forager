@@ -4812,10 +4812,20 @@ fn copy_fixture_tree(source: &Path, destination: &Path) -> Result<(), String> {
 
 fn replace_text_in_file(path: &Path, before: &str, after: &str) -> Result<(), String> {
     let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    if !source.contains(before) {
+    let uses_crlf = source.contains("\r\n");
+    let normalized_source = source.replace("\r\n", "\n");
+    let normalized_before = before.replace("\r\n", "\n");
+    let normalized_after = after.replace("\r\n", "\n");
+    if !normalized_source.contains(&normalized_before) {
         return Err(format!("isolated mutation anchor is absent: {before}"));
     }
-    fs::write(path, source.replacen(before, after, 1)).map_err(|error| error.to_string())
+    let mutated = normalized_source.replacen(&normalized_before, &normalized_after, 1);
+    let output = if uses_crlf {
+        mutated.replace('\n', "\r\n")
+    } else {
+        mutated
+    };
+    fs::write(path, output).map_err(|error| error.to_string())
 }
 
 fn empty_named_test_body(path: &Path, marker: &str) -> Result<(), String> {
@@ -7260,6 +7270,9 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-013-FINDING-CAPTURE-COLLISION-001" => {
             Some("xtask::tests::parallel_command_capture_stems_are_unique")
         }
+        "WP-FF-013-FINDING-LINE-ENDINGS-001" => {
+            Some("xtask::tests::isolated_multiline_mutations_are_line_ending_portable")
+        }
         "WP-FF-013-FINDING-PRODUCT-ORACLE-BOUNDARY-001" => {
             Some("xtask::tests::native_product_boundary_and_report_contract_guards_fail_closed")
         }
@@ -9215,6 +9228,20 @@ mod tests {
             .flat_map(|worker| worker.join().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(stems.iter().collect::<BTreeSet<_>>().len(), stems.len());
+    }
+
+    #[test]
+    fn isolated_multiline_mutations_are_line_ending_portable() {
+        let root = test_root("crlf-mutation-anchor");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("source.rs");
+        fs::write(&path, "before\r\nanchor\r\nafter\r\n").unwrap();
+        replace_text_in_file(&path, "before\nanchor", "replaced\nanchor").unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "replaced\r\nanchor\r\nafter\r\n"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -38,10 +38,10 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/wp-ff-013-proof-integrity-remediation",
-      "head_sha": "bfbc1d0b978ad74e98a851fd6a236b3e5b23322a",
-      "verified_at_utc": "2026-07-22T20:30:12Z"
+      "head_sha": "d23d5a4d87b00b4498d9364cc57aaf3525ce5fcb",
+      "verified_at_utc": "2026-07-22T20:35:07Z"
     },
-    "closure_commit": "1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
+    "closure_commit": "f229ed5147c13cb7cf027867f1b11fe37a9160b4",
     "main_containment_status": "VERIFIED",
     "merged_main_commit": "2af6356943e441a0fb71e335c7ef2b9f75bcaf2f"
   },
@@ -207,20 +207,22 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-22T20:27:26Z",
+      "recorded_at_utc": "2026-07-22T20:35:07Z",
       "branch": "codex/wp-ff-013-proof-integrity-remediation",
       "base_sha": "8a9dc0ba0c7966a407c51afb3cb3feacc9eb81ff",
-      "head_sha": "1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e",
+      "head_sha": "f229ed5147c13cb7cf027867f1b11fe37a9160b4",
       "dirty_paths": [],
       "checks_run": [
         "FF-GATE-ARCH-001 clean report build/reports/architecture-check-1784751090776067900-43776.json.",
         "Complete native Rust replay clean report build/reports/compatibility-replay-1784751094707265200-17412.json plus FF-COMP-E-SHARD-EMPTY negative probe.",
         "FF-GATE-DEEP-001 clean report build/reports/verify-deep-1784751568326234100-36336.json.",
         "FF-GATE-RUNTIME-001 clean prerequisite ceiling report build/reports/runtime-truth-check-1784751593532112300-44976.json.",
-        "FF-GATE-PR-001 clean report build/reports/verify-pr-1784751995367889100-43664.json."
+        "FF-GATE-PR-001 clean report build/reports/verify-pr-1784751995367889100-43664.json.",
+        "Post-merge CRLF mutation regression and FF-GATE-ARCH-001 report build/reports/architecture-check-1784752447298059800-40860.json.",
+        "Closed-state runtime gate rejected execution with FF-RUNTIME-E-NO-ACTIVE-PACKET."
       ],
       "blockers": [],
-      "next_action": "Commit MERGE_PENDING evidence, push the work branch, merge to main, and verify closure-commit containment."
+      "next_action": "Await Operator selection before activating another work packet."
     }
   },
   "validation": {
@@ -235,7 +237,10 @@
       "PASS: every replay row records proof class, concrete input, boundary, expected result, observed result, and skipped semantic dependencies",
       "PASS: AGENTS.md and CLAUDE.md SHA-256 remain byte-identical; JSON parses; git diff --check and packet allowed-path containment succeed",
       "PASS: product runtime source contains no yt-dlp or Python dependency, subprocess, wrapper, fallback, sidecar, package payload, or service",
-      "PASS: closure commit 1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e, MERGE_PENDING evidence 92f3bfbeeac2bb3aeef2414d174faf116c285534, and remote-backup record bfbc1d0b978ad74e98a851fd6a236b3e5b23322a are ancestors of main merge 2af6356943e441a0fb71e335c7ef2b9f75bcaf2f"
+      "PASS: clean acceptance closure 1a1c1ed5ffb655e9b7b7a9c0521588662c1cd15e, MERGE_PENDING evidence 92f3bfbeeac2bb3aeef2414d174faf116c285534, and backup record bfbc1d0b978ad74e98a851fd6a236b3e5b23322a are ancestors of main merge 2af6356943e441a0fb71e335c7ef2b9f75bcaf2f",
+      "PASS: post-merge line-ending portability closure f229ed5147c13cb7cf027867f1b11fe37a9160b4 is contained in main; focused regression, warnings-denied Clippy, and FF-GATE-ARCH-001 build/reports/architecture-check-1784752447298059800-40860.json succeed",
+      "PASS: remote backup origin/codex/wp-ff-013-proof-integrity-remediation contains final validated state at d23d5a4d87b00b4498d9364cc57aaf3525ce5fcb",
+      "POST-CLOSE EXPECTED REJECTION: FF-RUNTIME-E-NO-ACTIVE-PACKET after taskboard active_wp_id was cleared"
     ],
     "not_proven": [
       "NOT_PROVEN: Ferric entrypoint execution",

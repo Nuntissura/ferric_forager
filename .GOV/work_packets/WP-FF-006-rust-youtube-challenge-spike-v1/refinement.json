@@ -1,0 +1,162 @@
+{
+  "schema_id": "ff.work_packet_refinement@1",
+  "file_id": "WP-FF-006-rust-youtube-challenge-spike-v1-REFINEMENT-001",
+  "wp_id": "WP-FF-006-rust-youtube-challenge-spike-v1",
+  "updated_at_utc": "2026-07-22T21:19:04Z",
+  "operator_request": "Implement WP-006 without mockups or vibe coding, use the already-open logged-in Firefox only when a live canary materially helps, use subagents for adversarial implementation review through different lenses, harden the work, and address findings, gaps, concerns, ROI, and bad code hygiene.",
+  "basis": {
+    "research_status": "CURRENT_PRIMARY_SOURCE_RESEARCH_COMPLETED",
+    "authority_checked": [
+      "START_HERE.yaml",
+      "AGENTS.md and byte-identical CLAUDE.md",
+      ".GOV/codex.yaml",
+      ".GOV/topology.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+      ".GOV/templates/WORK_PACKET_CONTRACT_TEMPLATE.json",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#74-javascript-challenges",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#18-javascript-challenge-execution",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#246-javascript-safety",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#265-fuzzing-targets",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0c--dependency-and-risk-spikes",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#317-broad-feature-implementation-readiness-gates",
+      ".GOV/work_packets/WP-FF-003-executable-gate-bootstrap-v2/packet.json",
+      ".GOV/work_packets/WP-FF-004-compatibility-inventory-corpus-v2/packet.json",
+      ".GOV/work_packets/WP-FF-005-versioned-core-contracts-v1/packet.json",
+      "product/crates/fforager-contracts/src/protocol.rs",
+      "product/crates/fforager-contracts/src/framing.rs"
+    ],
+    "current_primary_sources": [
+      {
+        "source": "https://github.com/yt-dlp/yt-dlp/tree/2026.07.04",
+        "identity": "tag 2026.07.04, commit fdec00e0bf530dc6c3cc7b1dd780e95d9ae460e9",
+        "evidence": "pyproject.toml pins yt-dlp-ejs==0.8.0 for the default and curl-cffi dependency groups."
+      },
+      {
+        "source": "https://github.com/yt-dlp/ejs/tree/0.8.0",
+        "identity": "tag 0.8.0, commit 4fb477f4af56880cfd324c48bd4294a2d2294e50",
+        "evidence": "Source-level solver, seven upstream player families, nine player variants, n/sig test vectors, and generated release assets were inspected."
+      },
+      {
+        "source": "https://github.com/yt-dlp/ejs/releases/tag/0.8.0",
+        "identity": "immutable release assets",
+        "evidence": "yt.solver.core.js SHA-256 ca259e4e3cdd37d92fc266d9af08d4fd66da8479e240f4d984f29da402c22ead; yt.solver.lib.js SHA-256 770831df5c46474fbff06732315b28f4fb090e427ca669a51da61e2457d41c82."
+      },
+      {
+        "source": "https://github.com/boa-dev/boa/tree/v0.21",
+        "identity": "v0.21 branch commit ad8739f5e0b51d20faf7a2cce98afa5c40121438; crates.io boa_engine 0.21.1",
+        "evidence": "Pure-Rust engine source, context isolation, instruction budget, loop/recursion/stack limits, feature surface, tests, and maintenance activity were inspected."
+      },
+      {
+        "source": "https://docs.rs/boa_engine/0.21.1/boa_engine/vm/struct.RuntimeLimits.html",
+        "identity": "boa_engine 0.21.1 documentation",
+        "evidence": "RuntimeLimits exposes loop-iteration, recursion, stack, and backtrace bounds; context construction also exposes an instruction budget."
+      },
+      {
+        "source": "https://github.com/trynova/nova",
+        "identity": "current source and nova_vm 1.0.0 publication inspected",
+        "evidence": "Nova remains a less mature engine with broader unsafe/GC surface and no demonstrated yt-dlp EJS corpus compatibility; it is not selected for this bounded spike."
+      }
+    ],
+    "selected_approach": [
+      "Use boa_engine 0.21.1 with default features disabled inside a policy-marked non-shipped Rust executable worker.",
+      "Execute the exact pinned yt-dlp-ejs 0.8.0 generated library and core assets plus pinned upstream player scripts, not handwritten challenge lookalikes.",
+      "Use WP-005 ff.javascript-worker@1 envelopes and Ferric length-prefixed frame validation at the parent/worker boundary.",
+      "Create a new Boa Context for every job and expose no host network, filesystem, environment, process, console, or secret APIs.",
+      "Enforce input, output, frame, instruction, loop, recursion, stack, wall-time, job-count, age, and RSS/recycle bounds; use parent process supervision for non-cooperative timeout and cancellation.",
+      "Emit deterministic per-case reports and an aggregate PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION verdict."
+    ],
+    "rejected_options": [
+      "Deno, Node.js, Bun, QuickJS, QuickJS-NG, Wasmtime, rusty_v8, Hermes, or another external/native runtime because the Operator and packet forbid them.",
+      "Nova for this spike because current maturity and corpus evidence are weaker and its unsafe GC surface adds risk without a demonstrated compatibility advantage.",
+      "A handwritten JavaScript subset or Rust reimplementation of challenge transforms because it would be a mock of the actual EJS execution requirement.",
+      "Network-downloading EJS/player assets during build or test because it violates deterministic offline proof and the no-build-download boundary.",
+      "Treating generic Test262 or simple eval success as YouTube challenge compatibility proof."
+    ],
+    "reuse_opportunities": [
+      "Reuse the existing locked Cargo workspace, architecture policy, report envelope, scanner, negative-fixture harness, and canonical gates.",
+      "Reuse WP-005 JavaScriptWorkerEnvelope, FrameDecoder, ProtocolLimits, typed failure codes, cancellation generations, and state-machine identities.",
+      "Reuse WP-004 pinned yt-dlp identity and provenance conventions while adding the missing EJS/player corpus under WP-006.",
+      "Reuse Rust std process, pipe, timing, hashing, and filesystem APIs plus already-approved serde/serde_json/sha2 before adding any new mechanism."
+    ],
+    "validation_plan": "Run exact pinned corpus cases through a spawned Rust worker; inspect reports; run malformed/partial/oversized/protocol/cancel/timeout/crash/memory/capability/cache/context/recycle/quarantine probes; scan dependency, source, build scripts, artifacts, process plans, FFI, links, and downloads; run format/check/test/doc/Clippy/architecture/deep/PR gates; then rotate independent subagents through engine-security, protocol-lifecycle, corpus-proof, and code-quality attack lenses, convert every confirmed finding into a public-boundary regression, remediate, simplify, and rerun the complete matrix."
+  },
+  "scope_edges": {
+    "assumptions": [
+      "The pinned yt-dlp 2026.07.04 release and yt-dlp-ejs 0.8.0 assets remain the packet baseline even if upstream moves during implementation.",
+      "A passing spike selects a prerequisite mechanism only and is not a video downloader or product capability.",
+      "The logged-in Firefox session is optional live-canary context and is never a source of committed cookies, tokens, secrets, or deterministic corpus truth."
+    ],
+    "non_goals": [
+      "Downloading the requested Short, implementing the YouTube extractor, or claiming full YouTube support.",
+      "Shipping the worker or granting it network/filesystem/process capabilities.",
+      "Adding an external runtime, Python, yt-dlp product execution, Wasm, or a new native dependency."
+    ]
+  },
+  "corpus_contract": {
+    "oracle_identity": "yt-dlp 2026.07.04 plus yt-dlp-ejs 0.8.0",
+    "mandatory_cases": "Every pinned case in the checked-in WP-006 manifest; the manifest is derived from the upstream 0.8.0 tests and binds player bytes, variant, challenge type, input, expected output, EJS asset hashes, and upstream commits.",
+    "pass_threshold": "100 percent exact output agreement for mandatory deterministic cases, with no skipped or structurally-only cases.",
+    "live_canary_policy": "Optional, non-blocking, separately labeled, sanitized, and never allowed to replace deterministic corpus proof.",
+    "failure_bundle": "Case ID, upstream identities, script/player hashes, engine identity, bounded non-secret input, expected and observed result, typed error, limits, duration, process/RSS observation, and replay command."
+  },
+  "resource_and_security_contract": {
+    "defaults": {
+      "maximum_frame_bytes": 1048576,
+      "maximum_input_bytes": 524288,
+      "maximum_output_bytes": 1048576,
+      "maximum_wall_millis": 10000,
+      "maximum_cancel_grace_millis": 500,
+      "maximum_memory_bytes": 536870912,
+      "maximum_loop_iterations": 5000000,
+      "maximum_recursion_depth": 512,
+      "maximum_stack_size": 1024,
+      "maximum_instructions": 50000000,
+      "maximum_jobs_per_worker": 64,
+      "maximum_worker_age_millis": 300000
+    },
+    "capabilities": "No registered network, filesystem, environment, process, dynamic import, module loader, console, timer, or secret-bearing host functions.",
+    "isolation": "Fresh Boa Context per job; host-owned content-addressed artifacts; no durable JavaScript heap or global state across jobs.",
+    "termination": "Engine budgets are cooperative first-line controls; parent wall deadline/cancellation may terminate and reap the separate worker. Timeout is a bounded policy outcome, not proof that arbitrary code could never finish.",
+    "memory": "Input/output and engine structural limits are exact; parent RSS supervision provides bounded detection and forced worker termination. The report must state OS hard-containment coverage and residual race/overshoot rather than claim a perfect in-engine heap cap."
+  },
+  "red_team": {
+    "risk_tier": "HIGH",
+    "attack_lenses": [
+      "actual_ejs_and_player_semantics_vs_fixture_echo",
+      "fresh_context_capability_and_secret_isolation",
+      "framing_protocol_version_and_recursive_bounds",
+      "timeout_cancel_crash_reap_recycle_and_quarantine",
+      "memory_rss_instruction_loop_recursion_stack_and_output_bombs",
+      "cache_key_poisoning_and_cross_job_state",
+      "dependency_build_script_ffi_native_link_and_external_runtime_escape",
+      "report_truthfulness_counterfactual_and_zero-progress ceiling",
+      "reuse_deletion_simplification_and_bad_code_hygiene"
+    ],
+    "minimum_controls": [
+      "Real pinned EJS and player bytes execute through Boa and an output mutation fails the same oracle.",
+      "Every worker request crosses the bounded public frame/envelope boundary and receives a correlated typed terminal outcome.",
+      "Parent supervision proves termination and reap for infinite loop, cancellation, crash, malformed stream, timeout, and memory pressure.",
+      "Dependency and source scans reject all forbidden runtimes, downloads, FFI, native links, and indirect wrappers.",
+      "No PASS is possible with skipped mandatory cases, missing process proof, structural-only behavioral evidence, or a positive product-progress claim."
+    ]
+  },
+  "execution_decomposition": [
+    "Commit activation, refinement, zero-progress ceiling, and exact checkpoint.",
+    "Add the pinned offline EJS/player corpus and a behavior-sensitive manifest validator.",
+    "Implement the non-shipped Boa worker, bounded envelope/frame protocol, fresh-context execution, and parent supervisor.",
+    "Implement typed report/verdict generation and capability, bounds, lifecycle, cache, churn, dependency, and counterfactual probes.",
+    "Update the no-context manual.",
+    "Run multi-lens independent adversarial reviews, remediate every confirmed finding, simplify, and rerun all acceptance and canonical gates."
+  ],
+  "acceptance_ids": [
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001",
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003",
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004",
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-005",
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-006",
+    "WP-FF-006-rust-youtube-challenge-spike-v1-AC-007"
+  ]
+}

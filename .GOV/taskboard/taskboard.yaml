@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: No work packet is active; await Operator selection.
-  active_wp_id: null
+  statement: WP-FF-006 is active for the Operator-authorized Rust-only YouTube challenge spike.
+  active_wp_id: WP-FF-006-rust-youtube-challenge-spike-v1
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

@@ -8,12 +8,12 @@
     "version": "1",
     "title": "Prove or reject the bounded Rust-only YouTube challenge path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-18T21:12:21Z"
+    "updated_at_utc": "2026-07-22T21:19:04Z"
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB and does not authorize any external JavaScript runtime.",
-    "recorded_at_utc": "2026-07-18T21:12:21Z"
+    "reference": "Operator explicitly directed implementation of the next WP-006 with no mockups or vibe coding, using subagents for multi-lens adversarial implementation review and remediating findings, gaps, concerns, ROI, and code-hygiene defects. No external JavaScript runtime is authorized.",
+    "recorded_at_utc": "2026-07-22T21:19:04Z"
   },
   "authority": {
     "bootstrap": "START_HERE.yaml",
@@ -37,7 +37,7 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
     "work_branch": "codex/rust-youtube-challenge-spike",
     "worktree_policy": "NONE",
     "worktree_id": null,
@@ -47,20 +47,20 @@
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
     "blockers": [
-      "STUB status forbids implementation until the Operator promotes and activates this packet.",
-      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before the prototype package is added.",
-      "The pinned yt-dlp EJS/YouTube challenge corpus from WP-FF-004 and versioned JavaScript worker IPC/limits from WP-FF-005 must exist or be explicitly co-developed under activated packet scope.",
-      "Deno, Node.js, Bun, external QuickJS, Wasmtime, or any other external runtime is not authorized as implementation or fallback."
+      "The WP-004 deliverable does not contain an EJS/player corpus; the pinned corpus is therefore being co-developed under this activated packet as its contract permits.",
+      "Deno, Node.js, Bun, external QuickJS, Wasmtime, or any other external runtime remains forbidden as implementation or fallback."
     ],
-    "next_action": "After prerequisites and explicit activation, research current pure-Rust engine candidates and pinned yt-dlp EJS implementation evidence, finalize the deterministic challenge corpus and resource/security thresholds, then promote to READY_FOR_DEV without adding an unauthorized runtime.",
+    "next_action": "Implement the non-shipped Boa worker and pinned yt-dlp-ejs 0.8.0 player corpus through the WP-005 bounded IPC contract, then run adversarial isolation, limit, fault, lifecycle, dependency, and corpus proof.",
     "supersedes": [],
     "superseded_by": null
   },
   "scope": {
     "summary": "Build a prototype-only, policy-marked non-shipped Ferric-owned Rust worker around a maintained pure-Rust JavaScript engine candidate and produce measured corpus evidence for correctness, isolation, termination, memory, recycling, and performance.",
+    "product_impact": "PREREQUISITE",
+    "zero_progress_declaration": "This packet is a design-authorized Prerequisite 0C risk spike. It claims zero Ferric product, capability, runtime, packaging, release, replacement-parity, download, or phase progress. A later shipped YouTube slice must consume and re-prove the selected path through FF-GATE-RUNTIME-001.",
     "in_scope": [
       "Current primary-source evaluation and minimal selection of maintained pure-Rust JavaScript engine candidates compatible with the authorized dependency boundary.",
       "A non-shipped Rust worker prototype with fresh capability-free per-job contexts and bounded length-prefixed versioned IPC.",
@@ -79,6 +79,9 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+      ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/id-registry.yaml",
       "build/Cargo.toml",
       "build/Cargo.lock",
       "build/architecture-policy.toml",
@@ -108,56 +111,68 @@
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001",
       "requirement": "Research compares maintained pure-Rust engine candidates using current primary source, release, security, implementation, test, and maintenance evidence; the selected minimal candidate and rejected alternatives are recorded without authorizing an external runtime.",
+      "proof_class": "structural",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
       "requirement": "The non-shipped worker executes every mandatory pinned EJS/challenge corpus case and reports stable case ID, engine/version, script hash, deterministic inputs, result/error, duration, peak resource observations, and exact mismatch; the passing threshold is 100 percent of mandatory deterministic cases or an Operator-resolved evidence outcome.",
+      "proof_class": "integration",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003",
       "requirement": "Tests prove fresh per-job contexts, no arbitrary network/filesystem/process capability, no inherited secrets, bounded framed IPC, bounded input/output/depth/time/memory, cache keys including every behavior-affecting input, and no durable cross-job worker heap state.",
+      "proof_class": "integration",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004",
       "requirement": "Cancellation, timeout, memory limit, worker crash, partial/oversized/malformed frame, protocol mismatch, sandbox violation, stale cache, and recycle/quarantine thresholds produce bounded typed outcomes with no orphan worker and reproducible evidence.",
+      "proof_class": "integration",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-005",
       "requirement": "Source, dependency, process, and runtime scans prove no Python, yt-dlp production execution, Deno, Node.js, Bun, external QuickJS, Wasm runtime, build-time download, prebuilt binary, unapproved FFI, or native link was introduced.",
+      "proof_class": "structural",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-006",
       "requirement": "Canonical architecture, PR, and triggered deep gates pass and a machine-readable verdict is PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION; neither verdict claims full YouTube parity.",
+      "proof_class": "integration",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-007",
       "requirement": "The no-context model manual documents corpus execution, limits, reports, failure reproduction, worker cleanup/recovery, security constraints, and the prohibition on unauthorized fallback runtimes.",
+      "proof_class": "structural",
       "status": "PENDING",
       "evidence": []
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "recorded_at_utc": "2026-07-22T21:19:04Z",
       "branch": "codex/rust-youtube-challenge-spike",
-      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
+      "head_sha": "405c054005102417a6ce992795a2752bc26c40dc",
       "dirty_paths": [],
-      "checks_run": [],
-      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
-      "next_action": "Wait for prerequisites and explicit activation, then perform source-level candidate research and finalize the bounded corpus contract."
+      "checks_run": [
+        "Verified WP-003 v1/v2, WP-004 v1/v2, and WP-005 are VALIDATED with main containment.",
+        "Verified yt-dlp 2026.07.04 tag fdec00e0bf530dc6c3cc7b1dd780e95d9ae460e9 and its exact yt-dlp-ejs==0.8.0 dependency.",
+        "Verified yt-dlp-ejs 0.8.0 tag 4fb477f4af56880cfd324c48bd4294a2d2294e50 and release asset SHA-256 values.",
+        "Inspected Boa v0.21 source, RuntimeLimits, instruction budget, and current 0.21.1 crate release."
+      ],
+      "blockers": ["WP-004 omitted the challenge corpus, so WP-006 must co-develop and provenance-bind it."],
+      "next_action": "Commit activation, then implement the pinned corpus and real isolated Rust worker."
     }
   },
   "validation": {
@@ -172,6 +187,91 @@
     ]
   },
   "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0c--dependency-and-risk-spikes",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped YouTube challenge slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+    },
+    "change_evidence": {
+      "applicable_rule_ids": [
+        "FF-BUILD-011", "FF-BUILD-012", "FF-BUILD-013", "FF-BUILD-014", "FF-BUILD-017", "FF-BUILD-018", "FF-BUILD-019", "FF-BUILD-021", "FF-BUILD-023", "FF-BUILD-024", "FF-BUILD-029", "FF-BUILD-030", "FF-BUILD-031", "FF-BUILD-032", "FF-BUILD-033", "FF-BUILD-034", "FF-BUILD-035", "FF-BUILD-037", "FF-BUILD-038", "FF-BUILD-044", "FF-BUILD-045", "FF-BUILD-047", "FF-BUILD-048", "FF-BUILD-050", "FF-BUILD-052", "FF-BUILD-054", "FF-BUILD-055", "FF-BUILD-057", "FF-BUILD-058", "FF-BUILD-059", "FF-BUILD-060", "FF-BUILD-061", "FF-BUILD-062", "FF-BUILD-063", "FF-BUILD-064", "FF-BUILD-065", "FF-BUILD-066", "FF-BUILD-067", "FF-BUILD-077", "FF-BUILD-078", "FF-BUILD-079", "FF-BUILD-083", "FF-BUILD-086", "FF-BUILD-088", "FF-BUILD-089", "FF-BUILD-090", "FF-BUILD-091", "FF-BUILD-096", "FF-BUILD-097", "FF-BUILD-098"
+      ],
+      "acceptance_or_authority_ids": [
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-005",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-006",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-007"
+      ],
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Real pinned EJS/player semantics execute in a Rust-only isolated worker with exact results and provenance.",
+          "Frame, input, output, execution, memory-observation, lifecycle, context, cache, and worker bounds fail closed with typed outcomes.",
+          "No external runtime, product yt-dlp/Python path, build download, prebuilt binary, unapproved FFI, or native link is introduced.",
+          "The result is machine-readable prerequisite evidence with an exact zero-product-progress ceiling."
+        ],
+        "risk_cases": [
+          "Fixture echo, handwritten substitute, or report declarations impersonate actual challenge execution.",
+          "A hostile script escapes capabilities, leaks state or secrets, allocates or loops without bound, or survives cancellation as an orphan.",
+          "Malformed or mismatched frames bypass recursive limits or produce an uncorrelated success.",
+          "A transitive dependency or build script introduces an external runtime, native mechanism, download, or packaging escape.",
+          "A passing prototype is misreported as a downloader, shipped capability, parity, or phase progress."
+        ]
+      },
+      "reuse_candidates_in_order_with_result": [
+        {"candidate": "no mechanism beyond the accepted outcome", "result": "Rejected because executing site-supplied challenge JavaScript is an explicit accepted requirement."},
+        {"candidate": "reuse current Ferric code", "result": "Selected for WP-005 framing/envelopes, state IDs, architecture gates, reports, and negative-fixture machinery."},
+        {"candidate": "Rust core/std", "result": "Selected for process supervision, bounded pipes, clocks, deterministic collections, and filesystem isolation."},
+        {"candidate": "approved platform capability", "result": "Selected for OS process termination/reaping and RSS observation without adding an external runtime."},
+        {"candidate": "already-approved dependency", "result": "Existing serde, serde_json, and sha2 cover contracts, reports, hashing, and corpus identity."},
+        {"candidate": "smallest complete clear implementation", "result": "Boa 0.21.1 is the smallest maintained pure-Rust general JavaScript engine candidate with the required language and execution-budget surface; it is isolated in one non-shipped worker crate."}
+      ],
+      "artifact_specific_justification": {
+        "javascript_worker": "A separate executable is required by the accepted process-isolation, timeout, cancellation, crash, quarantine, and no-cross-job-heap contract.",
+        "pinned_corpus": "Checked-in EJS and player bytes eliminate build-time network access and bind every behavioral result to upstream identities.",
+        "supervisor_and_runner": "The parent owns frames, deadlines, cancellation, termination/reap, churn, reports, and the aggregate decision independently of worker declarations.",
+        "policy_and_negative_fixtures": "Architecture proof must detect forbidden runtime/dependency escapes and false behavioral evidence.",
+        "model_manual": "A no-context model needs exact commands, limits, reports, recovery, security constraints, and the prerequisite ceiling."
+      },
+      "pre_simplification_verdict": "PENDING: implementation has not yet been produced; all planned structure remains subject to scope, reuse, deletion, dependency, and simplification review.",
+      "simplification_changes": [],
+      "post_simplification_verdict": "PENDING: set only after adversarial remediation and the complete acceptance matrix rerun.",
+      "complete_post_change_verification": [
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+        "cargo check --manifest-path build/Cargo.toml --workspace --all-targets --locked",
+        "cargo test --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked --no-fail-fast",
+        "cargo test --manifest-path build/Cargo.toml --workspace --doc --all-features --locked",
+        "cargo clippy --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked -- -D warnings",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard"
+      ],
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-006-rust-youtube-challenge-spike-v1-CEILING-001",
+        "current_ceiling": "This Rust worker and corpus are non-shipped Prerequisite 0C evidence. They implement no video download, extractor, shipped JavaScript capability, product runtime, packaging, release, replacement parity, or product-phase progress.",
+        "replacement_trigger": "A later shipped YouTube slice consumes the selected worker path and supplies exact production-artifact proof.",
+        "likely_upgrade_path": "Promote the accepted boundary into the shipped composition only under a later active RUNTIME packet, then stage and execute it through FF-GATE-RUNTIME-001.",
+        "trigger_detection_method": "Taskboard activation, packet product_impact, workspace member shipped classification, package inspection, and FF-GATE-RUNTIME-001 identify and enforce the later trigger.",
+        "linked_evidence": [
+          ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+          ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
+          "product/crates/fforager-javascript/",
+          "build/fixtures/javascript/",
+          "build/reports/"
+        ]
+      }
+    },
     "repository_layout": {
       "governance_root": ".GOV/",
       "product_root": "product/",

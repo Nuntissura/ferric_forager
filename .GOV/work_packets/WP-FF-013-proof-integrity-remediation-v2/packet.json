@@ -1,0 +1,331 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-013-proof-integrity-remediation-v2",
+    "base_wp_id": "WP-FF-013-proof-integrity-remediation",
+    "version": "2",
+    "title": "Prevent semantic mockups and remediate contract proof gaps",
+    "created_at_utc": "2026-07-22T13:49:15Z",
+    "updated_at_utc": "2026-07-22T13:49:15Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "Operator required Ferric Forager to remain a native Rust rewrite/reimagination that cannot use yt-dlp as product behavior, requested every finding be addressed with no more than six terra xhigh subagents, and directed Codex prevention changes first.",
+    "recorded_at_utc": "2026-07-22T13:49:15Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#85-dependency-rings-and-composition-roots",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#86-owned-state-machines",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#101-canonical-serializable-source-graph",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0b--contracts-and-state-machines",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#f1-executable-enforcement"
+    ],
+    "decision_ids": []
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "8a9dc0ba0c7966a407c51afb3cb3feacc9eb81ff",
+    "work_branch": "codex/wp-ff-013-proof-integrity-remediation",
+    "worktree_policy": "NONE_SHARED_ROOT_WITH_NON_OVERLAPPING_DELEGATED_PATHS",
+    "worktree_id": null,
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
+    },
+    "closure_commit": null,
+    "main_containment_status": "NOT_VERIFIED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "IN_PROGRESS",
+    "risk": "HIGH",
+    "blockers": [],
+    "next_action": "Remediate every validator finding with real public-boundary, mutation-sensitive proof and no product yt-dlp coupling.",
+    "supersedes": [
+      "WP-FF-013-proof-integrity-remediation-v1"
+    ],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Close the semantic-proof loopholes exposed by the WP-004/WP-005 inspection, make the Rust-only and non-product yt-dlp boundary unambiguous, and remediate the affected compatibility, lifecycle, graph, diagnostic, reporting, and validation behavior.",
+    "product_impact": "PREREQUISITE",
+    "zero_progress_declaration": "This packet is design-authorized Phase 0 prerequisite remediation. It claims zero Ferric product, capability, runtime, packaging, release, replacement-parity, or phase progress. Every changed contract and proof surface must be consumed and re-proven by a future shipped Ferric entrypoint through FF-GATE-RUNTIME-001.",
+    "in_scope": [
+      "Preserve and enforce the committed Codex prevention rules for product yt-dlp exclusion, proof independence, proof-class truth, wire authority, effect acknowledgement, graph cycles, and counterexamples",
+      "Make compatibility replay execute selected deterministic Rust semantics and fail closed for empty selections",
+      "Require filesystem and FFmpeg external effects to be acknowledged, failed, or cancelled through recoverable typed transitions before durable or terminal state",
+      "Represent schema compatibility as explicit source-to-target authority and reject unrelated transitions, durable sequence zero, and undeclared diagnostic envelope fields",
+      "Reject prohibited SourceGraph relationship cycles deterministically within declared graph bounds",
+      "Replace mock architecture predicates and declaration-only proof with isolated mutations and actual public/composed boundary execution",
+      "Report declared proof support separately from evidence actually executed, with per-result proof metadata",
+      "Add exact independent counterexamples, including empty test bodies, indirect product wrappers, documentation-path assets, and permissive V1 schema migration",
+      "Run canonical and independent adversarial validation without claiming shipped runtime progress"
+    ],
+    "non_goals": [
+      "Adding yt-dlp, Python, or a yt-dlp subprocess, wrapper, fallback, sidecar, package payload, or runtime service to Ferric product behavior",
+      "Implementing the first shipped Ferric downloader runtime slice",
+      "Claiming yt-dlp replacement parity, product runtime progress, packaging progress, release progress, or phase completion",
+      "Repeating completed project research without a named stale-source trigger",
+      "Changing final product scope or the Rust plus FFmpeg and ffprobe dependency boundary"
+    ],
+    "allowed_paths": [
+      ".GOV/codex.yaml",
+      ".GOV/id-registry.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+      ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/packet.json",
+      ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/refinement.json",
+      ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/packet.json",
+      ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/refinement.json",
+      "build/rule-to-proof.toml",
+      "build/architecture-policy.toml",
+      "build/fixtures/architecture/",
+      "build/fixtures/compatibility/",
+      "build/fixtures/contracts/",
+      "build/crates/fforager-testkit/src/lib.rs",
+      "build/tools/fforager-xtask/src/compatibility.rs",
+      "build/tools/fforager-xtask/src/main.rs",
+      "build/reports/",
+      "product/crates/fforager-contracts/src/graph.rs",
+      "product/crates/fforager-core/src/lifecycle.rs",
+      "product/crates/fforager-diagnostics-contract/src/envelope.rs",
+      "product/crates/fforager-diagnostics-contract/src/lib.rs",
+      "product/crates/fforager-diagnostics-contract/src/protocol.rs",
+      "product/crates/fforager-diagnostics-contract/tests/contract.rs",
+      "product/MODEL_MANUAL.md"
+    ],
+    "dependencies": [
+      "Existing locked Rust workspace and approved dependencies only",
+      "Validated WP-003 build gates, WP-004 compatibility assets, WP-005 contracts, and WP-012 runtime-truth gate",
+      "yt-dlp remains limited to version-pinned non-shipped compatibility-oracle generation outside Ferric product execution"
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-001",
+      "requirement": "Project Codex, build rules, and packet requirements prevent product yt-dlp coupling, structural checks mislabeled as behavioral replay, self-authored proof, proof-class promotion, and unacknowledged-effect completion.",
+      "proof_class": "authority_and_gate_mapping",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-002",
+      "requirement": "Compatibility replay executes deterministic Rust semantics for every selected case, rejects empty selections, and keeps any offline yt-dlp oracle use non-shipped, version-pinned, provenance-bound research/build work.",
+      "proof_class": "executable_semantic_replay",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-003",
+      "requirement": "Filesystem and FFmpeg effects have correlated acknowledgement, failure, cancellation, and recovery semantics; no durable or terminal success is reached before all required effects complete.",
+      "proof_class": "state_machine_boundary_and_negative_tests",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-004",
+      "requirement": "Diagnostic negotiation accepts drift only through an explicit reviewed source-to-target transition; permissive V1 input grants no authority; durable sequence zero and undeclared fields are rejected.",
+      "proof_class": "wire_boundary_and_negative_tests",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-005",
+      "requirement": "SourceGraph rejects prohibited relationship cycles deterministically within declared graph bounds.",
+      "proof_class": "graph_model_and_counterexample_tests",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-006",
+      "requirement": "Independent public-boundary and isolated-mutation counterexamples fail when any corrected invariant is reverted; inventory proof identifiers resolve to executed behavior, not matching declarations or helper literals.",
+      "proof_class": "independent_counterfactual_and_mutation",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-007",
+      "requirement": "Gate reports distinguish declared from executed proof classes and record per-result proof class, concrete input, boundary, expected result, observed result, and skipped semantic dependencies.",
+      "proof_class": "proof_report_contract_and_counterfactuals",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-013-proof-integrity-remediation-v2-AC-008",
+      "requirement": "Formatting, warnings-denied Clippy, focused and workspace tests, architecture, compatibility, deep, PR, dependency-boundary, and independent adversarial checks pass while runtime truth reports the exact prerequisite zero-progress ceiling.",
+      "proof_class": "aggregate_validation",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-22T13:49:15Z",
+      "branch": "codex/wp-ff-013-proof-integrity-remediation",
+      "base_sha": "8a9dc0ba0c7966a407c51afb3cb3feacc9eb81ff",
+      "head_sha": "8a9dc0ba0c7966a407c51afb3cb3feacc9eb81ff",
+      "dirty_paths": [
+        ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v1/packet.json",
+        ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/packet.json",
+        ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/refinement.json",
+        ".GOV/taskboard/taskboard.yaml",
+        ".GOV/id-registry.yaml"
+      ],
+      "checks_run": [
+        "Independent validators reproduced the v1 activation-history defect and required supersession rather than backfill.",
+        "The exact non-product prerequisite declaration was added before the first committed non-STUB v2 checkpoint."
+      ],
+      "blockers": [],
+      "next_action": "Commit this v2 activation checkpoint before further remediation."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Any shipped Ferric runtime capability",
+      "yt-dlp replacement parity",
+      "Cross-platform runtime behavior",
+      "Packaging or release readiness"
+    ]
+  },
+  "extensions": {
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0b--contracts-and-state-machines",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped production slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+    },
+    "refinement": ".GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/refinement.json",
+    "change_evidence": {
+      "applicable_rule_ids": [
+        "FF-BUILD-057",
+        "FF-BUILD-068",
+        "FF-BUILD-073",
+        "FF-BUILD-076",
+        "FF-BUILD-081",
+        "FF-BUILD-085",
+        "FF-BUILD-087",
+        "FF-BUILD-089",
+        "FF-BUILD-090",
+        "FF-BUILD-091",
+        "FF-BUILD-092",
+        "FF-BUILD-093",
+        "FF-BUILD-094",
+        "FF-BUILD-095",
+        "FF-BUILD-096",
+        "FF-BUILD-097",
+        "FF-BUILD-098"
+      ],
+      "acceptance_or_authority_ids": [
+        "WP-FF-013-proof-integrity-remediation-v2-AC-001",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-002",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-003",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-004",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-005",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-006",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-007",
+        "WP-FF-013-proof-integrity-remediation-v2-AC-008"
+      ],
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Native Rust Ferric behavior with no shipped yt-dlp dependency or indirect wrapper",
+          "Semantic proof cannot be substituted by fixture integrity, helper literals, static maps, or declaration equality",
+          "External effects have complete correlated outcome and recovery semantics before durable or terminal state",
+          "Compatibility drift requires explicit source-to-target authority",
+          "Previously accepted counterexamples are rejected through actual boundaries"
+        ],
+        "risk_cases": [
+          "A command labels an empty shard or hash/schema validation as semantic replay",
+          "A report promotes static proof declarations into executed evidence",
+          "A fixture validates a toy predicate instead of mutating and executing the governed boundary",
+          "A permissive V1 peer or empty authority token permits unrelated schema drift",
+          "A failed or cancelled external effect leaves an unrecoverable state",
+          "A documentation exception hides an executable or embedded product oracle wrapper",
+          "A named test remains declared but its behavior is emptied"
+        ]
+      },
+      "reuse_candidates_in_order_with_result": [
+        {
+          "candidate": "no mechanism beyond the accepted outcome",
+          "result": "Rejected because current proof labels and helper fixtures can pass without executing the governed boundary."
+        },
+        {
+          "candidate": "reuse current Ferric code",
+          "result": "Selected for existing pure contracts, lifecycle engine, compatibility corpus, xtask reports, testkit, and canonical gates."
+        },
+        {
+          "candidate": "Rust core or std",
+          "result": "Selected for deterministic state, graph traversal, temp-copy mutations, path handling, and explicit allowlists."
+        },
+        {
+          "candidate": "approved platform capability",
+          "result": "Selected for supervised FFmpeg process intent only; yt-dlp and Python remain excluded from product execution."
+        },
+        {
+          "candidate": "already-approved dependency",
+          "result": "Existing serde, serde_json, sha2, tempfile, and collections are sufficient."
+        },
+        {
+          "candidate": "smallest complete clear implementation",
+          "result": "Selected as explicit invariants plus boundary-executed mutation proof without new dependencies."
+        }
+      ],
+      "artifact_specific_justification": {
+        "lifecycle": "Make every emitted external effect outcome correlated and recoverable before durable or terminal state.",
+        "diagnostics": "Replace peer self-authorization with explicit source-to-target compatibility authority and strict wire boundaries.",
+        "compatibility": "Execute every selected case and reject empty replay selections.",
+        "proof_reporting": "Separate declarations from executed evidence and include result-level proof metadata.",
+        "architecture_mutations": "Exercise real isolated inputs and composed/public boundaries rather than local predicates.",
+        "product_boundary": "Reject direct and indirect yt-dlp or Python product coupling, including hidden documentation assets."
+      },
+      "pre_simplification_verdict": "FAIL: independent validators reproduced empty semantic replay, static proof-class promotion, mock predicate fixtures, incomplete effect outcomes, a permissive V1 migration gap, and a bypassable documentation exception.",
+      "simplification_changes": [],
+      "post_simplification_verdict": "PENDING",
+      "complete_post_change_verification": [
+        "Parse changed JSON, YAML, and TOML authority and fixture files",
+        "Verify AGENTS.md and CLAUDE.md remain byte-identical",
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+        "cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets -- -D warnings",
+        "cargo test --manifest-path build/Cargo.toml --locked --workspace --all-features --no-fail-fast",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-replay",
+        "Reject an explicitly empty compatibility shard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
+        "Run isolated source/product mutations and the exact public-boundary counterexample with a required execution receipt",
+        "Inspect generated reports and verify executed proof classes and per-result metadata",
+        "git diff --check and allowed-path verification"
+      ],
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-013-proof-integrity-remediation-v2-CEILING-001",
+        "current_ceiling": "This packet repairs Phase 0 contract and proof prerequisites but no shipped Ferric entrypoint exists to prove product runtime behavior.",
+        "replacement_trigger": "The first shipped Rust Ferric vertical slice consumes these contracts and executes representative media work.",
+        "likely_upgrade_path": "Re-prove each consumed invariant through FF-GATE-RUNTIME-001 using the exact staged Ferric artifact and actual production boundaries.",
+        "trigger_detection_method": "Product-impact classification, shipped-member inventory, runtime manifest validation, and clean staged execution fail closed.",
+        "linked_evidence": [
+          ".GOV/codex.yaml",
+          ".GOV/rules/build-rules.yaml",
+          "build/tools/fforager-xtask/src/main.rs",
+          "build/tools/fforager-xtask/src/compatibility.rs"
+        ]
+      }
+    }
+  }
+}

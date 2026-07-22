@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prevent semantic mockups and remediate contract proof gaps",
     "created_at_utc": "2026-07-22T12:34:54Z",
-    "updated_at_utc": "2026-07-22T12:34:54Z"
+    "updated_at_utc": "2026-07-22T13:49:15Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -46,12 +46,12 @@
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "SUPERSEDED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the prevention rules before changing product or proof implementation, then execute the three authorized remediation lanes.",
+    "next_action": "Retain as immutable superseded history; continue only under WP-FF-013-proof-integrity-remediation-v2.",
     "supersedes": [],
-    "superseded_by": null
+    "superseded_by": "WP-FF-013-proof-integrity-remediation-v2"
   },
   "scope": {
     "summary": "Close the semantic-proof loopholes exposed by the WP-004/WP-005 inspection, make the Rust-only and non-product yt-dlp boundary unambiguous, and remediate the affected compatibility, lifecycle, graph, diagnostic, and validation behavior.",
@@ -94,6 +94,7 @@
       "product/crates/fforager-contracts/src/graph.rs",
       "product/crates/fforager-core/src/lifecycle.rs",
       "product/crates/fforager-diagnostics-contract/src/envelope.rs",
+      "product/crates/fforager-diagnostics-contract/src/lib.rs",
       "product/crates/fforager-diagnostics-contract/src/protocol.rs",
       "product/crates/fforager-diagnostics-contract/tests/contract.rs",
       "product/MODEL_MANUAL.md"

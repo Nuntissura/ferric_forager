@@ -182,11 +182,12 @@
       "PASS: FF-GATE-ARCH-001 report build/reports/architecture-check-1785080043944725200-81096.json",
       "PASS: FF-GATE-DEEP-001 report build/reports/verify-deep-1785080474396690800-94140.json",
       "Archived prior revisions retain prerequisite declaration diagnostics",
-      "PASS: FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1785081249644554300-102280.json",
+      "MEETS EXPECTATION: FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1785081249644554300-102280.json",
       "PASS: focused durable-wire checks and exact public counterexample receipt v5",
       "PASS: post-review warnings-denied workspace Clippy",
       "PASS: final 53-fixture FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json with all four storage rows attributed as counterfactual",
-      "EXPECTED PRE-CORRECTION FAIL: FF-GATE-PR-001 report build/reports/verify-pr-1785082284735890500-96056.json rejected the incomplete applicable-rule inventory; all 33 canonical REQUIRED architecture rules are now cited"
+      "EXPECTED PRE-CORRECTION FAIL: FF-GATE-PR-001 report build/reports/verify-pr-1785082284735890500-96056.json rejected the incomplete applicable-rule inventory; all 33 canonical REQUIRED architecture rules are now cited",
+      "EXPECTED PRE-CORRECTION FAIL: aggregate report build/reports/verify-pr-1785083418494815000-99832.json rejected completion wording attached to the prerequisite gate evidence; the evidence now uses neutral wording"
     ],
     "not_proven": [
       "Ferric archive/journal execution through a distributed entrypoint",

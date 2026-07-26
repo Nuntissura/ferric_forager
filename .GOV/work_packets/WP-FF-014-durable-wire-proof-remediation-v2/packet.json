@@ -130,7 +130,7 @@
     },
     {
       "id": "WP-FF-014-durable-wire-proof-remediation-v2-AC-004",
-      "requirement": "Focused tests, locked workspace tests, warnings-denied Clippy, architecture, deep, runtime-truth, and PR gates pass while preserving the prerequisite zero-progress ceiling.",
+      "requirement": "All listed canonical and independent checks meet their defined expectations while preserving the exact prerequisite zero-progress ceiling.",
       "proof_class": "aggregate_validation",
       "status": "PENDING",
       "evidence": [

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove or reject the bounded Rust-only YouTube challenge path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-26T00:00:00Z"
+    "updated_at_utc": "2026-07-26T21:07:39Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -51,10 +51,9 @@
     "risk": "HIGH",
     "blockers": [
       "The prior prototype executed yt-dlp-ejs solver assets and was removed because Ferric must own the challenge implementation rather than depend on yt-dlp companion code.",
-      "Current research proves the pure-Rust engine candidate boundary but does not yet select a Ferric-owned player-function discovery and challenge-solving implementation.",
       "yt-dlp, yt-dlp companion packages or executable assets, Python, Deno, Node.js, Bun, external QuickJS, Wasmtime, and any other external runtime remain forbidden as implementation or fallback."
     ],
-    "next_action": "Research and select a Ferric-owned Rust player-function discovery and challenge-solving approach, refine the corpus around raw site-supplied player inputs plus inert expected observations, then implement it through the WP-005 bounded IPC contract without executing or requiring yt-dlp-family code.",
+    "next_action": "Implement the selected Boa 0.21.1 worker, Ferric-owned AST-structural player discovery, raw-player corpus runner, parent resource/lifecycle supervision, reports, negative probes, and manual instructions through the WP-005 bounded IPC contract.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -167,19 +166,25 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-22T21:19:04Z",
+      "recorded_at_utc": "2026-07-26T21:07:39Z",
       "branch": "codex/rust-youtube-challenge-spike",
       "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "head_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "dirty_paths": [],
-      "checks_run": [
-        "Verified WP-003 v1/v2, WP-004 v1/v2, and WP-005 are VALIDATED with main containment.",
-        "Verified yt-dlp 2026.07.04 tag fdec00e0bf530dc6c3cc7b1dd780e95d9ae460e9 and its exact yt-dlp-ejs==0.8.0 dependency.",
-        "Verified yt-dlp-ejs 0.8.0 tag 4fb477f4af56880cfd324c48bd4294a2d2294e50 and release asset SHA-256 values.",
-        "Inspected Boa v0.21 source, RuntimeLimits, instruction budget, and current 0.21.1 crate release."
+      "head_sha": "6f1b1e51b40dab7c1401418bf3d7514420b93059",
+      "dirty_paths": [
+        ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+        ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json"
       ],
-      "blockers": ["The prior yt-dlp-ejs execution approach was invalidated and removed; a current research-backed Ferric-owned challenge-solving approach is required before implementation resumes."],
-      "next_action": "Research and select the Ferric-owned Rust challenge-solving path, then replace this blocked checkpoint with executable implementation evidence."
+      "checks_run": [
+        "Verified the worktree is clean before activation on codex/rust-youtube-challenge-spike at 6f1b1e51b40dab7c1401418bf3d7514420b93059 with merge-base main 405c054005102417a6ce992795a2752bc26c40dc.",
+        "Re-read START_HERE.yaml, byte-identical AGENTS.md and CLAUDE.md, .GOV/codex.yaml, taskboard, active packet, refinement, topology, build rules, cited design/readiness anchors, WP-005 status, and WP-005 framing/protocol source.",
+        "Verified crates.io boa_engine 0.21.1 remains current; inspected tag v0.21.1 commit bc36c3fac0969ea21ea0570b62e7846f97389b73, runtime limits, instruction budget, parser, context, and absence of an exact heap cap.",
+        "Inspected current NewPipeExtractor commit 4b70576661aadf663a935df5b904a43147d9fc50 and YouTube.js commit 14825d7712e32b208830895701973a5a934a3522 player-discovery implementations as independent field evidence.",
+        "Inspected yt-dlp-ejs 0.8.0 tag 4fb477f4af56880cfd324c48bd4294a2d2294e50 only for inert player IDs and expected n/signature observations; no external solver code or executable was run or adopted.",
+        "Downloaded three raw YouTube player_ias base.js inputs from youtube.com for player IDs 74edf1a3, 901741ab, and 631d3938 into an external research directory and recorded byte sizes and SHA-256 identities.",
+        "Verified sysinfo 0.39.6 system-only feature is current, pure Rust at the Cargo boundary, Rust 1.95 compatible, and supplies cross-platform process RSS observation without an external runtime or Cargo links dependency."
+      ],
+      "blockers": [],
+      "next_action": "Commit this research/activation checkpoint, then implement the selected Boa/parser worker, raw-player corpus, supervisor, reports, negative probes, and manual updates within packet allowed_paths."
     }
   },
   "validation": {
@@ -241,7 +246,7 @@
         {"candidate": "Rust core/std", "result": "Selected for process supervision, bounded pipes, clocks, deterministic collections, and filesystem isolation."},
         {"candidate": "approved platform capability", "result": "Selected for OS process termination/reaping and RSS observation without adding an external runtime."},
         {"candidate": "already-approved dependency", "result": "Existing serde, serde_json, and sha2 cover contracts, reports, hashing, and corpus identity."},
-        {"candidate": "smallest complete clear implementation", "result": "PENDING: Boa 0.21.1 remains a researched pure-Rust engine candidate, but no engine or Ferric-owned player-function discovery approach is selected and no worker crate currently exists."}
+        {"candidate": "smallest complete clear implementation", "result": "Selected: Boa 0.21.1 with default features disabled, Boa-parser AST-structural player discovery, a side-effect-reduced retained declaration/assignment program, and sysinfo 0.39.6 system-only parent RSS observation. No external solver or runtime is executed or required."}
       ],
       "artifact_specific_justification": {
         "javascript_worker": "A separate executable is required by the accepted process-isolation, timeout, cancellation, crash, quarantine, and no-cross-job-heap contract.",
@@ -250,9 +255,9 @@
         "policy_and_negative_fixtures": "Architecture proof must detect forbidden runtime/dependency escapes and false behavioral evidence.",
         "model_manual": "A no-context model needs exact commands, limits, reports, recovery, security constraints, and the prerequisite ceiling."
       },
-      "pre_simplification_verdict": "FAIL: the removed prototype depended on executable yt-dlp-ejs solver assets and therefore violated Ferric's independent replacement boundary.",
-      "simplification_changes": ["Removed the untracked yt-dlp-ejs-based worker, solver assets, generated player corpus, runner, and associated proof fixtures; retained WP-006 as IN_PROGRESS until a Ferric-owned approach is selected."],
-      "post_simplification_verdict": "PASS: for the bounded dependency-independence remediation, the invalid executable companion-code path is removed, replacement identity is authoritative, and the public architecture negative fixture rejects reintroduction. The WP-006 challenge implementation and acceptance matrix remain PENDING and no Rust-only challenge-path capability is claimed.",
+      "pre_simplification_verdict": "PASS_TO_IMPLEMENT: the invalid external solver path is absent; current source-level research selected a Ferric-owned Boa/parser worker path and rejected regex-only, full-player, duplicate-parser, and external-solver approaches before code creation.",
+      "simplification_changes": ["Removed the untracked yt-dlp-ejs-based worker, solver assets, generated player corpus, runner, and associated proof fixtures.", "Selected one pure-Rust parser/engine stack rather than adding a second JavaScript parser or external runtime.", "Selected a reduced player program so browser initialization code and ambient capabilities are not evaluated."],
+      "post_simplification_verdict": "PENDING_IMPLEMENTATION_AND_RERUN: the selected path minimizes the engine/parser/dependency surface, but no WP-006 challenge acceptance is claimed until the worker, raw-player corpus, resource probes, counterfactual, and canonical gates execute.",
       "complete_post_change_verification": [
         "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
         "cargo check --manifest-path build/Cargo.toml --workspace --all-targets --locked",

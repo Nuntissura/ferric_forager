@@ -8,7 +8,7 @@
     "version": "3",
     "title": "Close durable-wire strictness and architecture-proof gaps",
     "created_at_utc": "2026-07-26T15:50:10Z",
-    "updated_at_utc": "2026-07-26T16:40:19Z"
+    "updated_at_utc": "2026-07-26T16:42:02Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -36,18 +36,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/durable-wire-proof-remediation",
-      "head_sha": null,
-      "verified_at_utc": null
+      "head_sha": "3fc401920ccad89cf10b631441e211d37a070a6c",
+      "verified_at_utc": "2026-07-26T16:42:02Z"
     },
     "closure_commit": "f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "33f0818562cd418567ca4acfa12b9190229252cd"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Merge the approved closure into main, mechanically verify containment, then mark the packet VALIDATED and clear active focus.",
+    "next_action": "Await Operator selection before activating another work packet.",
     "supersedes": [
       "WP-FF-014-durable-wire-proof-remediation-v1",
       "WP-FF-014-durable-wire-proof-remediation-v2"
@@ -154,11 +154,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-26T16:40:19Z",
+      "recorded_at_utc": "2026-07-26T16:42:02Z",
       "branch": "codex/durable-wire-proof-remediation",
       "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "head_sha": "f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5",
+      "head_sha": "33f0818562cd418567ca4acfa12b9190229252cd",
       "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
         ".GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/packet.json"
       ],
       "checks_run": [
@@ -168,10 +169,12 @@
         "FF-GATE-DEEP-001 report build/reports/verify-deep-1785080474396690800-94140.json met expectations.",
         "Archived v1 and v2 retain every prerequisite-gate failure and diagnostic.",
         "PASS: final 53-fixture architecture report build/reports/architecture-check-1785082207435451000-103884.json.",
-        "PASS: clean FF-GATE-PR-001 report build/reports/verify-pr-1785084003719873900-92052.json bound to f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5."
+        "PASS: clean FF-GATE-PR-001 report build/reports/verify-pr-1785084003719873900-92052.json bound to f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5.",
+        "PASS: closure commit f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5 is contained in main merge 33f0818562cd418567ca4acfa12b9190229252cd.",
+        "PASS: remote backup origin/codex/durable-wire-proof-remediation contains MERGE_PENDING state at 3fc401920ccad89cf10b631441e211d37a070a6c."
       ],
       "blockers": [],
-      "next_action": "Commit MERGE_PENDING evidence, merge to main, and verify closure containment."
+      "next_action": "Commit the validated containment record and clear canonical active focus."
     }
   },
   "validation": {
@@ -188,7 +191,9 @@
       "PASS: final 53-fixture FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json with all four storage rows attributed as counterfactual",
       "EXPECTED PRE-CORRECTION FAIL: FF-GATE-PR-001 report build/reports/verify-pr-1785082284735890500-96056.json rejected the incomplete applicable-rule inventory; all 33 canonical REQUIRED architecture rules are now cited",
       "EXPECTED PRE-CORRECTION FAIL: aggregate report build/reports/verify-pr-1785083418494815000-99832.json rejected completion wording attached to the prerequisite gate evidence; the evidence now uses neutral wording",
-      "PASS: clean FF-GATE-PR-001 report build/reports/verify-pr-1785084003719873900-92052.json bound to f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5"
+      "PASS: clean FF-GATE-PR-001 report build/reports/verify-pr-1785084003719873900-92052.json bound to f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5",
+      "PASS: closure commit f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5 is an ancestor of main merge 33f0818562cd418567ca4acfa12b9190229252cd",
+      "PASS: remote backup origin/codex/durable-wire-proof-remediation contains MERGE_PENDING state at 3fc401920ccad89cf10b631441e211d37a070a6c"
     ],
     "not_proven": [
       "Ferric archive/journal execution through a distributed entrypoint",

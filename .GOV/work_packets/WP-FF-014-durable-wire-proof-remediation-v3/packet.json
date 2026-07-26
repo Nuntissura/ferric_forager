@@ -185,7 +185,8 @@
       "PASS: FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1785081249644554300-102280.json",
       "PASS: focused durable-wire checks and exact public counterexample receipt v5",
       "PASS: post-review warnings-denied workspace Clippy",
-      "PASS: final 53-fixture FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json with all four storage rows attributed as counterfactual"
+      "PASS: final 53-fixture FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json with all four storage rows attributed as counterfactual",
+      "EXPECTED PRE-CORRECTION FAIL: FF-GATE-PR-001 report build/reports/verify-pr-1785082284735890500-96056.json rejected the incomplete applicable-rule inventory; all 33 canonical REQUIRED architecture rules are now cited"
     ],
     "not_proven": [
       "Ferric archive/journal execution through a distributed entrypoint",
@@ -209,8 +210,39 @@
     "refinement": ".GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/refinement.json",
     "change_evidence": {
       "applicable_rule_ids": [
+        "FF-BUILD-036",
+        "FF-BUILD-037",
+        "FF-BUILD-038",
+        "FF-BUILD-039",
+        "FF-BUILD-040",
+        "FF-BUILD-041",
+        "FF-BUILD-042",
+        "FF-BUILD-043",
+        "FF-BUILD-044",
+        "FF-BUILD-045",
+        "FF-BUILD-046",
+        "FF-BUILD-077",
+        "FF-BUILD-078",
+        "FF-BUILD-079",
+        "FF-BUILD-080",
+        "FF-BUILD-081",
+        "FF-BUILD-082",
+        "FF-BUILD-083",
+        "FF-BUILD-084",
+        "FF-BUILD-085",
+        "FF-BUILD-086",
+        "FF-BUILD-087",
+        "FF-BUILD-088",
+        "FF-BUILD-089",
+        "FF-BUILD-090",
         "FF-BUILD-091",
-        "FF-BUILD-094"
+        "FF-BUILD-092",
+        "FF-BUILD-093",
+        "FF-BUILD-094",
+        "FF-BUILD-095",
+        "FF-BUILD-096",
+        "FF-BUILD-097",
+        "FF-BUILD-098"
       ],
       "acceptance_or_authority_ids": [
         "WP-FF-014-durable-wire-proof-remediation-v3-AC-001",

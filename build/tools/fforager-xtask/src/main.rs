@@ -3802,24 +3802,9 @@ fn proof_integrity_fixture_execution(
             "FF-ARCH-E-SEQUENCE-ZERO",
             "wire_boundary",
         ),
-        "durable_journal_payload_unknown_field" => public_invariant_mutation_fixture_execution(
-            root,
-            "durable_journal_payload_unknown_field",
-            "FF-ARCH-E-WIRE-BOUNDARY",
-            "wire_boundary",
-        ),
-        "durable_reconcile_state_unknown_field" => public_invariant_mutation_fixture_execution(
-            root,
-            "durable_reconcile_state_unknown_field",
-            "FF-ARCH-E-WIRE-BOUNDARY",
-            "wire_boundary",
-        ),
-        "durable_journal_sequence_zero" => public_invariant_mutation_fixture_execution(
-            root,
-            "durable_journal_sequence_zero",
-            "FF-ARCH-E-WIRE-BOUNDARY",
-            "wire_boundary",
-        ),
+        "durable_journal_payload_unknown_field"
+        | "durable_reconcile_state_unknown_field"
+        | "durable_journal_sequence_zero" => durable_storage_fixture_execution(root, mutation),
         "source_graph_cycle" => public_invariant_mutation_fixture_execution(
             root,
             "source_graph_cycle",
@@ -3843,6 +3828,18 @@ fn proof_integrity_fixture_execution(
             ))
         }
     }
+}
+
+fn durable_storage_fixture_execution(
+    root: &Path,
+    mutation: &str,
+) -> Result<FixtureExecution, String> {
+    public_invariant_mutation_fixture_execution(
+        root,
+        mutation,
+        "FF-ARCH-E-WIRE-BOUNDARY",
+        "wire_boundary",
+    )
 }
 
 fn indirect_oracle_wrapper_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {

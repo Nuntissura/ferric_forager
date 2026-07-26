@@ -26,7 +26,7 @@ const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
     "tests::public_boundary_counterexamples_reject_audit_failures";
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID: &str =
     "testkit::tests::public_boundary_counterexamples_reject_audit_failures";
-const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v3:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,acknowledged-effect-prefixes";
+const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v4:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes";
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const CARGO_PROOF_COMMAND_TIMEOUT: Duration = Duration::from_mins(5);
 const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
@@ -3574,9 +3574,15 @@ fn validate_rule_map(
                 &["unrelated-schema-transition"],
             ),
             "FF-BUILD-094" => (
-                &["wire_boundary", "negative_fixture"],
+                &["wire_boundary", "counterfactual", "negative_fixture"],
                 &["wire-boundary"],
-                &["wire-zero-or-unknown-field", "sequence-zero-replay"],
+                &[
+                    "wire-zero-or-unknown-field",
+                    "sequence-zero-replay",
+                    "durable-journal-payload-unknown-field",
+                    "durable-reconcile-state-unknown-field",
+                    "durable-journal-sequence-zero",
+                ],
             ),
             "FF-BUILD-095" => (
                 &["graph", "counterfactual", "negative_fixture"],
@@ -3794,6 +3800,24 @@ fn proof_integrity_fixture_execution(
             root,
             "sequence_zero_replay",
             "FF-ARCH-E-SEQUENCE-ZERO",
+            "wire_boundary",
+        ),
+        "durable_journal_payload_unknown_field" => public_invariant_mutation_fixture_execution(
+            root,
+            "durable_journal_payload_unknown_field",
+            "FF-ARCH-E-WIRE-BOUNDARY",
+            "wire_boundary",
+        ),
+        "durable_reconcile_state_unknown_field" => public_invariant_mutation_fixture_execution(
+            root,
+            "durable_reconcile_state_unknown_field",
+            "FF-ARCH-E-WIRE-BOUNDARY",
+            "wire_boundary",
+        ),
+        "durable_journal_sequence_zero" => public_invariant_mutation_fixture_execution(
+            root,
+            "durable_journal_sequence_zero",
+            "FF-ARCH-E-WIRE-BOUNDARY",
             "wire_boundary",
         ),
         "source_graph_cycle" => public_invariant_mutation_fixture_execution(
@@ -4384,6 +4408,24 @@ fn public_invariant_mutation_fixture_execution(
                 "",
             )
             .map(|()| "InvalidStart")?,
+            "durable_journal_payload_unknown_field" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-contracts/src/storage.rs"),
+                "    rename_all = \"snake_case\",\n    deny_unknown_fields\n)]\npub enum JournalPayload",
+                "    rename_all = \"snake_case\"\n)]\npub enum JournalPayload",
+            )
+            .map(|()| "JournalPayload unknown body field must fail closed")?,
+            "durable_reconcile_state_unknown_field" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-contracts/src/storage.rs"),
+                "#[serde(tag = \"kind\", rename_all = \"snake_case\", deny_unknown_fields)]\npub enum ReconcileState",
+                "#[serde(tag = \"kind\", rename_all = \"snake_case\")]\npub enum ReconcileState",
+            )
+            .map(|()| "ReconcileState unknown variant field must fail closed")?,
+            "durable_journal_sequence_zero" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-contracts/src/storage.rs"),
+                "        record.validate()?;\n        Ok(record)",
+                "        Ok(record)",
+            )
+            .map(|()| "JournalRecord sequence zero must fail closed")?,
             "source_graph_cycle" => replace_text_in_file(
                 &sandbox.join("product/crates/fforager-contracts/src/graph.rs"),
                 "        validate_relationship_cycles(self)",

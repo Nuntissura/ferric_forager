@@ -86,8 +86,9 @@ mod tests {
         CompatibilityRange, ConfigEnvelope, DerivedOutputId, DurabilityPosition, EdgeId, EdgeKind,
         ErrorEnvelope, EventEnvelope, ExtensionLimits, FilesystemCapability, FrameDecoder,
         FrameError, FrameLimits, GraphError, GraphLimits, ItemId, JavaScriptWorkerEnvelope,
-        JournalRecord, OutputSinkSpec, PluginEnvelope, ProcessEnvelope, ProtocolLimits,
-        RepresentationId, SchemaVersion, SinkSemantics, SourceEdge, SourceGraph, TrackId,
+        JournalPayload, JournalRecord, OutputSinkSpec, PluginEnvelope, ProcessEnvelope,
+        ProtocolLimits, ReconcileState, RepresentationId, SchemaVersion, SinkSemantics, SourceEdge,
+        SourceGraph, TrackId,
     };
     use fforager_core::lifecycle::{
         EffectAcknowledgement, EffectIntent, Event, MachineInstanceId, MachineKind, State,
@@ -650,9 +651,10 @@ mod tests {
         public_boundary_waits_for_all_ffmpeg_cleanup_outcomes_before_recovery();
         public_boundary_rejects_out_of_order_mixed_ffmpeg_cleanup_outcomes();
         public_boundary_rejects_diagnostics_counterexamples();
+        public_boundary_rejects_durable_storage_counterexamples();
         public_boundary_requires_every_emitted_effect_to_clear_before_durability();
         println!(
-            "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v3:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,acknowledged-effect-prefixes"
+            "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v4:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes"
         );
     }
 
@@ -1267,6 +1269,42 @@ mod tests {
                 "nested unknown field at {path:?} must fail closed"
             );
         }
+    }
+
+    fn public_boundary_rejects_durable_storage_counterexamples() {
+        let payload = serde_json::json!({
+            "kind": "fragment_verified",
+            "body": {
+                "sequence": 1,
+                "bytes": 16,
+                "checksum": "checksum",
+                "undeclared_nested": true
+            }
+        });
+        assert!(
+            serde_json::from_value::<JournalPayload>(payload).is_err(),
+            "JournalPayload unknown body field must fail closed"
+        );
+
+        let reconcile = serde_json::json!({
+            "kind": "output_without_archive",
+            "final_identity": "final_1",
+            "undeclared_nested": true
+        });
+        assert!(
+            serde_json::from_value::<ReconcileState>(reconcile).is_err(),
+            "ReconcileState unknown variant field must fail closed"
+        );
+
+        let mut record: serde_json::Value = serde_json::from_slice(
+            &read_fixture("durability-contracts-v1.0.json").expect("durability fixture must load"),
+        )
+        .expect("durability fixture is JSON");
+        record["journal_record"]["sequence"] = serde_json::json!(0);
+        assert!(
+            serde_json::from_value::<JournalRecord>(record["journal_record"].clone()).is_err(),
+            "JournalRecord sequence zero must fail closed"
+        );
     }
 
     fn acknowledge_all_pending_effects(machine: &mut StateMachine) {

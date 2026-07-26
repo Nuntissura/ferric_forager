@@ -200,10 +200,10 @@ limitations = ["No non-exact schema transition is authorized in the shipped regi
 
 [[rules]]
 rule_id = "FF-BUILD-094"
-proof_classes = ["wire_boundary", "negative_fixture"]
+proof_classes = ["wire_boundary", "counterfactual", "negative_fixture"]
 validators = ["wire-boundary"]
-fixture_ids = ["wire-zero-or-unknown-field", "sequence-zero-replay"]
-limitations = ["Current fixtures cover registered diagnostic contract boundaries only."]
+fixture_ids = ["wire-zero-or-unknown-field", "sequence-zero-replay", "durable-journal-payload-unknown-field", "durable-reconcile-state-unknown-field", "durable-journal-sequence-zero"]
+limitations = ["Current fixtures cover registered diagnostic and durable storage contract boundaries; future durable DTOs must add their own public-boundary counterfactual."]
 
 [[rules]]
 rule_id = "FF-BUILD-095"

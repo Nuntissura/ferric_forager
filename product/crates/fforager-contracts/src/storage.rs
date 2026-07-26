@@ -46,7 +46,7 @@ pub enum DurabilityError {
 
 /// Append-only journal record with hash-chain and payload checksum fields.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "JournalRecordWire")]
 pub struct JournalRecord {
     pub schema: SchemaVersion,
     pub job_id: JobId,
@@ -58,9 +58,77 @@ pub struct JournalRecord {
     pub payload: JournalPayload,
 }
 
+impl JournalRecord {
+    /// Verifies invariants required for an ordered durable journal entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalRecordError::SequenceZero`] when the record has no
+    /// valid one-based position in the journal.
+    pub fn validate(&self) -> Result<(), JournalRecordError> {
+        if self.sequence == 0 {
+            Err(JournalRecordError::SequenceZero)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JournalRecordWire {
+    schema: SchemaVersion,
+    job_id: JobId,
+    producer_instance: String,
+    sequence: u64,
+    prior_record_hash: Option<String>,
+    payload_checksum: String,
+    durability: DurabilityClass,
+    payload: JournalPayload,
+}
+
+impl TryFrom<JournalRecordWire> for JournalRecord {
+    type Error = JournalRecordError;
+
+    fn try_from(wire: JournalRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            schema: wire.schema,
+            job_id: wire.job_id,
+            producer_instance: wire.producer_instance,
+            sequence: wire.sequence,
+            prior_record_hash: wire.prior_record_hash,
+            payload_checksum: wire.payload_checksum,
+            durability: wire.durability,
+            payload: wire.payload,
+        };
+        record.validate()?;
+        Ok(record)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JournalRecordError {
+    SequenceZero,
+}
+
+impl std::fmt::Display for JournalRecordError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SequenceZero => formatter.write_str("journal sequence must be greater than zero"),
+        }
+    }
+}
+
+impl std::error::Error for JournalRecordError {}
+
 /// Stable journal payload kinds. Fields are descriptors, never open handles.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "body", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "body",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum JournalPayload {
     JobCreated,
     ExtractionCompleted {
@@ -206,7 +274,7 @@ pub enum CommitState {
 
 /// Archive/output reconciliation observation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ReconcileState {
     BeforePrepared,
     PreparedNotRenamed,

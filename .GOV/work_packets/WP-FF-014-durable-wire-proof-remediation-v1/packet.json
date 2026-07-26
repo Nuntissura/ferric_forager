@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Close durable-wire strictness and architecture-proof gaps",
     "created_at_utc": "2026-07-26T15:12:54Z",
-    "updated_at_utc": "2026-07-26T15:12:54Z"
+    "updated_at_utc": "2026-07-26T15:23:30Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -47,7 +47,7 @@
     "status": "IN_PROGRESS",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Implement strict durable-wire decoding and mutation-backed FF-BUILD-094 proof, then run canonical and independent validation.",
+    "next_action": "Run warnings-denied workspace validation, canonical gates, and independent adversarial review.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -96,22 +96,31 @@
       "id": "WP-FF-014-durable-wire-proof-remediation-v1-AC-001",
       "requirement": "Public Serde decoding rejects an unknown JournalPayload body field, an unknown ReconcileState variant field, and JournalRecord sequence zero.",
       "proof_class": "public_wire_boundary_negative_tests",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "product/crates/fforager-contracts/tests/durable_wire.rs::durable_wire_rejects_unknown_variant_fields_and_sequence_zero",
+        "build/crates/fforager-testkit/src/lib.rs::public_boundary_counterexamples_reject_audit_failures"
+      ]
     },
     {
       "id": "WP-FF-014-durable-wire-proof-remediation-v1-AC-002",
       "requirement": "Canonical valid durable-wire examples still decode and round-trip without changing their JSON field or tag shape, and constructed sequence-zero records fail explicit validation.",
       "proof_class": "wire_compatibility_and_invariant_tests",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "product/crates/fforager-contracts/tests/durable_wire.rs::valid_journal_wire_round_trips_without_shape_change",
+        "product/crates/fforager-contracts/tests/durable_wire.rs::constructed_sequence_zero_record_fails_explicit_validation"
+      ]
     },
     {
       "id": "WP-FF-014-durable-wire-proof-remediation-v1-AC-003",
       "requirement": "FF-BUILD-094 independently removes each corrected guard in an isolated copy, invokes the compiled public boundary, and fails for the expected behavior rather than a declaration-only check.",
       "proof_class": "independent_compiled_mutation",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "FF-GATE-ARCH-001 report build/reports/architecture-check-1785079376553345300-95588.json",
+        "durable-journal-payload-unknown-field, durable-reconcile-state-unknown-field, and durable-journal-sequence-zero each PASS through isolated-compiled-public-boundary"
+      ]
     },
     {
       "id": "WP-FF-014-durable-wire-proof-remediation-v1-AC-004",
@@ -130,22 +139,40 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-26T15:12:54Z",
+      "recorded_at_utc": "2026-07-26T15:23:30Z",
       "branch": "codex/durable-wire-proof-remediation",
       "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "head_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "dirty_paths": [],
+      "head_sha": "ac6ba3bb5692c4b10b1f00b09602b871818259b3",
+      "dirty_paths": [
+        ".GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v1/packet.json",
+        "build/crates/fforager-testkit/src/lib.rs",
+        "build/fixtures/architecture/durable-journal-payload-unknown-field/case.toml",
+        "build/fixtures/architecture/durable-journal-sequence-zero/case.toml",
+        "build/fixtures/architecture/durable-reconcile-state-unknown-field/case.toml",
+        "build/rule-to-proof.toml",
+        "build/tools/fforager-xtask/src/main.rs",
+        "product/crates/fforager-contracts/src/storage.rs",
+        "product/crates/fforager-contracts/tests/durable_wire.rs"
+      ],
       "checks_run": [
         "Read all applicable authority, task, topology, build-rule, packet-requirement, template, and WP-013 research/proof sources.",
         "Reproduced all three wire-boundary failures through the public Serde boundary in an isolated export.",
-        "Verified the current architecture gate passes while FF-BUILD-094 lacks storage mutation coverage."
+        "Verified the current architecture gate passes while FF-BUILD-094 lacks storage mutation coverage.",
+        "PASS: fforager-contracts 35 unit tests, 3 durable-wire integration tests, and doctests.",
+        "PASS: exact fforager-testkit public counterexample with the v4 durable-wire receipt.",
+        "PASS: FF-GATE-ARCH-001 with 52 fixtures, including three independent storage mutations; report build/reports/architecture-check-1785079376553345300-95588.json."
       ],
       "blockers": [],
-      "next_action": "Commit this activation checkpoint and implement the bounded remediation."
+      "next_action": "Commit the implementation checkpoint, then run full canonical and independent validation."
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "PASS: cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+      "PASS: cargo test --manifest-path build/Cargo.toml --locked -p fforager-contracts; 35 unit, 3 integration, and 0 doctest failures",
+      "PASS: exact fforager-testkit public boundary counterexample with durable-wire receipt v4",
+      "PASS: FF-GATE-ARCH-001 report build/reports/architecture-check-1785079376553345300-95588.json with all three storage counterfactuals"
+    ],
     "not_proven": [
       "Any shipped Ferric product runtime capability",
       "Archive persistence against a real product entrypoint",
@@ -210,14 +237,12 @@
         "Reuse one public counterexample test and the existing mutation runner.",
         "Add only the three missing storage-specific negative fixtures."
       ],
-      "post_simplification_verdict": "PENDING",
+      "post_simplification_verdict": "PASS: existing Serde, public testkit, and isolated mutation mechanisms close the reproduced gaps without a new dependency or framework.",
       "complete_post_change_verification": [
-        "cargo fmt --manifest-path product/Cargo.toml --all -- --check",
-        "cargo test --manifest-path product/Cargo.toml --locked -p fforager-contracts",
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
         "cargo test --manifest-path build/Cargo.toml --locked -p fforager-testkit",
-        "cargo clippy --manifest-path product/Cargo.toml --locked --workspace --all-targets -- -D warnings",
+        "cargo test --manifest-path build/Cargo.toml --locked -p fforager-contracts",
         "cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets -- -D warnings",
-        "cargo test --manifest-path product/Cargo.toml --locked --workspace --all-features --no-fail-fast",
         "cargo test --manifest-path build/Cargo.toml --locked --workspace --all-features --no-fail-fast",
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",

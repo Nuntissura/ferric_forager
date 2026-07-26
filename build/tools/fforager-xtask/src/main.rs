@@ -2403,7 +2403,7 @@ fn validate_member_metadata(
     };
     require_relative_contained(root, &member.manifest, ownership_root)?;
     require_relative_contained(root, &member.source_root, ownership_root)?;
-    if !split_trigger_valid(&member.split_trigger) {
+    if !split_trigger_valid(&member.split_trigger, &member.feature_owner) {
         return Err(format!(
             "FF-ARCH-E-INVALID-SPLIT-TRIGGER: {} cites {}",
             member.name, member.split_trigger
@@ -2776,12 +2776,37 @@ fn member_inventory_matches<T: Ord>(expected: &BTreeSet<T>, observed: &BTreeSet<
     expected == observed
 }
 
-fn split_trigger_valid(trigger: &str) -> bool {
-    trigger == "FF-BUILD-036"
-        || (trigger.starts_with("WP-FF-005-versioned-core-contracts-v1-AC-")
-            && trigger.rsplit('-').next().is_some_and(|suffix| {
-                suffix.len() == 3 && suffix.bytes().all(|byte| byte.is_ascii_digit())
-            }))
+fn split_trigger_valid(trigger: &str, feature_owner: &str) -> bool {
+    if trigger == "FF-BUILD-036" {
+        return true;
+    }
+    let Some((packet, acceptance)) = trigger.rsplit_once("-AC-") else {
+        return false;
+    };
+    if packet != feature_owner {
+        return false;
+    }
+    if acceptance.len() != 3 || !acceptance.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let Some(packet_tail) = packet.strip_prefix("WP-FF-") else {
+        return false;
+    };
+    let Some((number, versioned_slug)) = packet_tail.split_once('-') else {
+        return false;
+    };
+    if number.len() != 3 || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let Some((slug, version)) = versioned_slug.rsplit_once("-v") else {
+        return false;
+    };
+    !slug.is_empty()
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && !version.is_empty()
+        && version.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn unapproved_exception_diagnostic(count: usize) -> Option<&'static str> {
@@ -2890,6 +2915,7 @@ fn validate_three_roots(
     }
     scan_product_runtime_literals(root)?;
     scan_product_oracle_boundary(root)?;
+    scan_ferric_implementation_independence(root)?;
     validate_product_clippy_guard(root)?;
     checks.push(pass(
         "three-root-boundary",
@@ -2976,6 +3002,50 @@ fn scan_product_oracle_boundary(root: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn scan_ferric_implementation_independence(root: &Path) -> Result<(), String> {
+    for relative_root in [
+        "build/crates",
+        "build/integration-tests",
+        "build/fuzz",
+        "build/benches",
+    ] {
+        let directory = root.join(relative_root);
+        if !directory.exists() {
+            continue;
+        }
+        for path in walk_files(&directory)? {
+            let relative = slash(path.strip_prefix(root).map_err(|error| error.to_string())?);
+            let bytes =
+                fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
+            if let Some(diagnostic) = ferric_implementation_dependency_diagnostic(&relative, &bytes)
+            {
+                return Err(format!(
+                    "{diagnostic}: Ferric implementation/build/test asset depends on forbidden yt-dlp-family code: {relative}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ferric_implementation_dependency_diagnostic(
+    relative: &str,
+    bytes: &[u8],
+) -> Option<&'static str> {
+    let extension = Path::new(relative)
+        .extension()
+        .and_then(OsStr::to_str)
+        .map(str::to_ascii_lowercase);
+    if matches!(extension.as_deref(), Some("md" | "txt")) {
+        return None;
+    }
+    let path_hit = product_oracle_source_diagnostic(relative).is_some();
+    let content_hit = std::str::from_utf8(bytes)
+        .ok()
+        .is_some_and(|source| product_oracle_source_diagnostic(source).is_some());
+    (path_hit || content_hit).then_some("FF-ARCH-E-FERRIC-YTDLP-DEPENDENCY")
 }
 
 fn product_oracle_boundary_diagnostic(relative: &str, bytes: &[u8]) -> Option<&'static str> {
@@ -3196,19 +3266,20 @@ fn validate_dependency_decisions(
         if !members.contains(decision.consumer.as_str())
             || !matches!(
                 decision.runtime_class.as_str(),
-                "non_shipped_build_tooling" | "non_shipped_test_tooling" | "shipped_rust_product"
+                "non_shipped_build_tooling"
+                    | "non_shipped_test_tooling"
+                    | "non_shipped_phase0_prerequisite"
+                    | "non_shipped_phase0_proof_telemetry"
+                    | "shipped_rust_product"
             )
             || decision.purpose.trim().is_empty()
             || decision.native
             || decision.version.trim().is_empty()
-            || !matches!(
-                decision.owner.as_str(),
-                "WP-FF-003-executable-gate-bootstrap" | "WP-FF-005-versioned-core-contracts"
-            )
+            || !work_packet_base_owner_valid(&decision.owner)
             || decision.allowed_consumers != [decision.consumer.as_str()]
             || decision.reason.trim().is_empty()
             || decision.removal_trigger.trim().is_empty()
-            || !decision.approval_id.starts_with("WP-FF-")
+            || !decision_approval_matches_owner(&decision.approval_id, &decision.owner)
             || decision.features.len() != decision.features.iter().collect::<BTreeSet<_>>().len()
         {
             return Err(format!(
@@ -3218,6 +3289,33 @@ fn validate_dependency_decisions(
         }
     }
     Ok(decisions)
+}
+
+fn work_packet_base_owner_valid(owner: &str) -> bool {
+    let Some(tail) = owner.strip_prefix("WP-FF-") else {
+        return false;
+    };
+    let Some((number, slug)) = tail.split_once('-') else {
+        return false;
+    };
+    number.len() == 3
+        && number.bytes().all(|byte| byte.is_ascii_digit())
+        && !slug.is_empty()
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn decision_approval_matches_owner(approval_id: &str, owner: &str) -> bool {
+    let Some((packet, _)) = approval_id.rsplit_once("-AC-") else {
+        return false;
+    };
+    split_trigger_valid(approval_id, packet)
+        && packet.strip_prefix(owner).is_some_and(|suffix| {
+            suffix.strip_prefix("-v").is_some_and(|version| {
+                !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
 }
 
 fn validate_direct_dependencies(
@@ -3540,6 +3638,7 @@ fn validate_rule_map(
                 &["product-native-boundary"],
                 &[
                     "indirect-oracle-runtime-wrapper",
+                    "bundled-companion-solver-asset",
                     "documentation-asset-bypass",
                     "readme-include-bypass",
                     "dynamic-product-process",
@@ -3734,6 +3833,7 @@ fn proof_integrity_fixture_execution(
 ) -> Result<FixtureExecution, String> {
     match mutation {
         "add_indirect_oracle_runtime_wrapper" => indirect_oracle_wrapper_fixture_execution(root),
+        "bundle_companion_solver_asset" => bundled_companion_solver_fixture_execution(),
         "documentation_asset_bypass" => documentation_asset_bypass_fixture_execution(root),
         "readme_include_bypass" => readme_include_bypass_fixture_execution(root),
         "dynamic_product_process" => dynamic_product_process_fixture_execution(root),
@@ -3834,6 +3934,22 @@ fn indirect_oracle_wrapper_fixture_execution(root: &Path) -> Result<FixtureExecu
         "isolated-product-tree",
         "product/src/runtime_wrapper.rs contains an indirect yt-dlp process wrapper",
         "scan_product_oracle_boundary over an isolated product tree",
+    ))
+}
+
+fn bundled_companion_solver_fixture_execution() -> Result<FixtureExecution, String> {
+    let relative = "build/crates/fforager-javascript/assets/yt-dlp-ejs-solver.js";
+    let diagnostic = ferric_implementation_dependency_diagnostic(
+        relative,
+        b"// executable yt-dlp-ejs solver asset",
+    )
+    .ok_or("production independence validator accepted bundled yt-dlp companion solver asset")?;
+    Ok(proof_fixture(
+        vec![diagnostic.to_owned()],
+        "negative_fixture",
+        "build-implementation-asset",
+        "a non-shipped Ferric worker bundles an executable yt-dlp-ejs solver asset",
+        "ferric_implementation_dependency_diagnostic over the build implementation boundary",
     ))
 }
 
@@ -4966,7 +5082,7 @@ fn architecture_fixture_diagnostic(mutation: &str) -> Result<Option<&'static str
         "add_watcher_product_edge" => classify_layers("watcher", "engine", DependencyKind::Normal),
         "add_product_watcher_edge" => classify_layers("product", "watcher", DependencyKind::Normal),
         "remove_split_trigger" => {
-            if split_trigger_valid("") {
+            if split_trigger_valid("", "WP-FF-000-fixture-v1") {
                 return Err("production split-trigger validator accepted mutation".to_owned());
             }
             "FF-ARCH-E-MISSING-SPLIT-TRIGGER"
@@ -7592,7 +7708,22 @@ fn active_evidence_inputs(root: &Path) -> Result<Vec<String>, String> {
     Ok(vec![packet, refinement.to_owned()])
 }
 
+/// Serializes source-state observation during test runs only.
+///
+/// Several tests build a report and then re-validate it against the live
+/// repository within the same process. Running `git status` / `git ls-files`
+/// concurrently across parallel tests lets one invocation observe the index
+/// mid-refresh and report a transient dirty flicker, so the captured provenance
+/// no longer equals the recomputed provenance. Production runs a single command
+/// per process, so this guard is compiled out of shipped gate execution.
+#[cfg(test)]
+static SOURCE_STATE_OBSERVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn source_state(root: &Path) -> Result<SourceState, String> {
+    #[cfg(test)]
+    let _observation_guard = SOURCE_STATE_OBSERVATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let commit = command_output(root, "git", &["rev-parse", "HEAD"])?;
     let status = command_output(root, "git", &["status", "--porcelain"])?;
     let mut dirty_paths = status
@@ -9055,6 +9186,20 @@ mod tests {
             Some("FF-ARCH-E-PRODUCT-ORACLE-RUNTIME")
         );
         assert_eq!(
+            ferric_implementation_dependency_diagnostic(
+                "build/crates/fforager-javascript/assets/yt-dlp-ejs-solver.js",
+                b"export function solve() {}",
+            ),
+            Some("FF-ARCH-E-FERRIC-YTDLP-DEPENDENCY")
+        );
+        assert_eq!(
+            ferric_implementation_dependency_diagnostic(
+                "build/crates/fforager-javascript/src/lib.rs",
+                b"const SOLVER: &str = \"yt-dlp-ejs\";",
+            ),
+            Some("FF-ARCH-E-FERRIC-YTDLP-DEPENDENCY")
+        );
+        assert_eq!(
             product_oracle_boundary_diagnostic(
                 "product/MODEL_MANUAL.md",
                 b"yt-dlp is a research-only oracle",
@@ -9318,9 +9463,20 @@ mod tests {
 
     #[test]
     fn split_and_exception_helpers_fail_closed() {
-        assert!(!split_trigger_valid("  "));
-        assert!(!split_trigger_valid("NOT-A-CANONICAL-TRIGGER"));
-        assert!(split_trigger_valid("FF-BUILD-036"));
+        let owner = "WP-FF-006-rust-youtube-challenge-spike-v1";
+        assert!(!split_trigger_valid("  ", owner));
+        assert!(!split_trigger_valid("NOT-A-CANONICAL-TRIGGER", owner));
+        assert!(!split_trigger_valid("WP-FF-6-bad-v1-AC-002", owner));
+        assert!(!split_trigger_valid("WP-FF-006-bad_slug-v1-AC-002", owner));
+        assert!(!split_trigger_valid(
+            "WP-FF-005-versioned-core-contracts-v1-AC-002",
+            owner
+        ));
+        assert!(split_trigger_valid("FF-BUILD-036", owner));
+        assert!(split_trigger_valid(
+            "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
+            owner
+        ));
         assert_eq!(
             unapproved_exception_diagnostic(1),
             Some("FF-ARCH-E-UNAPPROVED-EXCEPTION")
@@ -9451,6 +9607,17 @@ mod tests {
             &["derive".to_owned()],
             false,
             &decision
+        ));
+        assert!(work_packet_base_owner_valid(
+            "WP-FF-006-rust-youtube-challenge-spike"
+        ));
+        assert!(decision_approval_matches_owner(
+            "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
+            "WP-FF-006-rust-youtube-challenge-spike"
+        ));
+        assert!(!decision_approval_matches_owner(
+            "WP-FF-005-versioned-core-contracts-v1-AC-002",
+            "WP-FF-006-rust-youtube-challenge-spike"
         ));
         let supported = vec!["x86_64-pc-windows-msvc".to_owned()];
         assert!(host_supported(&supported, "x86_64-pc-windows-msvc"));

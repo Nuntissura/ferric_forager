@@ -432,7 +432,8 @@ rules:
 
   - id: FF-BUILD-089
     category: product_dependency_boundary
-    statement: Architecture, dependency, packaging, and source-policy gates MUST reject yt-dlp or Python imports, dependencies, bundled artifacts, installers, downloaders, subprocess plans, fallbacks, sidecars, plugins, services, or delegated runtime work under product/ or any shipped artifact; only version-pinned non-shipped build or research oracle execution is permitted, and a negative fixture MUST prove an indirect runtime wrapper is rejected.
+    statement: Architecture, dependency, packaging, source-policy, and canonical verification gates MUST reject yt-dlp, Python, or any yt-dlp companion package or executable asset as an import, dependency, bundled artifact, executed solver/library asset, installer, downloader, subprocess plan, fallback, sidecar, plugin, service, required fixture, or delegated work path anywhere Ferric build, test, verification, package, release, or runtime behavior depends on it. Only explicitly invoked non-canonical research tooling may observe an Operator-supplied version-pinned external executable; canonical commands MUST succeed with it absent. Negative fixtures MUST prove rejection of both an indirect runtime wrapper and a bundled companion solver asset.
+    revision: 2
     enforcement: REQUIRED
   - id: FF-BUILD-090
     category: proof_integrity

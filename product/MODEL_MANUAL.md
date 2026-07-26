@@ -1,14 +1,16 @@
 ---
 file_id: FF-PRODUCT-MODEL-MANUAL-001
 file_kind: model_manual
-updated_at: "2026-07-22"
+updated_at: "2026-07-26"
 ---
 
-<topic id="phase-0-purpose" status="active" version="3" wp="WP-FF-005-versioned-core-contracts-v1" updated_at="2026-07-19">
+<topic id="phase-0-purpose" status="active" version="4" wp="WP-FF-006-rust-youtube-challenge-spike-v1" updated_at="2026-07-26">
 
 # Ferric Forager model manual
 
-Ferric Forager is planned as a Rust-native video-acquisition and archival product. The repository contains shipped data-only contract crates and pure deterministic core models, but no executable Ferric runtime capability. These Phase 0 prerequisite artifacts and the executable build-and-proof tooling MUST NOT be counted as product capability progress, a completed product phase, packaging, release, or runtime completion.
+Ferric Forager is an independent Rust-native replacement for yt-dlp with additional acquisition, recording, extraction, metadata, archive, protocol, diagnostics, and integration capabilities. Ferric owns every implementation path. Python, yt-dlp, and yt-dlp companion packages or executable assets are not permitted dependencies of product code, builds, tests, canonical verification, packages, releases, or runtime behavior.
+
+The repository currently contains shipped data-only contract crates and pure deterministic core models, but no executable Ferric runtime capability. These Phase 0 prerequisite artifacts and the executable build-and-proof tooling MUST NOT be counted as product capability progress, a completed product phase, packaging, release, or runtime completion.
 
 Repository ownership is deterministic:
 
@@ -21,20 +23,27 @@ Shipped product runtime must not read or require `.GOV/` or `build/`. Build tool
 
 </topic>
 
-<topic id="phase-0-compatibility-oracle" status="active" version="4" wp="WP-FF-004-compatibility-inventory-corpus-v1" updated_at="2026-07-22">
+<topic id="phase-0-compatibility-oracle" status="active" version="5" wp="WP-FF-004-compatibility-inventory-corpus-v1" updated_at="2026-07-26">
 
-## Generate and validate the compatibility oracle
+## Validate Ferric compatibility data and optionally capture an external comparison
 
-WP-FF-004 pins the external oracle to the official `yt-dlp 2026.07.04` Windows executable and matching source tag. The executable and source checkout are research inputs outside shipped product code; Ferric Forager has no production Python or yt-dlp dependency.
+Ferric-owned committed fixtures are the canonical compatibility inputs. Validation, replay, PR checks, deep checks, builds, tests, packaging, and releases must run with yt-dlp absent.
+
+WP-FF-004 also defines an explicitly invoked research-only capture command for observing the official `yt-dlp 2026.07.04` Windows executable and matching source tag. That command is optional, non-canonical, and never called by Ferric build, test, verification, package, release, or runtime paths. It may only convert separately acquired external observations into inert, provenance-bound comparison data; it does not supply implementation code.
 
 Phase 0 product source must not embed `README` or `docs` assets with `include!`, `include_bytes!`, or `include_str!`, and it must not construct a process through `Command::new`; those paths would turn research or documentation into an ungoverned runtime dependency. Product-local Clippy configuration forbids compiler-resolved aliases of `std::process::Command`, `Command::new`, `include_bytes!`, and `include_str!`; the architecture scanner separately forbids `include!` and local suppression of those guards. A future shipped runtime may introduce a typed `ExternalProgram` boundary that allowlists only `ffmpeg` and `ffprobe`, validates fixed arguments and executable identity, and is proven through the staged production artifact. It must not permit `yt-dlp`, Python, shell composition, or dynamically assembled program names.
 
-Set repository-relative paths to the separately acquired, hash-matching oracle inputs, then run:
+To refresh external comparison data deliberately, set repository-relative paths to separately acquired, hash-matching inputs and run only the capture command:
 
 ```powershell
 $oracleExe = "build/target/wp4-research/oracle/yt-dlp.exe"
 $sourceRoot = "build/target/wp4-research/yt-dlp-2026.07.04"
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-generate --oracle-exe $oracleExe --source-root $sourceRoot
+```
+
+The normal dependency-free validation path is:
+
+```powershell
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-validate
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- compatibility-replay
 ```
@@ -180,6 +189,24 @@ Common contract failures and recovery:
 - Data-only scan failure: replace runtime handles, processes, sockets, filesystem handles, threads, channels, or locks with serializable data or explicit effect-intent DTOs owned by a later adapter.
 
 These contracts do not select or implement network, storage, archive, FFmpeg, JavaScript, plugin, scheduler, watcher, or transport adapters. A later shipped consumer must prove actual behavior through `FF-GATE-RUNTIME-001` using the exact staged production artifact.
+
+</topic>
+
+<topic id="phase-0-javascript-challenge-spike" status="blocked" version="2" wp="WP-FF-006-rust-youtube-challenge-spike-v1" ingestable="true" updated_at="2026-07-26">
+
+## Implement the independent Rust JavaScript challenge spike
+
+WP-FF-006 is a non-shipped Prerequisite 0C experiment. It must prove a Ferric-owned Rust path for discovering and solving YouTube player challenges through a bounded pure-Rust JavaScript worker. It does not implement video download, extraction, a shipped JavaScript adapter, replacement parity, packaging, release, or product-phase progress.
+
+The prior prototype path that executed checked-in `yt-dlp-ejs` solver assets was invalidated and removed. Those assets would make Ferric depend on code from the yt-dlp ecosystem even without invoking the yt-dlp executable. No accepted WP-006 command exists until the packet has current research and a Ferric-owned challenge-discovery and solving implementation.
+
+The accepted implementation boundary is:
+
+- Ferric-owned Rust code discovers the relevant player functions and constructs the bounded execution request.
+- A pure-Rust JavaScript engine executes only site-supplied player behavior and Ferric-owned adapters.
+- A Ferric-owned committed corpus supplies deterministic inputs and expected observations; external implementations may be comparison provenance but never executable fixtures.
+- No command required to build, test, verify, package, release, or run Ferric may require yt-dlp, Python, a yt-dlp companion package, or downloaded/prebuilt solver code.
+- Any failure produces evidence for an Operator decision; it never authorizes a fallback.
 
 </topic>
 

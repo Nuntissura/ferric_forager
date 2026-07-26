@@ -2,10 +2,10 @@
   "schema_id": "ff.work_packet_refinement@1",
   "file_id": "WP-FF-006-rust-youtube-challenge-spike-v1-REFINEMENT-001",
   "wp_id": "WP-FF-006-rust-youtube-challenge-spike-v1",
-  "updated_at_utc": "2026-07-22T21:19:04Z",
-  "operator_request": "Implement WP-006 without mockups or vibe coding, use the already-open logged-in Firefox only when a live canary materially helps, use subagents for adversarial implementation review through different lenses, harden the work, and address findings, gaps, concerns, ROI, and bad code hygiene.",
+  "updated_at_utc": "2026-07-26T00:00:00Z",
+  "operator_request": "Ensure Ferric Forager is understood and enforced as an independent Rust replacement for yt-dlp with added features and never depends on yt-dlp; invalidate and remove any WP-006 implementation path that executes or requires yt-dlp-family code.",
   "basis": {
-    "research_status": "CURRENT_PRIMARY_SOURCE_RESEARCH_COMPLETED",
+    "research_status": "PARTIALLY_INVALIDATED_RESEARCH_REQUIRED_BEFORE_IMPLEMENTATION",
     "authority_checked": [
       "START_HERE.yaml",
       "AGENTS.md and byte-identical CLAUDE.md",
@@ -60,43 +60,43 @@
       }
     ],
     "selected_approach": [
-      "Use boa_engine 0.21.1 with default features disabled inside a policy-marked non-shipped Rust executable worker.",
-      "Execute the exact pinned yt-dlp-ejs 0.8.0 generated library and core assets plus pinned upstream player scripts, not handwritten challenge lookalikes.",
-      "Use WP-005 ff.javascript-worker@1 envelopes and Ferric length-prefixed frame validation at the parent/worker boundary.",
-      "Create a new Boa Context for every job and expose no host network, filesystem, environment, process, console, or secret APIs.",
+      "Retain the design boundary of a policy-marked non-shipped Rust executable worker with a maintained pure-Rust JavaScript engine candidate, fresh capability-free contexts, and WP-005 bounded IPC.",
+      "Require Ferric-owned Rust player-function discovery and challenge-solving behavior; the exact parsing/extraction approach remains unselected until current source-level research compares viable Rust-native options.",
+      "Use raw site-supplied player programs and inert expected observations as corpus inputs; do not execute, import, bundle, or require yt-dlp-ejs or any other yt-dlp-family solver code.",
       "Enforce input, output, frame, instruction, loop, recursion, stack, wall-time, job-count, age, and RSS/recycle bounds; use parent process supervision for non-cooperative timeout and cancellation.",
-      "Emit deterministic per-case reports and an aggregate PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION verdict."
+      "Emit deterministic per-case reports and an aggregate PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION verdict only after dependency-independence proof passes."
     ],
     "rejected_options": [
       "Deno, Node.js, Bun, QuickJS, QuickJS-NG, Wasmtime, rusty_v8, Hermes, or another external/native runtime because the Operator and packet forbid them.",
       "Nova for this spike because current maturity and corpus evidence are weaker and its unsafe GC surface adds risk without a demonstrated compatibility advantage.",
-      "A handwritten JavaScript subset or Rust reimplementation of challenge transforms because it would be a mock of the actual EJS execution requirement.",
+      "Executing yt-dlp-ejs or any other yt-dlp-family solver/library asset because Ferric is an independent replacement and must own its implementation path.",
+      "A handwritten case-specific transform table because it would echo fixture expectations rather than discover and solve real player behavior.",
       "Network-downloading EJS/player assets during build or test because it violates deterministic offline proof and the no-build-download boundary.",
       "Treating generic Test262 or simple eval success as YouTube challenge compatibility proof."
     ],
     "reuse_opportunities": [
       "Reuse the existing locked Cargo workspace, architecture policy, report envelope, scanner, negative-fixture harness, and canonical gates.",
       "Reuse WP-005 JavaScriptWorkerEnvelope, FrameDecoder, ProtocolLimits, typed failure codes, cancellation generations, and state-machine identities.",
-      "Reuse WP-004 pinned yt-dlp identity and provenance conventions while adding the missing EJS/player corpus under WP-006.",
+      "Reuse WP-004 stable corpus identities, deterministic normalization, and optional external-comparison provenance without reusing external implementation code.",
       "Reuse Rust std process, pipe, timing, hashing, and filesystem APIs plus already-approved serde/serde_json/sha2 before adding any new mechanism."
     ],
-    "validation_plan": "Run exact pinned corpus cases through a spawned Rust worker; inspect reports; run malformed/partial/oversized/protocol/cancel/timeout/crash/memory/capability/cache/context/recycle/quarantine probes; scan dependency, source, build scripts, artifacts, process plans, FFI, links, and downloads; run format/check/test/doc/Clippy/architecture/deep/PR gates; then rotate independent subagents through engine-security, protocol-lifecycle, corpus-proof, and code-quality attack lenses, convert every confirmed finding into a public-boundary regression, remediate, simplify, and rerun the complete matrix."
+    "validation_plan": "After current research selects a Ferric-owned approach, run the committed corpus through a spawned Rust worker; inspect reports; run malformed/partial/oversized/protocol/cancel/timeout/crash/memory/capability/cache/context/recycle/quarantine probes; scan dependency, source, executable assets, build scripts, artifacts, process plans, FFI, links, and downloads; prove canonical build/test/verification succeeds with yt-dlp absent; run format/check/test/doc/Clippy/architecture/deep/PR gates; then perform independent adversarial engine-security, protocol-lifecycle, corpus-proof, dependency-independence, and code-quality review."
   },
   "scope_edges": {
     "assumptions": [
-      "The pinned yt-dlp 2026.07.04 release and yt-dlp-ejs 0.8.0 assets remain the packet baseline even if upstream moves during implementation.",
+      "Pinned external observations may remain comparison provenance, but Ferric-owned specifications and committed corpora are canonical and no external implementation code is an executable packet input.",
       "A passing spike selects a prerequisite mechanism only and is not a video downloader or product capability.",
       "The logged-in Firefox session is optional live-canary context and is never a source of committed cookies, tokens, secrets, or deterministic corpus truth."
     ],
     "non_goals": [
       "Downloading the requested Short, implementing the YouTube extractor, or claiming full YouTube support.",
       "Shipping the worker or granting it network/filesystem/process capabilities.",
-      "Adding an external runtime, Python, yt-dlp product execution, Wasm, or a new native dependency."
+      "Adding an external runtime, Python, yt-dlp or companion implementation dependency, executable solver asset, Wasm, or a new native dependency."
     ]
   },
   "corpus_contract": {
-    "oracle_identity": "yt-dlp 2026.07.04 plus yt-dlp-ejs 0.8.0",
-    "mandatory_cases": "Every pinned case in the checked-in WP-006 manifest; the manifest is derived from the upstream 0.8.0 tests and binds player bytes, variant, challenge type, input, expected output, EJS asset hashes, and upstream commits.",
+    "oracle_identity": "Ferric-owned YouTube challenge corpus; optional external comparison observations carry separate pinned provenance",
+    "mandatory_cases": "Every pinned case in the future checked-in WP-006 manifest binds raw site-player bytes, variant, challenge type, input, inert expected observation, and provenance without bundling or executing external solver code.",
     "pass_threshold": "100 percent exact output agreement for mandatory deterministic cases, with no skipped or structurally-only cases.",
     "live_canary_policy": "Optional, non-blocking, separately labeled, sanitized, and never allowed to replace deterministic corpus proof.",
     "failure_bundle": "Case ID, upstream identities, script/player hashes, engine identity, bounded non-secret input, expected and observed result, typed error, limits, duration, process/RSS observation, and replay command."
@@ -111,13 +111,13 @@
       "maximum_memory_bytes": 536870912,
       "maximum_loop_iterations": 5000000,
       "maximum_recursion_depth": 512,
-      "maximum_stack_size": 1024,
+      "maximum_stack_size": 10240,
       "maximum_instructions": 50000000,
       "maximum_jobs_per_worker": 64,
       "maximum_worker_age_millis": 300000
     },
     "capabilities": "No registered network, filesystem, environment, process, dynamic import, module loader, console, timer, or secret-bearing host functions.",
-    "isolation": "Fresh Boa Context per job; host-owned content-addressed artifacts; no durable JavaScript heap or global state across jobs.",
+    "isolation": "The future selected Rust engine must create a fresh capability-free execution context per job; host-owned content-addressed artifacts must not permit durable JavaScript heap or global state across jobs.",
     "termination": "Engine budgets are cooperative first-line controls; parent wall deadline/cancellation may terminate and reap the separate worker. Timeout is a bounded policy outcome, not proof that arbitrary code could never finish.",
     "memory": "Input/output and engine structural limits are exact; parent RSS supervision provides bounded detection and forced worker termination. The report must state OS hard-containment coverage and residual race/overshoot rather than claim a perfect in-engine heap cap."
   },
@@ -135,7 +135,7 @@
       "reuse_deletion_simplification_and_bad_code_hygiene"
     ],
     "minimum_controls": [
-      "Real pinned EJS and player bytes execute through Boa and an output mutation fails the same oracle.",
+      "Ferric-owned discovery and solving execute against raw pinned player bytes through the Rust worker, an output mutation fails the same acceptance path, and a bundled yt-dlp-family solver asset is rejected.",
       "Every worker request crosses the bounded public frame/envelope boundary and receives a correlated typed terminal outcome.",
       "Parent supervision proves termination and reap for infinite loop, cancellation, crash, malformed stream, timeout, and memory pressure.",
       "Dependency and source scans reject all forbidden runtimes, downloads, FFI, native links, and indirect wrappers.",
@@ -144,8 +144,9 @@
   },
   "execution_decomposition": [
     "Commit activation, refinement, zero-progress ceiling, and exact checkpoint.",
-    "Add the pinned offline EJS/player corpus and a behavior-sensitive manifest validator.",
-    "Implement the non-shipped Boa worker, bounded envelope/frame protocol, fresh-context execution, and parent supervisor.",
+    "Complete current research and select a Ferric-owned Rust player-function discovery and challenge-solving approach.",
+    "Add the pinned offline raw-player/Ferric-observation corpus and a behavior-sensitive manifest validator.",
+    "Implement the non-shipped pure-Rust worker, Ferric-owned challenge path, bounded envelope/frame protocol, fresh-context execution, and parent supervisor.",
     "Implement typed report/verdict generation and capability, bounds, lifecycle, cache, churn, dependency, and counterfactual probes.",
     "Update the no-context manual.",
     "Run multi-lens independent adversarial reviews, remediate every confirmed finding, simplify, and rerun all acceptance and canonical gates."

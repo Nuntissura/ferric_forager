@@ -8,14 +8,14 @@ version: "0.3.0"
 status: "Architecture and executable-contract prerequisite charter"
 date: "2026-07-18"
 timezone: "Europe/Brussels"
-baseline_project: "yt-dlp"
+external_comparison_project: "yt-dlp"
 baseline_release: "2026.07.04"
 implementation_language: "Rust"
 product_name: "Ferric Forager"
 cli_command: "fforager"
 tagline: "Ferric Forager — a Rust-native media extraction and acquisition engine"
 deployment_model: "Standalone project with first-class Handshake integration"
-reference_architectures: "yt-dlp, gallery-dl, Streamlink, N_m3u8DL-RE"
+reference_architectures: "yt-dlp, gallery-dl, Streamlink, N_m3u8DL-RE; references are never Ferric implementation dependencies"
 design_heuristic_sources: "Ponytail, YAGNI"
 merged_review_set: ".GOV/reviews/peer-review-v0.2.0/"
 supersedes_design: "0.2.0"
@@ -29,9 +29,9 @@ license_intent: "To be selected after dependency and redistribution review"
 > **Ferric Forager — a Rust-native media extraction and acquisition engine**
 > **Canonical CLI command:** `fforager`
 > **Authority status:** Architecture and executable-contract prerequisite charter; it is not a product phase or product-progress claim
-> **Baseline:** yt-dlp `2026.07.04`
+> **External comparison baseline:** yt-dlp `2026.07.04`; Ferric-owned specifications and committed corpora remain canonical
 > **Deployment model:** Standalone project with a first-class Handshake adapter
-> **Primary objective:** Complete Rust rewrite with executable behavioral compatibility, bounded and recoverable execution, and equivalent-work performance proof.
+> **Primary objective:** Independent Rust-native yt-dlp replacement with added capabilities, executable behavioral compatibility, bounded and recoverable execution, and equivalent-work performance proof.
 
 ---
 
@@ -109,9 +109,9 @@ The intended result is not a literal transliteration of Python classes into Rust
 
 ## 1.2 Goal
 
-Build **Ferric Forager**, a complete Rust-native replacement for yt-dlp, that:
+Build **Ferric Forager**, a complete and independent Rust-native replacement for yt-dlp, that:
 
-1. requires no Python runtime or Python fallback in production builds;
+1. requires no Python, yt-dlp, or yt-dlp companion package or executable asset in product, build, test, canonical verification, packaging, release, or runtime paths;
 2. preserves the practical command-line behavior and extraction capabilities users depend on;
 3. supports direct media, HLS, DASH, Microsoft Smooth Streaming (MSS), heterogeneous collections, playlists, channels, feeds, live sessions, subtitles, thumbnails, metadata, authentication, cookies, proxies, format selection, resume, archive tracking, output sinks, and post-processing;
 4. treats individual media, collections, and live sessions as first-class typed source results rather than forcing every URL into a single-file video model;
@@ -172,7 +172,7 @@ This shape separates responsibilities that are entangled in many mature download
 
 # 2. Executive Summary
 
-Ferric Forager is a full rewrite of yt-dlp in Rust, with no Python production dependency. FFmpeg and ffprobe are the only currently authorized external runtime processes. Modern site challenge execution remains mandatory, but the authorized Phase 0 direction is a bounded Rust worker containing a pure-Rust engine candidate; an external JavaScript runtime is not an implicit fallback and requires explicit Operator approval after measured corpus evidence.
+Ferric Forager is an independent replacement for yt-dlp implemented in Rust, with no Python, yt-dlp, or yt-dlp-companion implementation dependency. FFmpeg and ffprobe are the only currently authorized external runtime processes. Modern site challenge execution remains mandatory, but the authorized Phase 0 direction is a bounded Ferric-owned Rust worker containing a pure-Rust engine candidate and Ferric-owned challenge-solving behavior; an external JavaScript runtime or yt-dlp-family solver is not an implicit fallback and requires explicit Operator approval after measured corpus evidence.
 
 The design uses yt-dlp as the broad extraction and compatibility baseline, while deliberately studying three adjacent systems for capabilities that yt-dlp does not make central: gallery-dl for heterogeneous collections, filters, metadata sidecars, and archive-backed duplicate prevention; Streamlink for reconnectable live sessions and multiple player/output transport modes; and N_m3u8DL-RE for specialized HLS/DASH/MSS track selection, partial ranges, live recording, fragment validation, and mux workflows.[R10][R11][R12][R13][R14][R15] These projects are reference architectures, not runtime dependencies.
 
@@ -482,7 +482,7 @@ The production dependency boundary is normative:
 
 - shipped Ferric Forager and watcher code are Rust;
 - FFmpeg and ffprobe are required supervised external processes;
-- Python and yt-dlp execution are research/oracle tools only;
+- Python, yt-dlp, and yt-dlp companion packages or executable assets are forbidden product, build, test, canonical-verification, package, release, and runtime dependencies; explicitly invoked non-canonical research tooling may only observe an Operator-supplied external reference;
 - Deno, Node.js, QuickJS as an external runtime, Wasmtime, BoringSSL-backed transports, SQLite native bindings, and any other runtime or native dependency require explicit Operator approval backed by current research and measured need;
 - Rust executable plugins over bounded, versioned process IPC are the accepted v1 plugin direction;
 - the archive backend remains undecided pending a pure-Rust store spike;
@@ -1692,7 +1692,7 @@ pub trait JavaScriptEngine: Send + Sync {
 }
 ```
 
-The only currently authorized production candidate is a Ferric-owned Rust executable worker containing a pure-Rust JavaScript engine candidate. The worker creates a fresh capability-free per-job context and communicates through bounded, length-prefixed, versioned IPC. Boa or another maintained pure-Rust engine may be evaluated, but standards conformance alone is not acceptance; it must pass the pinned yt-dlp EJS/challenge corpus and Ferric's termination, memory, isolation, and performance cases.
+The only currently authorized production candidate is a Ferric-owned Rust executable worker containing a pure-Rust JavaScript engine candidate and Ferric-owned player/challenge discovery and solving behavior. The worker creates a fresh capability-free per-job context and communicates through bounded, length-prefixed, versioned IPC. Boa or another maintained pure-Rust engine may be evaluated, but standards conformance alone is not acceptance; it must pass a Ferric-owned committed YouTube challenge corpus and Ferric's termination, memory, isolation, and performance cases. yt-dlp and companion EJS solver code may supply external comparison observations or provenance only; Ferric MUST NOT execute, ship, or require that code.
 
 Deno, Node.js, Bun, an external QuickJS runtime, or another external runtime is not a fallback. A failed Rust-only spike records the exact corpus failures and returns evidence-backed choices to the Operator.
 

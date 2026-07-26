@@ -8,7 +8,7 @@
     "version": "3",
     "title": "Close durable-wire strictness and architecture-proof gaps",
     "created_at_utc": "2026-07-26T15:50:10Z",
-    "updated_at_utc": "2026-07-26T16:00:00Z"
+    "updated_at_utc": "2026-07-26T16:40:19Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -39,15 +39,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
+    "closure_commit": "f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the v3 checkpoint, run the remaining canonical checks, perform independent adversarial review, and close.",
+    "next_action": "Merge the approved closure into main, mechanically verify containment, then mark the packet VALIDATED and clear active focus.",
     "supersedes": [
       "WP-FF-014-durable-wire-proof-remediation-v1",
       "WP-FF-014-durable-wire-proof-remediation-v2"
@@ -134,10 +134,11 @@
       "id": "WP-FF-014-durable-wire-proof-remediation-v3-AC-004",
       "requirement": "All listed canonical and independent checks meet their defined expectations while preserving the exact prerequisite zero-progress ceiling.",
       "proof_class": "aggregate_validation",
-      "status": "PENDING",
+      "status": "PASS",
       "evidence": [
         "Focused, workspace, Clippy, architecture, and deep checks meet expectations",
-        "PENDING: v3 prerequisite and PR checks"
+        "FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1785081249644554300-102280.json meets its prerequisite expectation",
+        "FF-GATE-PR-001 clean report build/reports/verify-pr-1785084003719873900-92052.json is bound to closure commit f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5"
       ]
     },
     {
@@ -153,25 +154,24 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-26T15:50:10Z",
+      "recorded_at_utc": "2026-07-26T16:40:19Z",
       "branch": "codex/durable-wire-proof-remediation",
       "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "head_sha": "d23e86dffa322f85d6b73459c649e44e6316e40a",
+      "head_sha": "f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5",
       "dirty_paths": [
-        ".GOV/archive/work_packets/WP-FF-014-durable-wire-proof-remediation/",
-        ".GOV/id-registry.yaml",
-        ".GOV/taskboard/taskboard.yaml",
-        ".GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/"
+        ".GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/packet.json"
       ],
       "checks_run": [
         "Focused contract and public-boundary checks met expectations.",
         "Warnings-denied Clippy and locked full workspace checks met expectations.",
         "FF-GATE-ARCH-001 report build/reports/architecture-check-1785080043944725200-81096.json met expectations.",
         "FF-GATE-DEEP-001 report build/reports/verify-deep-1785080474396690800-94140.json met expectations.",
-        "Archived v1 and v2 retain every prerequisite-gate failure and diagnostic."
+        "Archived v1 and v2 retain every prerequisite-gate failure and diagnostic.",
+        "PASS: final 53-fixture architecture report build/reports/architecture-check-1785082207435451000-103884.json.",
+        "PASS: clean FF-GATE-PR-001 report build/reports/verify-pr-1785084003719873900-92052.json bound to f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5."
       ],
       "blockers": [],
-      "next_action": "Commit v3 with the immutable prerequisite object present and unchanged."
+      "next_action": "Commit MERGE_PENDING evidence, merge to main, and verify closure containment."
     }
   },
   "validation": {
@@ -187,7 +187,8 @@
       "PASS: post-review warnings-denied workspace Clippy",
       "PASS: final 53-fixture FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json with all four storage rows attributed as counterfactual",
       "EXPECTED PRE-CORRECTION FAIL: FF-GATE-PR-001 report build/reports/verify-pr-1785082284735890500-96056.json rejected the incomplete applicable-rule inventory; all 33 canonical REQUIRED architecture rules are now cited",
-      "EXPECTED PRE-CORRECTION FAIL: aggregate report build/reports/verify-pr-1785083418494815000-99832.json rejected completion wording attached to the prerequisite gate evidence; the evidence now uses neutral wording"
+      "EXPECTED PRE-CORRECTION FAIL: aggregate report build/reports/verify-pr-1785083418494815000-99832.json rejected completion wording attached to the prerequisite gate evidence; the evidence now uses neutral wording",
+      "PASS: clean FF-GATE-PR-001 report build/reports/verify-pr-1785084003719873900-92052.json bound to f63cbae2f69b4c1d25e3295cf52ffdb22dc903f5"
     ],
     "not_proven": [
       "Ferric archive/journal execution through a distributed entrypoint",

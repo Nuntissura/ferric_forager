@@ -126,8 +126,8 @@
       "proof_class": "independent_compiled_mutation",
       "status": "PASS",
       "evidence": [
-        "FF-GATE-ARCH-001 report build/reports/architecture-check-1785080043944725200-81096.json",
-        "Three storage fixtures each report isolated-compiled-public-boundary execution and FF-ARCH-E-WIRE-BOUNDARY"
+        "FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json",
+        "Four storage fixtures each report counterfactual, isolated-compiled-public-boundary execution, and FF-ARCH-E-WIRE-BOUNDARY"
       ]
     },
     {
@@ -184,7 +184,8 @@
       "Archived prior revisions retain prerequisite declaration diagnostics",
       "PASS: FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1785081249644554300-102280.json",
       "PASS: focused durable-wire checks and exact public counterexample receipt v5",
-      "PASS: post-review warnings-denied workspace Clippy"
+      "PASS: post-review warnings-denied workspace Clippy",
+      "PASS: final 53-fixture FF-GATE-ARCH-001 report build/reports/architecture-check-1785082207435451000-103884.json with all four storage rows attributed as counterfactual"
     ],
     "not_proven": [
       "Ferric archive/journal execution through a distributed entrypoint",

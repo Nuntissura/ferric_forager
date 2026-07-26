@@ -268,20 +268,28 @@
       },
       "reuse_candidates_in_order_with_result": [
         {
-          "candidate": "Existing strict Serde DTO pattern",
-          "result": "Selected without changing valid JSON."
+          "candidate": "no mechanism beyond the accepted outcome",
+          "result": "Rejected because producer convention alone allowed the reproduced invalid wire inputs and supplied no counterfactual gate evidence."
         },
         {
-          "candidate": "Existing public testkit counterexample",
-          "result": "Selected as the independent compiled consumer."
+          "candidate": "reuse current Ferric code",
+          "result": "Selected for existing storage DTOs, public validation patterns, testkit consumer boundary, canonical fixtures, and xtask mutation harness."
         },
         {
-          "candidate": "Existing isolated mutation harness",
-          "result": "Selected for three storage-specific fixtures."
+          "candidate": "Rust core/std",
+          "result": "Selected for TryFrom, Display, Error, and explicit validation without introducing another invariant or error framework."
         },
         {
-          "candidate": "New dependency or proof framework",
-          "result": "Rejected because current mechanisms are sufficient."
+          "candidate": "approved platform capability",
+          "result": "Selected for locked Cargo compilation and isolated filesystem workspaces already governed by the architecture gate."
+        },
+        {
+          "candidate": "already-approved dependency",
+          "result": "Selected for existing Serde and serde_json derives, strict decoding, public boundary inputs, and shape-preserving round trips."
+        },
+        {
+          "candidate": "smallest complete clear implementation",
+          "result": "Selected as four strict guards with focused tests and four isolated mutations; no public newtype, dependency, or parallel proof framework is required."
         }
       ],
       "artifact_specific_justification": {

@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: Remediate durable-wire strictness and architecture-proof gaps under WP-FF-014.
-  active_wp_id: WP-FF-014-durable-wire-proof-remediation-v1
+  statement: Close durable-wire remediation under the truth-preserving WP-FF-014 v2 revision.
+  active_wp_id: WP-FF-014-durable-wire-proof-remediation-v2
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
@@ -71,4 +71,6 @@ work_packets:
   - wp_id: WP-FF-013-proof-integrity-remediation-v2
     packet: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/packet.json
   - wp_id: WP-FF-014-durable-wire-proof-remediation-v1
-    packet: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v1/packet.json
+    packet: .GOV/archive/work_packets/WP-FF-014-durable-wire-proof-remediation/WP-FF-014-durable-wire-proof-remediation-v1/packet.json
+  - wp_id: WP-FF-014-durable-wire-proof-remediation-v2
+    packet: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v2/packet.json

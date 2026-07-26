@@ -12,7 +12,7 @@
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator requested remediation of every finding from the completed product-code versus work-packet spot check, followed by commit, push, and an overview of remaining work. This v2 preserves the complete v1 scope and supersedes its deficient activation because the machine-readable prerequisite declaration was not present at v1's first committed checkpoint.",
+    "reference": "Operator requested remediation of every reported spot-check finding, followed by commit, push, and an overview of remaining work. This v2 preserves the complete v1 scope and supersedes its deficient activation because the machine-readable prerequisite declaration was not present at v1's first committed checkpoint.",
     "recorded_at_utc": "2026-07-26T15:43:24Z"
   },
   "authority": {

@@ -56,7 +56,7 @@
   "scope": {
     "summary": "Reject unrecognized nested durable-wire fields and journal sequence zero at public deserialization boundaries, then make architecture proof fail when each guard is independently removed.",
     "product_impact": "PREREQUISITE",
-    "zero_progress_declaration": "This packet remediates design-authorized Phase 0 prerequisite contracts and proof tooling only; it claims zero product, capability, runtime, packaging, release, replacement-parity, or phase progress. A future shipped archive/journal runtime consumer must consume and re-prove these invariants through FF-GATE-RUNTIME-001.",
+    "zero_progress_declaration": "This packet remediates design-authorized Phase 0 prerequisite contracts and proof tooling only; it claims zero product, capability, runtime, packaging, release, replacement-parity, or phase progress. A future Ferric archive/journal slice must consume and re-prove these invariants through FF-GATE-RUNTIME-001.",
     "in_scope": [
       "Preserve every v1 requirement, acceptance row, proof, limitation, and recorded failure",
       "Reject unknown JournalPayload variant-body fields at the Serde public boundary",
@@ -184,7 +184,7 @@
       "EXPECTED V1 FAIL: FF-RUNTIME-E-PREREQUISITE-NOT-PREDECLARED"
     ],
     "not_proven": [
-      "Any shipped Ferric product runtime capability",
+      "Ferric archive/journal execution through a distributed entrypoint",
       "Archive persistence against a real product entrypoint",
       "Packaging, release readiness, cross-platform runtime behavior, or replacement parity"
     ]
@@ -199,7 +199,7 @@
       "runtime_completion": false,
       "packaging_or_release_progress": false,
       "phase_progress": false,
-      "required_future_consumer": "the first shipped archive and journal runtime consumer",
+      "required_future_consumer": "the first shipped Ferric archive and journal slice",
       "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
     },
     "refinement": ".GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v2/refinement.json",
@@ -275,8 +275,8 @@
       ],
       "ceilings_exceptions_and_evidence": {
         "ceiling_id": "WP-FF-014-durable-wire-proof-remediation-v2-CEILING-001",
-        "current_ceiling": "This packet repairs Phase 0 durable contracts and proof prerequisites; no shipped archive/journal entrypoint exists.",
-        "replacement_trigger": "A shipped Ferric archive/journal runtime consumer persists or reconciles these contracts.",
+        "current_ceiling": "This packet repairs Phase 0 durable contracts and proof prerequisites; no Ferric archive/journal entrypoint exists.",
+        "replacement_trigger": "The first shipped Ferric archive/journal slice consumes these contracts.",
         "likely_upgrade_path": "Execute representative valid and invalid durable records through the exact staged Ferric artifact under FF-GATE-RUNTIME-001.",
         "trigger_detection_method": "Runtime-truth changed-path classification and staged-artifact scenarios fail closed when a shipped consumer appears.",
         "linked_evidence": [

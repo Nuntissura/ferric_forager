@@ -1,6 +1,6 @@
 schema_id: ff.taskboard@2
 file_id: FF-GOV-TASKBOARD-001
-updated_at: "2026-07-22"
+updated_at: "2026-07-26"
 authority: canonical_index
 project_id: FF-PROJ-001
 packet_root: .GOV/work_packets/
@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: No work packet is active; await Operator selection.
-  active_wp_id: null
+  statement: Remediate durable-wire strictness and architecture-proof gaps under WP-FF-014.
+  active_wp_id: WP-FF-014-durable-wire-proof-remediation-v1
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
@@ -70,3 +70,5 @@ work_packets:
     packet: .GOV/archive/work_packets/WP-FF-013-proof-integrity-remediation/WP-FF-013-proof-integrity-remediation-v1/packet.json
   - wp_id: WP-FF-013-proof-integrity-remediation-v2
     packet: .GOV/work_packets/WP-FF-013-proof-integrity-remediation-v2/packet.json
+  - wp_id: WP-FF-014-durable-wire-proof-remediation-v1
+    packet: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v1/packet.json

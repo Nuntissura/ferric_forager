@@ -147,7 +147,7 @@
       "status": "PASS",
       "evidence": [
         "Base-to-head adversarial diff inspection across contracts, testkit, fixtures, rule mapping, and xtask",
-        "Structured independent review in extensions.change_evidence.independent_review"
+        "Structured independent review in extensions.change_evidence.adversarial_review"
       ]
     }
   ],
@@ -330,7 +330,7 @@
           ".GOV/rules/build-rules.yaml"
         ]
       },
-      "independent_review": {
+      "adversarial_review": {
         "DIFF_ATTACK_SURFACES": [
           "Contract and serialization boundary: tagged-enum body strictness, record-level strictness, sequence origin, valid JSON shape, and public error behavior.",
           "State and resource boundary: a public-field JournalRecord can be constructed with sequence zero, so explicit validation remains necessary outside deserialization.",

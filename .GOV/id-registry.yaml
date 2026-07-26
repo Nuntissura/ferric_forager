@@ -156,11 +156,17 @@ registered_files:
   - id: WP-FF-014-durable-wire-proof-remediation-v1-CEILING-001
     path: .GOV/archive/work_packets/WP-FF-014-durable-wire-proof-remediation/WP-FF-014-durable-wire-proof-remediation-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: WP-FF-014-durable-wire-proof-remediation-v2
-    path: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v2/packet.json
+    path: .GOV/archive/work_packets/WP-FF-014-durable-wire-proof-remediation/WP-FF-014-durable-wire-proof-remediation-v2/packet.json
   - id: WP-FF-014-durable-wire-proof-remediation-v2-REFINEMENT-001
-    path: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v2/refinement.json
+    path: .GOV/archive/work_packets/WP-FF-014-durable-wire-proof-remediation/WP-FF-014-durable-wire-proof-remediation-v2/refinement.json
   - id: WP-FF-014-durable-wire-proof-remediation-v2-CEILING-001
-    path: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v2/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
+    path: .GOV/archive/work_packets/WP-FF-014-durable-wire-proof-remediation/WP-FF-014-durable-wire-proof-remediation-v2/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
+  - id: WP-FF-014-durable-wire-proof-remediation-v3
+    path: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/packet.json
+  - id: WP-FF-014-durable-wire-proof-remediation-v3-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/refinement.json
+  - id: WP-FF-014-durable-wire-proof-remediation-v3-CEILING-001
+    path: .GOV/work_packets/WP-FF-014-durable-wire-proof-remediation-v3/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001

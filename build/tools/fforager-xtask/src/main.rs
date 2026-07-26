@@ -3838,7 +3838,7 @@ fn durable_storage_fixture_execution(
         root,
         mutation,
         "FF-ARCH-E-WIRE-BOUNDARY",
-        "wire_boundary",
+        "counterfactual",
     )
 }
 

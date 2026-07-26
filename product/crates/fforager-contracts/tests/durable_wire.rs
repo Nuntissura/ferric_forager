@@ -52,6 +52,13 @@ fn durable_wire_rejects_unknown_variant_fields_and_sequence_zero() {
     );
 
     let mut record = valid_journal_record();
+    record["undeclared_top_level"] = json!(true);
+    assert!(
+        serde_json::from_value::<JournalRecord>(record).is_err(),
+        "JournalRecord unknown top-level field must fail closed"
+    );
+
+    let mut record = valid_journal_record();
     record["sequence"] = json!(0);
     assert!(
         serde_json::from_value::<JournalRecord>(record).is_err(),

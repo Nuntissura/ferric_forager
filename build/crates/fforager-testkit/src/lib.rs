@@ -654,7 +654,7 @@ mod tests {
         public_boundary_rejects_durable_storage_counterexamples();
         public_boundary_requires_every_emitted_effect_to_clear_before_durability();
         println!(
-            "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v4:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes"
+            "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v5:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-journal-record-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes"
         );
     }
 
@@ -1300,6 +1300,16 @@ mod tests {
             &read_fixture("durability-contracts-v1.0.json").expect("durability fixture must load"),
         )
         .expect("durability fixture is JSON");
+        record["journal_record"]["undeclared_top_level"] = serde_json::json!(true);
+        assert!(
+            serde_json::from_value::<JournalRecord>(record["journal_record"].clone()).is_err(),
+            "JournalRecord unknown top-level field must fail closed"
+        );
+
+        record["journal_record"]
+            .as_object_mut()
+            .expect("journal record fixture must be an object")
+            .remove("undeclared_top_level");
         record["journal_record"]["sequence"] = serde_json::json!(0);
         assert!(
             serde_json::from_value::<JournalRecord>(record["journal_record"].clone()).is_err(),

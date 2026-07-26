@@ -26,7 +26,7 @@ const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
     "tests::public_boundary_counterexamples_reject_audit_failures";
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID: &str =
     "testkit::tests::public_boundary_counterexamples_reject_audit_failures";
-const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v4:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes";
+const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v5:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-journal-record-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes";
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const CARGO_PROOF_COMMAND_TIMEOUT: Duration = Duration::from_mins(5);
 const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
@@ -3580,6 +3580,7 @@ fn validate_rule_map(
                     "wire-zero-or-unknown-field",
                     "sequence-zero-replay",
                     "durable-journal-payload-unknown-field",
+                    "durable-journal-record-unknown-field",
                     "durable-reconcile-state-unknown-field",
                     "durable-journal-sequence-zero",
                 ],
@@ -3803,6 +3804,7 @@ fn proof_integrity_fixture_execution(
             "wire_boundary",
         ),
         "durable_journal_payload_unknown_field"
+        | "durable_journal_record_unknown_field"
         | "durable_reconcile_state_unknown_field"
         | "durable_journal_sequence_zero" => durable_storage_fixture_execution(root, mutation),
         "source_graph_cycle" => public_invariant_mutation_fixture_execution(
@@ -4411,6 +4413,12 @@ fn public_invariant_mutation_fixture_execution(
                 "    rename_all = \"snake_case\"\n)]\npub enum JournalPayload",
             )
             .map(|()| "JournalPayload unknown body field must fail closed")?,
+            "durable_journal_record_unknown_field" => replace_text_in_file(
+                &sandbox.join("product/crates/fforager-contracts/src/storage.rs"),
+                "#[derive(Clone, Debug, PartialEq, Deserialize)]\n#[serde(deny_unknown_fields)]\nstruct JournalRecordWire",
+                "#[derive(Clone, Debug, PartialEq, Deserialize)]\nstruct JournalRecordWire",
+            )
+            .map(|()| "JournalRecord unknown top-level field must fail closed")?,
             "durable_reconcile_state_unknown_field" => replace_text_in_file(
                 &sandbox.join("product/crates/fforager-contracts/src/storage.rs"),
                 "#[serde(tag = \"kind\", rename_all = \"snake_case\", deny_unknown_fields)]\npub enum ReconcileState",
@@ -7282,7 +7290,7 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-013-FINDING-LIFECYCLE-EFFECTS-001" => {
             Some("core::lifecycle::tests::recovery_retries_reject_prior_generation_effect_outcomes")
         }
-        "WP-FF-013-FINDING-DIAGNOSTIC-AUTHORITY-001" => {
+        "WP-FF-013-FINDING-DIAGNOSTIC-AUTHORITY-001" | "WP-FF-014-FINDING-DURABLE-WIRE-001" => {
             Some("testkit::tests::public_boundary_counterexamples_reject_audit_failures")
         }
         "WP-FF-013-FINDING-GRAPH-CYCLES-001" => Some(
@@ -7314,6 +7322,9 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         }
         "WP-FF-013-FINDING-PRODUCT-ORACLE-BOUNDARY-001" => {
             Some("xtask::tests::native_product_boundary_and_report_contract_guards_fail_closed")
+        }
+        "WP-FF-014-FINDING-PROOF-ATTRIBUTION-001" => {
+            Some("FF-GATE-ARCH-001::durable-storage-counterfactuals")
         }
         _ => None,
     }

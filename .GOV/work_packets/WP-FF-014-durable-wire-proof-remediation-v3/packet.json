@@ -387,7 +387,7 @@
           "verdict": "PASS",
           "evidence": [
             "The manual identifies journal, commit, archive, durability, canonical fixtures, owners, and focused locked Cargo commands.",
-            "The manual directs boundary callers to validate typed data, reject unknown mandatory data, preserve typed failures, and rerun exact counterexamples.",
+            "The manual's recovery guidance directs boundary callers to validate typed data, reject unknown mandatory data, preserve typed failures, and rerun exact counterexamples.",
             "The manual distinguishes prerequisite contract evidence from later staged-artifact behavior and names FF-GATE-RUNTIME-001 for the future consumer."
           ]
         }

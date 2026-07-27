@@ -12,8 +12,8 @@ pub use corpus::{
 };
 pub use policy::{
     BlockedCapability, BodyBudget, ByteCredits, CancellationModel, CancellationStatus,
-    CandidateAdapter, Capability, CapabilityDecision, Cookie, CookieJar, DnsEvidence, HeaderValue,
-    HttpRequest, HttpUrl, IpPolicyError, PoolKey, PoolRegistry, PoolUse, ProxyEvidence,
-    PublicSuffixSet, RedirectPolicy, RedirectResult, SanitizedExchange, TransportError,
-    sanitize_exchange,
+    CandidateAdapter, Capability, CapabilityDecision, Cookie, CookieJar, DnsEvidence,
+    ExecutionGrant, HeaderValue, HttpRequest, HttpUrl, IpPolicyError, PoolKey, PoolRegistry,
+    PoolUse, ProxyEvidence, PublicSuffixSet, RedirectPolicy, RedirectResult, RetryBudget,
+    SanitizedExchange, TransportError, sanitize_exchange,
 };

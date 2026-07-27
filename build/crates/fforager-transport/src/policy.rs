@@ -104,6 +104,57 @@ impl CandidateAdapter {
             blocked,
         }
     }
+
+    /// Negotiates and executes one operation through the candidate boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed blocked-capability error before the operation closure is
+    /// invoked when any requested capability is unavailable, or propagates the
+    /// operation's transport error.
+    pub fn execute<T>(
+        &self,
+        requested: impl IntoIterator<Item = Capability>,
+        operation: impl FnOnce(&ExecutionGrant) -> Result<T, TransportError>,
+    ) -> Result<(CapabilityDecision, T), TransportError> {
+        let decision = self.negotiate(requested);
+        if !decision.execution_allowed {
+            return Err(TransportError::CapabilityBlocked(decision.blocked));
+        }
+        let grant = ExecutionGrant {
+            capabilities: decision.satisfied.clone(),
+        };
+        let output = operation(&grant)?;
+        Ok((decision, output))
+    }
+
+    pub(crate) fn without_capability(mut self, capability: Capability) -> Self {
+        self.supported.remove(&capability);
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct ExecutionGrant {
+    capabilities: BTreeSet<Capability>,
+}
+
+impl ExecutionGrant {
+    /// Requires a capability already negotiated at the candidate boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed capability error if an operation attempts to use a
+    /// capability that was not part of its request.
+    pub fn require(&self, capability: Capability) -> Result<(), TransportError> {
+        if self.capabilities.contains(&capability) {
+            Ok(())
+        } else {
+            Err(TransportError::CapabilityBlocked(vec![blocked_capability(
+                capability,
+            )]))
+        }
+    }
 }
 
 fn blocked_capability(capability: Capability) -> BlockedCapability {
@@ -472,7 +523,7 @@ impl RedirectPolicy {
         let mut stripped_headers = Vec::new();
         if cross_origin {
             headers.retain(|name, value| {
-                let keep = !value.sensitive && !value.origin_bound;
+                let keep = !value.sensitive && !value.origin_bound && !is_origin_bound_header(name);
                 if !keep {
                     stripped_headers.push(name.clone());
                 }
@@ -512,6 +563,11 @@ impl PublicSuffixSet {
     #[must_use]
     pub fn contains(&self, domain: &str) -> bool {
         self.suffixes.contains(&domain.to_ascii_lowercase())
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.suffixes.is_empty()
     }
 }
 
@@ -555,6 +611,26 @@ impl CookieJar {
     ) -> Result<(), TransportError> {
         validate_cookie_text(&cookie)?;
         cookie.domain = cookie.domain.to_ascii_lowercase();
+        if public_suffixes.is_empty() {
+            return Err(TransportError::Policy(
+                "FF-TRANSPORT-E-COOKIE-PSL-UNAVAILABLE: public suffix data is empty".to_owned(),
+            ));
+        }
+        let source_ip = source.host.parse::<IpAddr>().ok();
+        let cookie_ip = cookie.domain.parse::<IpAddr>().ok();
+        if let Some(source_ip) = source_ip {
+            if !cookie.host_only || cookie_ip != Some(source_ip) {
+                return Err(TransportError::Policy(
+                    "FF-TRANSPORT-E-COOKIE-IP-DOMAIN: IP cookies must be exact and host-only"
+                        .to_owned(),
+                ));
+            }
+        } else if cookie_ip.is_some() {
+            return Err(TransportError::Policy(
+                "FF-TRANSPORT-E-COOKIE-IP-DOMAIN: DNS hosts cannot set IP-domain cookies"
+                    .to_owned(),
+            ));
+        }
         if public_suffixes.contains(&cookie.domain) {
             return Err(TransportError::Policy(
                 "FF-TRANSPORT-E-COOKIE-PUBLIC-SUFFIX: cookie domain is a public suffix".to_owned(),
@@ -665,6 +741,7 @@ pub enum ProxyEvidence {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpPolicyError {
+    ProvenanceMismatch,
     EmptyAnswers,
     SpecialUse(IpAddr),
     SelectedNotApproved(IpAddr),
@@ -675,6 +752,7 @@ pub enum IpPolicyError {
 impl fmt::Display for IpPolicyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ProvenanceMismatch => formatter.write_str("FF-TRANSPORT-E-DNS-PROVENANCE"),
             Self::EmptyAnswers => formatter.write_str("FF-TRANSPORT-E-DNS-EMPTY"),
             Self::SpecialUse(address) => {
                 write!(formatter, "FF-TRANSPORT-E-SSRF-SPECIAL-USE: {address}")
@@ -703,9 +781,17 @@ impl fmt::Display for IpPolicyError {
 /// Returns a policy error for empty or special-use answers, an unapproved selected
 /// address, missing proxy evidence, or a proxy destination mismatch.
 pub fn validate_dns_evidence(
+    expected_host: &str,
     evidence: &DnsEvidence,
     proxy: ProxyEvidence,
 ) -> Result<(), IpPolicyError> {
+    if !expected_host.eq_ignore_ascii_case(&evidence.query_host)
+        || evidence.resolver_identity.is_empty()
+        || evidence.resolver_identity.len() > 256
+        || evidence.resolver_identity.chars().any(char::is_control)
+    {
+        return Err(IpPolicyError::ProvenanceMismatch);
+    }
     if evidence.answers.is_empty() {
         return Err(IpPolicyError::EmptyAnswers);
     }
@@ -740,10 +826,11 @@ pub fn validate_dns_evidence(
 ///
 /// Returns any DNS evidence error or a connect-time address mismatch.
 pub fn validate_connected_address(
+    expected_host: &str,
     evidence: &DnsEvidence,
     connected: IpAddr,
 ) -> Result<(), IpPolicyError> {
-    validate_dns_evidence(evidence, ProxyEvidence::Direct)?;
+    validate_dns_evidence(expected_host, evidence, ProxyEvidence::Direct)?;
     if connected != evidence.selected {
         return Err(IpPolicyError::ConnectedAddressMismatch {
             selected: evidence.selected,
@@ -787,7 +874,12 @@ fn is_allowed_public_v6(address: Ipv6Addr) -> bool {
     let segments = address.segments();
     if segments[0] & 0xfe00 == 0xfc00
         || segments[0] & 0xffc0 == 0xfe80
+        || (segments[0] == 0x0064 && segments[1] == 0xff9b)
+        || (segments[0] == 0x0100 && segments[1] == 0)
+        || (segments[0] == 0x2001 && segments[1] <= 0x01ff)
         || (segments[0] == 0x2001 && segments[1] == 0x0db8)
+        || segments[0] == 0x2002
+        || (segments[0] & 0xfff0 == 0x3ff0)
     {
         return false;
     }
@@ -842,6 +934,7 @@ impl PoolRegistry {
     /// Returns a transport error when key serialization fails or the pool bound is
     /// exceeded.
     pub fn acquire(&mut self, key: PoolKey) -> Result<PoolUse, TransportError> {
+        key.validate()?;
         let key_digest = digest_json(&key)?;
         if let Some(connection_id) = self.entries.get(&key) {
             return Ok(PoolUse {
@@ -869,6 +962,38 @@ impl PoolRegistry {
 
     pub fn discard(&mut self, key: &PoolKey) -> bool {
         self.entries.remove(key).is_some()
+    }
+}
+
+impl PoolKey {
+    fn validate(&self) -> Result<(), TransportError> {
+        for (field, value) in [
+            ("scheme", self.scheme.as_str()),
+            ("origin", self.origin.as_str()),
+            ("proxy_identity", self.proxy_identity.as_str()),
+            ("tls_identity", self.tls_identity.as_str()),
+            ("http_identity", self.http_identity.as_str()),
+            ("fingerprint_identity", self.fingerprint_identity.as_str()),
+            (
+                "client_certificate_identity",
+                self.client_certificate_identity.as_str(),
+            ),
+            ("session_partition", self.session_partition.as_str()),
+            ("credential_scope", self.credential_scope.as_str()),
+        ] {
+            if value.is_empty() || value.len() > 512 || value.chars().any(char::is_control) {
+                return Err(TransportError::Policy(format!(
+                    "FF-TRANSPORT-E-POOL-KEY: {field}"
+                )));
+            }
+        }
+        let origin = HttpUrl::parse(&self.origin)?;
+        if origin.scheme != self.scheme || origin.path_and_query != "/" {
+            return Err(TransportError::Policy(
+                "FF-TRANSPORT-E-POOL-ORIGIN".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -906,12 +1031,13 @@ impl ByteCredits {
         Ok(())
     }
 
-    /// Accepts bytes only within available credit and the body ceiling.
+    /// Proves a proposed read fits both current credit and the body ceiling
+    /// before allocation or I/O admission.
     ///
     /// # Errors
     ///
-    /// Returns a transport error for insufficient credit, overflow, or body excess.
-    pub fn accept(&mut self, bytes: u64) -> Result<(), TransportError> {
+    /// Returns the same typed credit/body bound that acceptance would return.
+    pub fn preflight(&self, bytes: u64) -> Result<(), TransportError> {
         if bytes > self.available {
             return Err(TransportError::Bound {
                 kind: "byte_credit",
@@ -934,6 +1060,17 @@ impl ByteCredits {
                 maximum: self.maximum_body_bytes,
             });
         }
+        Ok(())
+    }
+
+    /// Accepts bytes only within available credit and the body ceiling.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error for insufficient credit, overflow, or body excess.
+    pub fn accept(&mut self, bytes: u64) -> Result<(), TransportError> {
+        self.preflight(bytes)?;
+        let next = self.accepted + bytes;
         self.available -= bytes;
         self.accepted = next;
         Ok(())
@@ -942,6 +1079,40 @@ impl ByteCredits {
     #[must_use]
     pub fn accepted(&self) -> u64 {
         self.accepted
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryBudget {
+    maximum_retries: u8,
+    retries_used: u8,
+}
+
+impl RetryBudget {
+    #[must_use]
+    pub fn new(maximum_retries: u8) -> Self {
+        Self {
+            maximum_retries,
+            retries_used: 0,
+        }
+    }
+
+    /// Admits one retry within the declared retry ceiling.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed retry-limit error when the next retry would exceed the
+    /// configured maximum.
+    pub fn retry(&mut self) -> Result<u8, TransportError> {
+        if self.retries_used >= self.maximum_retries {
+            return Err(TransportError::Bound {
+                kind: "retry_attempts",
+                observed: u64::from(self.retries_used) + 1,
+                maximum: u64::from(self.maximum_retries),
+            });
+        }
+        self.retries_used += 1;
+        Ok(self.retries_used)
     }
 }
 
@@ -1103,7 +1274,7 @@ pub fn sanitize_exchange(
     let request_id = request_id.into();
     let mut sanitized_request = BTreeMap::new();
     for (name, value) in request_headers {
-        let normalized = name.to_ascii_lowercase();
+        let normalized = normalize_transcript_header_name(name)?;
         let sanitized = if value.sensitive || is_secret_header(&normalized) {
             placeholder_for_header(&normalized)
         } else {
@@ -1113,11 +1284,13 @@ pub fn sanitize_exchange(
     }
     let mut sanitized_response = BTreeMap::new();
     for (name, value) in response_headers {
-        let normalized = name.to_ascii_lowercase();
+        let normalized = normalize_transcript_header_name(name)?;
         let sanitized = if is_secret_header(&normalized) {
             placeholder_for_header(&normalized)
         } else if normalized == "date" {
             "{{TIMESTAMP}}".to_owned()
+        } else if normalized == "location" {
+            sanitize_location(value)
         } else {
             value.clone()
         };
@@ -1139,11 +1312,37 @@ pub fn sanitize_exchange(
     })
 }
 
+fn normalize_transcript_header_name(name: &str) -> Result<String, TransportError> {
+    let normalized = name.trim().to_ascii_lowercase();
+    if normalized.is_empty()
+        || normalized.len() > MAX_HEADER_NAME_BYTES
+        || !normalized
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return Err(TransportError::InvalidHeader(
+            "FF-TRANSPORT-E-TRANSCRIPT-HEADER-NAME".to_owned(),
+        ));
+    }
+    Ok(normalized)
+}
+
+fn sanitize_location(value: &str) -> String {
+    HttpUrl::parse(value).map_or_else(|_| "{{LOCATION}}".to_owned(), |url| sanitize_url(&url))
+}
+
 fn is_secret_header(name: &str) -> bool {
     matches!(
         name,
-        "authorization" | "proxy-authorization" | "cookie" | "set-cookie" | "x-api-key"
-    )
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "set-cookie"
+            | "x-api-key"
+            | "x-auth-token"
+            | "x-access-token"
+    ) || name.contains("token")
+        || name.ends_with("-key")
 }
 
 fn placeholder_for_header(name: &str) -> String {
@@ -1168,11 +1367,19 @@ fn sanitize_url(url: &HttpUrl) -> String {
             let (key, value) = part.split_once('=').unwrap_or((part, ""));
             if matches!(
                 key.to_ascii_lowercase().as_str(),
-                "token" | "sig" | "signature" | "key" | "auth" | "authorization"
+                "token"
+                    | "access_token"
+                    | "sig"
+                    | "signature"
+                    | "key"
+                    | "api_key"
+                    | "auth"
+                    | "authorization"
             ) {
                 format!("{key}={{{{QUERY_TOKEN}}}}")
             } else {
-                format!("{key}={value}")
+                let _ = value;
+                format!("{key}={{{{QUERY_VALUE}}}}")
             }
         })
         .collect::<Vec<_>>()
@@ -1181,6 +1388,13 @@ fn sanitize_url(url: &HttpUrl) -> String {
         "{}://{}:{}{}?{}",
         url.scheme, url.host, url.port, path, sanitized_query
     )
+}
+
+fn is_origin_bound_header(name: &str) -> bool {
+    matches!(
+        name,
+        "authorization" | "proxy-authorization" | "cookie" | "host" | "origin" | "referer"
+    ) || is_secret_header(name)
 }
 
 fn digest_json<T: Serialize>(value: &T) -> Result<String, TransportError> {
@@ -1325,7 +1539,7 @@ mod tests {
             resolver_identity: "fixture-resolver".to_owned(),
         };
         assert!(matches!(
-            validate_dns_evidence(&mixed, ProxyEvidence::Direct),
+            validate_dns_evidence("media.invalid", &mixed, ProxyEvidence::Direct),
             Err(IpPolicyError::SpecialUse(_))
         ));
         let public = DnsEvidence {
@@ -1333,7 +1547,11 @@ mod tests {
             ..mixed
         };
         assert!(matches!(
-            validate_connected_address(&public, "93.184.216.35".parse().expect("valid fixture IP")),
+            validate_connected_address(
+                "media.invalid",
+                &public,
+                "93.184.216.35".parse().expect("valid fixture IP")
+            ),
             Err(IpPolicyError::ConnectedAddressMismatch { .. })
         ));
     }
@@ -1386,6 +1604,81 @@ mod tests {
         assert_eq!(
             cancellation.status(),
             CancellationStatus::AcknowledgedCancelled
+        );
+    }
+
+    #[test]
+    fn ip_domain_cookie_cannot_cross_ip_origins() {
+        let suffixes = PublicSuffixSet::new(["com".to_owned()]);
+        let source = HttpUrl::parse("http://127.0.0.1/").expect("fixture URL");
+        let error = CookieJar::new(4)
+            .store(
+                &source,
+                Cookie {
+                    name: "session".to_owned(),
+                    value: "secret".to_owned(),
+                    domain: "0.0.1".to_owned(),
+                    host_only: false,
+                    path: "/".to_owned(),
+                    secure: false,
+                },
+                &suffixes,
+            )
+            .expect_err("IP Domain attribute must fail");
+        assert!(error.to_string().contains("COOKIE-IP-DOMAIN"));
+    }
+
+    #[test]
+    fn dns_provenance_and_special_ipv6_fail_closed() {
+        let mut evidence = DnsEvidence {
+            query_host: "other.example".to_owned(),
+            answers: vec!["93.184.216.34".parse().expect("fixture IP")],
+            selected: "93.184.216.34".parse().expect("fixture IP"),
+            resolver_identity: String::new(),
+        };
+        assert_eq!(
+            validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct),
+            Err(IpPolicyError::ProvenanceMismatch)
+        );
+        evidence.query_host = "media.example".to_owned();
+        evidence.resolver_identity = "fixture-resolver".to_owned();
+        evidence.answers = vec!["100::1".parse().expect("fixture IPv6")];
+        evidence.selected = evidence.answers[0];
+        assert!(matches!(
+            validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct),
+            Err(IpPolicyError::SpecialUse(_))
+        ));
+    }
+
+    #[test]
+    fn sanitizer_redacts_aliases_arbitrary_queries_and_locations() {
+        let canary = "secret-canary";
+        let url = HttpUrl::parse(&format!(
+            "https://media.example/file?access_token={canary}&quality={canary}"
+        ))
+        .expect("fixture URL");
+        let request = BTreeMap::from([(
+            "x-auth-token".to_owned(),
+            HeaderValue::new(canary, false, false).expect("fixture header"),
+        )]);
+        let response = BTreeMap::from([(
+            "location".to_owned(),
+            format!("https://cdn.example/file?signature={canary}"),
+        )]);
+        let exchange = sanitize_exchange(
+            "request_sanitize",
+            "GET",
+            &url,
+            &request,
+            302,
+            &response,
+            b"",
+        )
+        .expect("sanitize");
+        assert!(
+            !serde_json::to_string(&exchange)
+                .expect("JSON")
+                .contains(canary)
         );
     }
 }

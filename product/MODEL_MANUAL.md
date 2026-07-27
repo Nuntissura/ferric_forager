@@ -290,9 +290,11 @@ Run the exact corpus from the repository root:
 cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- transport-corpus
 ```
 
-The command reads `build/fixtures/transport-v1/manifest.json`, executes `build/crates/fforager-transport`, and atomically writes `build/reports/wp-ff-007-transport-report.json`. The manifest is strict and bounded, every case is mandatory, case IDs are unique and stable, and every result records the concrete input, executed boundary, negotiated capability set, identities when available, exact expected and observed outcomes, skipped semantic dependencies, and proof class. A counterfactual changes an observed outcome and must be rejected by the same aggregate oracle.
+The command reads `build/fixtures/transport-v1/manifest.json`, executes `build/crates/fforager-transport`, and atomically writes a unique report under `build/reports/`. The manifest is strict, bounded, and pinned by its canonical declaration SHA-256; removing, adding, retyping, or changing a case fails before execution. Every case is mandatory. Every result records the concrete input, executed boundary, negotiated capability partition, explicit executed/not-executed connection/wire/pool/address/proxy/ALPN/protocol identities, limits, timing phases, normalized transcript, exact expected and observed outcomes, skipped semantic dependencies, and proof class. The report also binds the candidate-source digest and a timing-independent semantic projection digest. Behavior-deficient and forged-capability counterfactuals must both be rejected by the same aggregate oracle.
 
-The current authorized candidate is `ferric-std-first-transport-spike-v1`. It provides real bounded loopback HTTP/1.1, range, and streaming evidence plus deterministic policy evidence for redirects, cookies, DNS/SSRF, pooling, transcripts, resource bounds, retries, and cancellation. The loopback server is reachable only through a private harness target; public SSRF policy still rejects loopback and other special-use addresses.
+The current authorized candidate is `ferric-std-first-transport-spike-v1`. It provides real bounded loopback HTTP/1.1, exact range/body/header evidence, fragmented streaming, admission-before-allocation, in-flight socket cancellation and worker reaping, plus deterministic policy evidence for redirects, cookies, DNS/SSRF, pooling, transcripts, resource bounds, retries, and pool discard. The loopback server is reachable only through a private harness target; public SSRF policy still rejects loopback and other special-use addresses.
+
+The v1 corpus has no opt-in live internet cases. Live proxy, TLS, HTTP/2, or target-site probes are deliberately unavailable and cannot be substituted for the deterministic corpus. Adding a live partition requires a later authorized manifest/version change with separate non-canonical output and secret handling.
 
 Read the aggregate result literally:
 
@@ -307,6 +309,7 @@ Safety and recovery:
 - Do not connect the local harness grant to a caller-supplied URL or weaken SSRF policy to reach fixtures.
 - Do not share a pool entry across origin, proxy, TLS, HTTP, fingerprint, client-certificate, session, or credential-scope key differences.
 - Do not persist raw authorization, proxy authorization, cookies, API keys, or secret query values. The report rejects its secret canary.
+- The corpus runner executes the exact committed unknown-field and duplicate-ID negative fixtures on every canonical run. A decorative or skipped negative fixture is a gate failure.
 - If a case differs, inspect its `exact_mismatch`, concrete input, and executed boundary; repair the implementation or declared corpus deliberately and rerun the same command.
 - If the aggregate verdict is failed, retain the blocked-capability list and residual uncertainties for Operator selection. Do not auto-promote or add a forbidden fallback.
 - The canonical `verify-deep` and `verify-pr` gates execute this corpus and therefore refresh the same report.

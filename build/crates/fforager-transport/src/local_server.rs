@@ -1,28 +1,42 @@
 use crate::{ByteCredits, TransportError};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::mpsc::{self, Receiver};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_REQUEST_BYTES: usize = 16 * 1024;
 const MAX_RESPONSE_METADATA_BYTES: usize = 16 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+static HARNESS_NONCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug)]
 pub struct LocalProtocolServer {
     target: LocalHarnessTarget,
     request_rx: Receiver<CapturedRequest>,
-    worker: JoinHandle<Result<(), String>>,
+    stop_tx: Sender<()>,
+    worker: Option<JoinHandle<Result<(), String>>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LocalHarnessTarget {
     address: SocketAddr,
     authorization: String,
+}
+
+impl std::fmt::Debug for LocalHarnessTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LocalHarnessTarget")
+            .field("address", &self.address)
+            .field("authorization", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +53,15 @@ pub struct LocalResponse {
     pub body: Vec<u8>,
     pub connection_identity: String,
     pub wire_identity: String,
+    pub response_sha256: String,
+    pub body_read_operations: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancellationProbe {
+    pub partial_body_bytes: u64,
+    pub socket_shutdown: bool,
+    pub worker_reaped: bool,
 }
 
 impl LocalProtocolServer {
@@ -53,30 +76,62 @@ impl LocalProtocolServer {
         let address = listener
             .local_addr()
             .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-HARNESS-ADDR: {error}")))?;
-        let authorization = format!("ff-local-harness-{}", address.port());
+        listener
+            .set_nonblocking(true)
+            .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-HARNESS-MODE: {error}")))?;
+        let authorization = harness_nonce(address);
         let expected_authorization = authorization.clone();
         let (request_tx, request_rx) = mpsc::sync_channel(1);
+        let (stop_tx, stop_rx) = mpsc::channel();
         let worker = thread::spawn(move || {
-            let (mut stream, _) = listener
-                .accept()
-                .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-ACCEPT: {error}"))?;
-            stream
-                .set_read_timeout(Some(IO_TIMEOUT))
-                .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-TIMEOUT: {error}"))?;
-            stream
-                .set_write_timeout(Some(IO_TIMEOUT))
-                .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-TIMEOUT: {error}"))?;
-            let request = read_request(&mut stream)?;
-            if request.headers.get("x-ff-harness-authorization") != Some(&expected_authorization) {
-                return Err("FF-TRANSPORT-E-HARNESS-AUTHORIZATION".to_owned());
-            }
+            let deadline = Instant::now() + IO_TIMEOUT;
+            let (mut stream, request) = loop {
+                match stop_rx.try_recv() {
+                    Ok(()) | Err(TryRecvError::Disconnected) => {
+                        return Ok(());
+                    }
+                    Err(TryRecvError::Empty) => {}
+                }
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(IO_TIMEOUT))
+                            .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-TIMEOUT: {error}"))?;
+                        stream
+                            .set_write_timeout(Some(IO_TIMEOUT))
+                            .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-TIMEOUT: {error}"))?;
+                        let request = read_request(&mut stream)?;
+                        if request.headers.get("x-ff-harness-authorization")
+                            == Some(&expected_authorization)
+                        {
+                            break (stream, request);
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            return Err("FF-TRANSPORT-E-HARNESS-ACCEPT-TIMEOUT".to_owned());
+                        }
+                        thread::sleep(Duration::from_millis(2));
+                    }
+                    Err(error) => {
+                        return Err(format!("FF-TRANSPORT-E-HARNESS-ACCEPT: {error}"));
+                    }
+                }
+            };
             let response = response_for(&request)?;
             request_tx
                 .send(request)
                 .map_err(|_| "FF-TRANSPORT-E-HARNESS-RECEIPT".to_owned())?;
             stream
-                .write_all(&response)
-                .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-WRITE: {error}"))
+                .write_all(&response.head)
+                .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-WRITE: {error}"))?;
+            for chunk in response.body_chunks {
+                stream
+                    .write_all(&chunk)
+                    .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-WRITE: {error}"))?;
+                thread::yield_now();
+            }
+            Ok(())
         });
         Ok(Self {
             target: LocalHarnessTarget {
@@ -84,7 +139,8 @@ impl LocalProtocolServer {
                 authorization,
             },
             request_rx,
-            worker,
+            stop_tx,
+            worker: Some(worker),
         })
     }
 
@@ -99,15 +155,26 @@ impl LocalProtocolServer {
     ///
     /// Returns a transport error for a missing receipt, worker panic, timeout, or
     /// protocol failure.
-    pub fn finish(self) -> Result<CapturedRequest, TransportError> {
+    pub fn finish(mut self) -> Result<CapturedRequest, TransportError> {
         let request = self.request_rx.recv_timeout(IO_TIMEOUT).map_err(|error| {
             TransportError::Protocol(format!("FF-TRANSPORT-E-HARNESS-RECEIPT: {error}"))
         })?;
         self.worker
+            .take()
+            .ok_or_else(|| TransportError::Protocol("FF-TRANSPORT-E-HARNESS-JOIN".to_owned()))?
             .join()
             .map_err(|_| TransportError::Protocol("FF-TRANSPORT-E-HARNESS-PANIC".to_owned()))?
             .map_err(TransportError::Protocol)?;
         Ok(request)
+    }
+}
+
+impl Drop for LocalProtocolServer {
+    fn drop(&mut self) {
+        let _ = self.stop_tx.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -126,6 +193,9 @@ pub fn execute_local(
     if !path_and_query.starts_with('/')
         || path_and_query.len() > 4 * 1024
         || path_and_query.chars().any(char::is_control)
+        || path_and_query
+            .bytes()
+            .any(|byte| byte == b' ' || byte == b'\\')
     {
         return Err(TransportError::Protocol(
             "FF-TRANSPORT-E-HARNESS-PATH".to_owned(),
@@ -160,6 +230,88 @@ pub fn execute_local(
     read_response(&mut stream, credits, target.address)
 }
 
+/// Cancels a genuinely in-flight partial HTTP response and reaps its worker.
+///
+/// # Errors
+///
+/// Returns a transport error for listener, socket, synchronization, protocol,
+/// shutdown, or worker-join failure.
+pub fn run_cancellation_probe() -> Result<CancellationProbe, TransportError> {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-BIND: {error}")))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-ADDR: {error}")))?;
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || -> Result<bool, String> {
+        let (mut stream, _) = listener
+            .accept()
+            .map_err(|error| format!("FF-TRANSPORT-E-CANCEL-ACCEPT: {error}"))?;
+        stream
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(|error| format!("FF-TRANSPORT-E-CANCEL-TIMEOUT: {error}"))?;
+        read_request(&mut stream)?;
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\npartial",
+            )
+            .map_err(|error| format!("FF-TRANSPORT-E-CANCEL-WRITE: {error}"))?;
+        ready_tx
+            .send(())
+            .map_err(|_| "FF-TRANSPORT-E-CANCEL-READY".to_owned())?;
+        let mut byte = [0_u8; 1];
+        match stream.read(&mut byte) {
+            Ok(0) => Ok(true),
+            Ok(_) => Ok(false),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::ConnectionAborted
+                        | std::io::ErrorKind::BrokenPipe
+                ) =>
+            {
+                Ok(true)
+            }
+            Err(error) => Err(format!("FF-TRANSPORT-E-CANCEL-READ: {error}")),
+        }
+    });
+    let mut client = TcpStream::connect_timeout(&address, IO_TIMEOUT)
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-CONNECT: {error}")))?;
+    client
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-TIMEOUT: {error}")))?;
+    client
+        .write_all(b"GET /stall HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-WRITE: {error}")))?;
+    ready_rx.recv_timeout(IO_TIMEOUT).map_err(|error| {
+        TransportError::Cancellation(format!("FF-TRANSPORT-E-CANCEL-READY: {error}"))
+    })?;
+    let metadata = read_until_header_end(&mut client, MAX_RESPONSE_METADATA_BYTES)
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-HEADER: {error}")))?;
+    if !metadata.starts_with(b"HTTP/1.1 200 ") {
+        return Err(TransportError::Protocol(
+            "FF-TRANSPORT-E-CANCEL-STATUS".to_owned(),
+        ));
+    }
+    let mut partial = [0_u8; 7];
+    client
+        .read_exact(&mut partial)
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-PARTIAL: {error}")))?;
+    client
+        .shutdown(Shutdown::Both)
+        .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-CANCEL-SHUTDOWN: {error}")))?;
+    let socket_shutdown = worker
+        .join()
+        .map_err(|_| TransportError::Cancellation("FF-TRANSPORT-E-CANCEL-PANIC".to_owned()))?
+        .map_err(TransportError::Cancellation)?;
+    Ok(CancellationProbe {
+        partial_body_bytes: 7,
+        socket_shutdown,
+        worker_reaped: true,
+    })
+}
+
 fn read_request(stream: &mut TcpStream) -> Result<CapturedRequest, String> {
     let bytes = read_until_header_end(stream, MAX_REQUEST_BYTES)
         .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-READ: {error}"))?;
@@ -190,14 +342,19 @@ fn read_request(stream: &mut TcpStream) -> Result<CapturedRequest, String> {
     })
 }
 
-fn response_for(request: &CapturedRequest) -> Result<Vec<u8>, String> {
+struct ResponsePlan {
+    head: Vec<u8>,
+    body_chunks: Vec<Vec<u8>>,
+}
+
+fn response_for(request: &CapturedRequest) -> Result<ResponsePlan, String> {
     let path = request
         .request_line
         .split_whitespace()
         .nth(1)
         .ok_or_else(|| "FF-TRANSPORT-E-HARNESS-TARGET".to_owned())?;
-    let (status, reason, headers, body) = match path.split('?').next().unwrap_or(path) {
-        "/ok" => (200, "OK", Vec::new(), b"ferric-transport".to_vec()),
+    let (status, reason, headers, body_chunks) = match path.split('?').next().unwrap_or(path) {
+        "/ok" => (200, "OK", Vec::new(), vec![b"ferric-transport".to_vec()]),
         "/range" => {
             if request.headers.get("range").map(String::as_str) != Some("bytes=2-5") {
                 return Err("FF-TRANSPORT-E-HARNESS-RANGE-EXPECTATION".to_owned());
@@ -206,29 +363,57 @@ fn response_for(request: &CapturedRequest) -> Result<Vec<u8>, String> {
                 206,
                 "Partial Content",
                 vec![("Content-Range", "bytes 2-5/10")],
-                b"2345".to_vec(),
+                vec![b"2345".to_vec()],
             )
         }
-        "/stream" => (200, "OK", Vec::new(), b"stream-one-stream-two".to_vec()),
-        _ => (404, "Not Found", Vec::new(), b"not-found".to_vec()),
+        "/range-invalid" => (
+            416,
+            "Range Not Satisfiable",
+            vec![("Content-Range", "bytes */10")],
+            Vec::new(),
+        ),
+        "/stream" => (
+            200,
+            "OK",
+            Vec::new(),
+            vec![
+                b"stream-".to_vec(),
+                b"one-".to_vec(),
+                b"stream-".to_vec(),
+                b"two".to_vec(),
+            ],
+        ),
+        "/huge-length" => (
+            200,
+            "OK",
+            vec![("X-FF-Override-Length", "18446744073709551615")],
+            Vec::new(),
+        ),
+        _ => (404, "Not Found", Vec::new(), vec![b"not-found".to_vec()]),
     };
-    let mut response = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.len()
+    let body_len = body_chunks.iter().map(Vec::len).sum::<usize>();
+    let override_length = headers
+        .iter()
+        .find(|(name, _)| *name == "X-FF-Override-Length")
+        .map(|(_, value)| *value);
+    let content_length_text = override_length.map_or_else(|| body_len.to_string(), str::to_owned);
+    let mut head = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length_text}\r\nConnection: close\r\n"
     )
     .into_bytes();
     for (name, value) in headers {
-        response.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
+        if name != "X-FF-Override-Length" {
+            head.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
+        }
     }
-    response.extend_from_slice(b"\r\n");
-    response.extend_from_slice(&body);
-    Ok(response)
+    head.extend_from_slice(b"\r\n");
+    Ok(ResponsePlan { head, body_chunks })
 }
 
 fn read_response(
     stream: &mut TcpStream,
     credits: &mut ByteCredits,
-    address: SocketAddr,
+    _address: SocketAddr,
 ) -> Result<LocalResponse, TransportError> {
     let metadata = read_until_header_end(stream, MAX_RESPONSE_METADATA_BYTES)
         .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-RESPONSE-READ: {error}")))?;
@@ -239,6 +424,11 @@ fn read_response(
     let status_line = lines
         .next()
         .ok_or_else(|| TransportError::Protocol("FF-TRANSPORT-E-STATUS-LINE".to_owned()))?;
+    if !status_line.starts_with("HTTP/1.1 ") {
+        return Err(TransportError::Protocol(
+            "FF-TRANSPORT-E-HTTP-VERSION".to_owned(),
+        ));
+    }
     let status = status_line
         .split_whitespace()
         .nth(1)
@@ -250,7 +440,14 @@ fn read_response(
         let (name, value) = line
             .split_once(':')
             .ok_or_else(|| TransportError::Protocol("FF-TRANSPORT-E-RESPONSE-HEADER".to_owned()))?;
-        headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
+        if headers
+            .insert(name.trim().to_ascii_lowercase(), value.trim().to_owned())
+            .is_some()
+        {
+            return Err(TransportError::Protocol(
+                "FF-TRANSPORT-E-DUPLICATE-RESPONSE-HEADER".to_owned(),
+            ));
+        }
     }
     let content_length = headers
         .get("content-length")
@@ -259,11 +456,17 @@ fn read_response(
         .map_err(|error| {
             TransportError::Protocol(format!("FF-TRANSPORT-E-CONTENT-LENGTH: {error}"))
         })?;
-    let mut body = vec![0_u8; content_length];
-    let mut offset = 0;
-    while offset < content_length {
+    let content_length_u64 = u64::try_from(content_length)
+        .map_err(|error| TransportError::Protocol(format!("FF-TRANSPORT-E-SIZE: {error}")))?;
+    credits.preflight(content_length_u64)?;
+    let mut body = Vec::with_capacity(content_length.min(64 * 1024));
+    let mut read_operations = 0_u64;
+    while body.len() < content_length {
+        let remaining = content_length - body.len();
+        let mut chunk = [0_u8; 8];
+        let read_limit = remaining.min(chunk.len());
         let read = stream
-            .read(&mut body[offset..])
+            .read(&mut chunk[..read_limit])
             .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-BODY-READ: {error}")))?;
         if read == 0 {
             return Err(TransportError::Protocol(
@@ -273,15 +476,39 @@ fn read_response(
         let accepted = u64::try_from(read)
             .map_err(|error| TransportError::Protocol(format!("FF-TRANSPORT-E-SIZE: {error}")))?;
         credits.accept(accepted)?;
-        offset += read;
+        body.extend_from_slice(&chunk[..read]);
+        read_operations = read_operations.saturating_add(1);
     }
+    let mut response_bytes = metadata;
+    response_bytes.extend_from_slice(&body);
     Ok(LocalResponse {
         status,
         headers,
         body,
-        connection_identity: format!("tcp://{address}"),
+        connection_identity: "tcp-loopback-harness-v1".to_owned(),
         wire_identity: "http/1.1-std-tcp-v1".to_owned(),
+        response_sha256: encode_hex(&Sha256::digest(response_bytes)),
+        body_read_operations: read_operations,
     })
+}
+
+fn harness_nonce(address: SocketAddr) -> String {
+    let sequence = HARNESS_NONCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let material = format!("{}:{address}:{sequence}:{timestamp}", std::process::id());
+    encode_hex(&Sha256::digest(material.as_bytes()))
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 fn read_until_header_end(stream: &mut TcpStream, maximum: usize) -> std::io::Result<Vec<u8>> {
@@ -306,6 +533,7 @@ fn read_until_header_end(stream: &mut TcpStream, maximum: usize) -> std::io::Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn real_http_range_evidence_crosses_loopback_socket() {
@@ -322,5 +550,35 @@ mod tests {
             request.headers.get("range").map(String::as_str),
             Some("bytes=2-5")
         );
+    }
+
+    #[test]
+    fn declared_huge_body_is_rejected_before_allocation() {
+        let server = LocalProtocolServer::spawn().expect("local server");
+        let mut credits = ByteCredits::new(1024);
+        credits.grant(1024).expect("credits");
+        let error = execute_local(&server.target(), "/huge-length", None, &mut credits)
+            .expect_err("huge declaration must fail");
+        server.finish().expect("server reaped");
+        assert!(matches!(
+            error,
+            TransportError::Bound {
+                kind: "byte_credit",
+                ..
+            }
+        ));
+        assert_eq!(credits.accepted(), 0);
+    }
+
+    #[test]
+    fn preconnect_rejection_reaps_server_worker() {
+        let started = Instant::now();
+        let server = LocalProtocolServer::spawn().expect("local server");
+        let mut credits = ByteCredits::new(1);
+        let error = execute_local(&server.target(), "/invalid path", None, &mut credits)
+            .expect_err("invalid path");
+        assert!(matches!(error, TransportError::Protocol(_)));
+        drop(server);
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 }

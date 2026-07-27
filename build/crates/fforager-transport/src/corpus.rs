@@ -1,11 +1,16 @@
-use crate::local_server::{LocalProtocolServer, execute_local};
+use crate::local_server::{LocalProtocolServer, execute_local, run_cancellation_probe};
 use crate::policy::{
     BodyBudget, ByteCredits, CancellationModel, CandidateAdapter, Capability, Cookie, CookieJar,
     DnsEvidence, HeaderValue, HttpRequest, HttpUrl, PoolKey, PoolRegistry, ProxyEvidence,
-    PublicSuffixSet, RedirectPolicy, TransportError, sanitize_exchange, validate_connected_address,
-    validate_dns_evidence,
+    PublicSuffixSet, RedirectPolicy, RetryBudget, TransportError, sanitize_exchange,
+    validate_connected_address, validate_dns_evidence,
+};
+use fforager_contracts::{
+    CancellationAcknowledgement, CancellationOutcome, CancellationRequest, EnvelopeHeader,
+    ProducerId, ProtocolLimits, RequestId, SchemaVersion, validate_cancellation_correlation,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::time::Instant;
@@ -16,8 +21,10 @@ const CORPUS_ID: &str = "WP-FF-007-transport-corpus-v1";
 const NORMALIZATION_VERSION: &str = "WP-FF-004-sanitized-transcript-v1";
 const MAX_CASES: usize = 128;
 const SECRET_CANARY: &str = "ff-secret-canary-never-record";
+const CANONICAL_MANIFEST_DECLARATION_SHA256: &str =
+    "78e7b3326a0a00942979b8add1975893b213c1d1769dc1ff806defdd5aa6d7c2";
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CorpusManifest {
     pub schema_id: String,
@@ -28,7 +35,7 @@ pub struct CorpusManifest {
     pub cases: Vec<CorpusCase>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CorpusCase {
     pub id: String,
@@ -39,7 +46,7 @@ pub struct CorpusCase {
     pub expected_outcome: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CaseKind {
     StandardCapability,
@@ -50,6 +57,7 @@ pub enum CaseKind {
     CompressionBlocked,
     Http11Local,
     RangeLocal,
+    RangeInvalid,
     StreamingLocal,
     RedirectCrossOrigin,
     RedirectDowngrade,
@@ -57,23 +65,91 @@ pub enum CaseKind {
     CookieScope,
     CookiePublicSuffix,
     CookieSyntax,
+    CookieCountBoundary,
+    DnsPositive,
     SsrfMixedAnswers,
     DnsSelection,
     DnsRebind,
     ProxyEvidence,
+    ProxyEvidencePositive,
     PoolReuse,
     PoolSessionPartition,
     PoolFingerprintPartition,
     PoolBound,
+    PoolAllDimensions,
+    BoundsExact,
     MetadataBound,
     BodyBound,
     DecompressionBound,
     ByteCredit,
     RetryBound,
+    RetryAllowed,
     CancellationCorrelation,
     CancellationPool,
     SanitizedReplay,
     UrlBounds,
+}
+
+impl CaseKind {
+    fn family(self) -> &'static str {
+        match self {
+            Self::TlsFingerprintBlocked => "tls_fingerprint",
+            Self::Http2FingerprintBlocked => "http2_fingerprint",
+            Self::Http2Blocked => "http2",
+            Self::ProxyBlocked | Self::ProxyEvidence | Self::ProxyEvidencePositive => "proxy",
+            Self::CompressionBlocked | Self::DecompressionBound => "compression",
+            Self::Http11Local => "http11",
+            Self::RangeLocal | Self::RangeInvalid => "range",
+            Self::StreamingLocal | Self::ByteCredit => "streaming",
+            Self::RedirectCrossOrigin | Self::RedirectDowngrade | Self::RedirectLimit => "redirect",
+            Self::CookieScope
+            | Self::CookiePublicSuffix
+            | Self::CookieSyntax
+            | Self::CookieCountBoundary => "cookie",
+            Self::DnsPositive | Self::SsrfMixedAnswers | Self::DnsSelection | Self::DnsRebind => {
+                "dns_ssrf"
+            }
+            Self::PoolReuse
+            | Self::PoolSessionPartition
+            | Self::PoolFingerprintPartition
+            | Self::PoolBound
+            | Self::PoolAllDimensions => "pool",
+            Self::BoundsExact | Self::MetadataBound | Self::BodyBound => "bounds",
+            Self::RetryBound | Self::RetryAllowed => "retry",
+            Self::CancellationCorrelation | Self::CancellationPool => "cancellation",
+            Self::SanitizedReplay => "replay",
+            Self::UrlBounds => "url",
+            Self::StandardCapability => "capability_contract",
+        }
+    }
+
+    fn scenario_class(self) -> &'static str {
+        match self {
+            Self::StandardCapability
+            | Self::Http11Local
+            | Self::RangeLocal
+            | Self::StreamingLocal
+            | Self::RedirectCrossOrigin
+            | Self::CookieScope
+            | Self::DnsPositive
+            | Self::ProxyEvidencePositive
+            | Self::PoolReuse
+            | Self::PoolAllDimensions
+            | Self::CancellationPool
+            | Self::SanitizedReplay => "positive",
+            Self::RedirectLimit
+            | Self::CookieCountBoundary
+            | Self::PoolBound
+            | Self::BoundsExact
+            | Self::RetryAllowed => "boundary",
+            Self::TlsFingerprintBlocked
+            | Self::Http2FingerprintBlocked
+            | Self::Http2Blocked
+            | Self::ProxyBlocked
+            | Self::CompressionBlocked => "blocked",
+            _ => "negative",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -86,7 +162,7 @@ pub enum ProofClass {
     Structural,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AggregateVerdict {
     PassPureRustPath,
@@ -103,13 +179,16 @@ impl AggregateVerdict {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CorpusReport {
     pub schema_id: String,
     pub corpus_id: String,
     pub normalization_version: String,
     pub candidate_identity: String,
+    pub manifest_declaration_sha256: String,
+    pub candidate_implementation_sha256: String,
+    pub semantic_projection_sha256: String,
     pub zero_product_progress: bool,
     pub cases: Vec<CaseReport>,
     pub summary: CorpusSummary,
@@ -118,21 +197,29 @@ pub struct CorpusReport {
     pub verdict: AggregateVerdict,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaseReport {
     pub id: String,
     pub mandatory: bool,
     pub proof_class: ProofClass,
+    pub family: String,
+    pub scenario_class: String,
     pub concrete_input: String,
     pub executed_boundary: String,
     pub requested_capabilities: BTreeSet<Capability>,
     pub satisfied_capabilities: BTreeSet<Capability>,
     pub blocked_capabilities: Vec<BlockedCapabilityReport>,
-    pub connection_identity: Option<String>,
-    pub wire_identity: Option<String>,
-    pub pool_identity: Option<String>,
-    pub transcript: Option<serde_json::Value>,
+    pub connection_identity: String,
+    pub wire_identity: String,
+    pub pool_identity: String,
+    pub selected_address: String,
+    pub proxy_identity: String,
+    pub alpn_identity: String,
+    pub protocol_identity: String,
+    pub limits: BTreeMap<String, u64>,
+    pub timing_phases_micros: BTreeMap<String, u128>,
+    pub transcript: serde_json::Value,
     pub expected_outcome: String,
     pub observed_outcome: String,
     pub status: CaseStatus,
@@ -141,7 +228,7 @@ pub struct CaseReport {
     pub duration_micros: u128,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BlockedCapabilityReport {
     pub capability: Capability,
@@ -149,14 +236,14 @@ pub struct BlockedCapabilityReport {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CaseStatus {
     Pass,
     Fail,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CorpusSummary {
     pub total: usize,
@@ -168,7 +255,7 @@ pub struct CorpusSummary {
     pub blocked_capability_codes: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CounterfactualProof {
     pub mutation: String,
@@ -202,11 +289,15 @@ pub fn run_corpus(manifest: &CorpusManifest) -> Result<CorpusReport, String> {
     if !counterfactual.rejected_by_same_oracle {
         return Err("FF-TRANSPORT-E-COUNTERFACTUAL: mutation was accepted".to_owned());
     }
+    let semantic_projection_sha256 = semantic_projection_sha256(&cases)?;
     let report = CorpusReport {
         schema_id: REPORT_SCHEMA_ID.to_owned(),
         corpus_id: manifest.corpus_id.clone(),
         normalization_version: manifest.normalization_version.clone(),
         candidate_identity: manifest.candidate_identity.clone(),
+        manifest_declaration_sha256: manifest_declaration_sha256(manifest)?,
+        candidate_implementation_sha256: candidate_implementation_sha256(),
+        semantic_projection_sha256,
         zero_product_progress: true,
         cases,
         summary,
@@ -233,6 +324,7 @@ pub fn run_corpus(manifest: &CorpusManifest) -> Result<CorpusReport, String> {
 ///
 /// Returns a stable diagnostic for missing, duplicate, undeclared, drifted, or
 /// behavior-mismatched case evidence.
+#[allow(clippy::too_many_lines)]
 pub fn validate_aggregate_evidence(
     manifest: &CorpusManifest,
     cases: &[CaseReport],
@@ -254,6 +346,7 @@ pub fn validate_aggregate_evidence(
     let mut mandatory_total = 0;
     let mut mandatory_passed = 0;
     let mut blocked_codes = BTreeSet::new();
+    let candidate = CandidateAdapter::std_first();
     for report in cases {
         if !observed_ids.insert(report.id.as_str()) {
             return Err(format!("FF-TRANSPORT-E-DUPLICATE-REPORT-ID: {}", report.id));
@@ -267,6 +360,71 @@ pub fn validate_aggregate_evidence(
             || report.expected_outcome != expected.expected_outcome
         {
             return Err(format!("FF-TRANSPORT-E-DECLARATION-DRIFT: {}", report.id));
+        }
+        let decision = candidate.negotiate(expected.requested_capabilities.iter().copied());
+        let expected_blocked = decision
+            .blocked
+            .iter()
+            .map(|blocked| BlockedCapabilityReport {
+                capability: blocked.capability,
+                code: blocked.code.clone(),
+                reason: blocked.reason.clone(),
+            })
+            .collect::<Vec<_>>();
+        if report.satisfied_capabilities != decision.satisfied
+            || report.blocked_capabilities != expected_blocked
+            || !report.satisfied_capabilities.is_disjoint(
+                &report
+                    .blocked_capabilities
+                    .iter()
+                    .map(|item| item.capability)
+                    .collect(),
+            )
+        {
+            return Err(format!("FF-TRANSPORT-E-CAPABILITY-EVIDENCE: {}", report.id));
+        }
+        let represented = report
+            .satisfied_capabilities
+            .iter()
+            .copied()
+            .chain(
+                report
+                    .blocked_capabilities
+                    .iter()
+                    .map(|blocked| blocked.capability),
+            )
+            .collect::<BTreeSet<_>>();
+        if represented != report.requested_capabilities {
+            return Err(format!(
+                "FF-TRANSPORT-E-CAPABILITY-PARTITION: {}",
+                report.id
+            ));
+        }
+        if report.family != expected.kind.family()
+            || report.scenario_class != expected.kind.scenario_class()
+            || report.connection_identity.is_empty()
+            || report.wire_identity.is_empty()
+            || report.pool_identity.is_empty()
+            || report.selected_address.is_empty()
+            || report.proxy_identity.is_empty()
+            || report.alpn_identity.is_empty()
+            || report.protocol_identity.is_empty()
+            || !report.transcript.is_object()
+            || !report.timing_phases_micros.contains_key("total")
+        {
+            return Err(format!("FF-TRANSPORT-E-EVIDENCE-SHAPE: {}", report.id));
+        }
+        if decision.execution_allowed {
+            if report.executed_boundary == "typed-capability-negotiation"
+                || report.connection_identity == "not_executed:capability_blocked"
+            {
+                return Err(format!("FF-TRANSPORT-E-EXECUTION-EVIDENCE: {}", report.id));
+            }
+        } else if report.executed_boundary != "typed-capability-negotiation"
+            || report.connection_identity != "not_executed:capability_blocked"
+            || report.wire_identity != "not_executed:capability_blocked"
+        {
+            return Err(format!("FF-TRANSPORT-E-BLOCKED-EXECUTION: {}", report.id));
         }
         if report.observed_outcome != expected.expected_outcome
             || report.status != CaseStatus::Pass
@@ -338,6 +496,15 @@ fn validate_manifest(manifest: &CorpusManifest) -> Result<(), String> {
             return Err(format!("FF-TRANSPORT-E-CASE-DECLARATION: {}", case.id));
         }
     }
+    let digest = manifest_declaration_sha256(manifest)?;
+    if CANONICAL_MANIFEST_DECLARATION_SHA256 != "PENDING"
+        && digest != CANONICAL_MANIFEST_DECLARATION_SHA256
+    {
+        return Err(format!(
+            "FF-TRANSPORT-E-CANONICAL-CORPUS: expected {CANONICAL_MANIFEST_DECLARATION_SHA256}, observed {digest}"
+        ));
+    }
+    validate_coverage(manifest)?;
     Ok(())
 }
 
@@ -349,6 +516,103 @@ fn valid_case_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
+fn validate_coverage(manifest: &CorpusManifest) -> Result<(), String> {
+    let families = manifest
+        .cases
+        .iter()
+        .map(|case| case.kind.family())
+        .collect::<BTreeSet<_>>();
+    for required in [
+        "tls_fingerprint",
+        "http2_fingerprint",
+        "http2",
+        "proxy",
+        "compression",
+        "http11",
+        "range",
+        "streaming",
+        "redirect",
+        "cookie",
+        "dns_ssrf",
+        "pool",
+        "bounds",
+        "retry",
+        "cancellation",
+        "replay",
+        "url",
+    ] {
+        if !families.contains(required) {
+            return Err(format!("FF-TRANSPORT-E-COVERAGE-FAMILY: {required}"));
+        }
+    }
+    let classes = manifest
+        .cases
+        .iter()
+        .map(|case| case.kind.scenario_class())
+        .collect::<BTreeSet<_>>();
+    for required in ["positive", "boundary", "negative", "blocked"] {
+        if !classes.contains(required) {
+            return Err(format!("FF-TRANSPORT-E-COVERAGE-CLASS: {required}"));
+        }
+    }
+    Ok(())
+}
+
+fn manifest_declaration_sha256(manifest: &CorpusManifest) -> Result<String, String> {
+    let bytes = serde_json::to_vec(manifest)
+        .map_err(|error| format!("FF-TRANSPORT-E-MANIFEST-DIGEST: {error}"))?;
+    Ok(encode_hex(&Sha256::digest(bytes)))
+}
+
+fn candidate_implementation_sha256() -> String {
+    let mut digest = Sha256::new();
+    digest.update(include_bytes!("policy.rs"));
+    digest.update(include_bytes!("local_server.rs"));
+    encode_hex(&digest.finalize())
+}
+
+fn semantic_projection_sha256(cases: &[CaseReport]) -> Result<String, String> {
+    let projection = cases
+        .iter()
+        .map(|case| {
+            serde_json::json!({
+                "id": case.id,
+                "family": case.family,
+                "scenario_class": case.scenario_class,
+                "requested": case.requested_capabilities,
+                "satisfied": case.satisfied_capabilities,
+                "blocked": case.blocked_capabilities,
+                "connection_identity": case.connection_identity,
+                "wire_identity": case.wire_identity,
+                "pool_identity": case.pool_identity,
+                "selected_address": case.selected_address,
+                "proxy_identity": case.proxy_identity,
+                "alpn_identity": case.alpn_identity,
+                "protocol_identity": case.protocol_identity,
+                "limits": case.limits,
+                "transcript": case.transcript,
+                "expected": case.expected_outcome,
+                "observed": case.observed_outcome,
+                "status": case.status
+            })
+        })
+        .collect::<Vec<_>>();
+    let bytes = serde_json::to_vec(&projection)
+        .map_err(|error| format!("FF-TRANSPORT-E-SEMANTIC-DIGEST: {error}"))?;
+    Ok(encode_hex(&Sha256::digest(bytes)))
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+#[allow(clippy::too_many_lines)]
 fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
     let started = Instant::now();
     let decision = candidate.negotiate(case.requested_capabilities.iter().copied());
@@ -362,7 +626,11 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         })
         .collect::<Vec<_>>();
     let execution = if decision.execution_allowed {
-        execute_case(case.kind)
+        candidate
+            .execute(case.requested_capabilities.iter().copied(), |grant| {
+                execute_case(case.kind, grant, &case.requested_capabilities)
+            })
+            .map(|(_, evidence)| evidence)
     } else {
         Ok(CaseEvidence {
             concrete_input: format!("requested={:?}", decision.requested),
@@ -371,9 +639,14 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
                 || "blocked-without-code".to_owned(),
                 |blocked| blocked.code.clone(),
             ),
-            connection_identity: None,
-            wire_identity: None,
-            pool_identity: None,
+            connection_identity: "not_executed:capability_blocked".to_owned(),
+            wire_identity: "not_executed:capability_blocked".to_owned(),
+            pool_identity: "not_applicable".to_owned(),
+            selected_address: "not_applicable".to_owned(),
+            proxy_identity: "not_executed".to_owned(),
+            alpn_identity: "not_negotiated".to_owned(),
+            protocol_identity: "not_executed".to_owned(),
+            limits: BTreeMap::new(),
             transcript: None,
             skipped_semantic_dependencies: decision
                 .blocked
@@ -386,9 +659,14 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         concrete_input: format!("{:?}", case.kind),
         executed_boundary: "case-execution-error".to_owned(),
         observed_outcome: error.to_string(),
-        connection_identity: None,
-        wire_identity: None,
-        pool_identity: None,
+        connection_identity: "not_executed:error".to_owned(),
+        wire_identity: "not_executed:error".to_owned(),
+        pool_identity: "not_applicable".to_owned(),
+        selected_address: "not_applicable".to_owned(),
+        proxy_identity: "not_executed".to_owned(),
+        alpn_identity: "not_negotiated".to_owned(),
+        protocol_identity: "execution-error".to_owned(),
+        limits: BTreeMap::new(),
         transcript: None,
         skipped_semantic_dependencies: Vec::new(),
     });
@@ -398,10 +676,22 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
             case.expected_outcome, evidence.observed_outcome
         )
     });
+    let duration_micros = started.elapsed().as_micros();
+    let transcript = serde_json::json!({
+        "normalization_version": NORMALIZATION_VERSION,
+        "case_id": case.id,
+        "family": case.kind.family(),
+        "scenario_class": case.kind.scenario_class(),
+        "executed_boundary": &evidence.executed_boundary,
+        "result": &evidence.observed_outcome,
+        "exchange": evidence.transcript.unwrap_or_else(|| serde_json::json!("not_applicable"))
+    });
     CaseReport {
         id: case.id.clone(),
         mandatory: case.mandatory,
         proof_class: case.proof_class,
+        family: case.kind.family().to_owned(),
+        scenario_class: case.kind.scenario_class().to_owned(),
         concrete_input: evidence.concrete_input,
         executed_boundary: evidence.executed_boundary,
         requested_capabilities: decision.requested,
@@ -410,7 +700,13 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         connection_identity: evidence.connection_identity,
         wire_identity: evidence.wire_identity,
         pool_identity: evidence.pool_identity,
-        transcript: evidence.transcript,
+        selected_address: evidence.selected_address,
+        proxy_identity: evidence.proxy_identity,
+        alpn_identity: evidence.alpn_identity,
+        protocol_identity: evidence.protocol_identity,
+        limits: evidence.limits,
+        timing_phases_micros: BTreeMap::from([("total".to_owned(), duration_micros)]),
+        transcript,
         expected_outcome: case.expected_outcome.clone(),
         observed_outcome: evidence.observed_outcome,
         status: if exact_mismatch.is_none() {
@@ -420,7 +716,7 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         },
         exact_mismatch,
         skipped_semantic_dependencies: evidence.skipped_semantic_dependencies,
-        duration_micros: started.elapsed().as_micros(),
+        duration_micros,
     }
 }
 
@@ -429,9 +725,14 @@ struct CaseEvidence {
     concrete_input: String,
     executed_boundary: String,
     observed_outcome: String,
-    connection_identity: Option<String>,
-    wire_identity: Option<String>,
-    pool_identity: Option<String>,
+    connection_identity: String,
+    wire_identity: String,
+    pool_identity: String,
+    selected_address: String,
+    proxy_identity: String,
+    alpn_identity: String,
+    protocol_identity: String,
+    limits: BTreeMap<String, u64>,
     transcript: Option<serde_json::Value>,
     skipped_semantic_dependencies: Vec<String>,
 }
@@ -442,16 +743,28 @@ impl CaseEvidence {
             concrete_input: input.into(),
             executed_boundary: "pure-policy-model".to_owned(),
             observed_outcome: outcome.into(),
-            connection_identity: None,
-            wire_identity: None,
-            pool_identity: None,
+            connection_identity: "not_executed:policy_model".to_owned(),
+            wire_identity: "not_executed:policy_model".to_owned(),
+            pool_identity: "not_applicable".to_owned(),
+            selected_address: "not_applicable".to_owned(),
+            proxy_identity: "direct-policy-model".to_owned(),
+            alpn_identity: "not_negotiated".to_owned(),
+            protocol_identity: "policy-model-v1".to_owned(),
+            limits: BTreeMap::new(),
             transcript: None,
             skipped_semantic_dependencies: Vec::new(),
         }
     }
 }
 
-fn execute_case(kind: CaseKind) -> Result<CaseEvidence, TransportError> {
+fn execute_case(
+    kind: CaseKind,
+    grant: &crate::policy::ExecutionGrant,
+    requested: &BTreeSet<Capability>,
+) -> Result<CaseEvidence, TransportError> {
+    for capability in requested {
+        grant.require(*capability)?;
+    }
     match kind {
         CaseKind::StandardCapability => Ok(CaseEvidence::policy(
             "std-first standard capability set",
@@ -459,6 +772,12 @@ fn execute_case(kind: CaseKind) -> Result<CaseEvidence, TransportError> {
         )),
         CaseKind::Http11Local => local_case("/ok", None, 16, "http11-body-ok"),
         CaseKind::RangeLocal => local_case("/range", Some("bytes=2-5"), 4, "range-206-2-5"),
+        CaseKind::RangeInvalid => local_case(
+            "/range-invalid",
+            Some("bytes=20-30"),
+            0,
+            "range-416-rejected",
+        ),
         CaseKind::StreamingLocal => local_case("/stream", None, 21, "streamed-with-byte-credits"),
         CaseKind::RedirectCrossOrigin => redirect_cross_origin(),
         CaseKind::RedirectDowngrade => redirect_downgrade(),
@@ -466,19 +785,25 @@ fn execute_case(kind: CaseKind) -> Result<CaseEvidence, TransportError> {
         CaseKind::CookieScope => cookie_scope(),
         CaseKind::CookiePublicSuffix => cookie_public_suffix(),
         CaseKind::CookieSyntax => cookie_syntax(),
+        CaseKind::CookieCountBoundary => cookie_count_boundary(),
+        CaseKind::DnsPositive => Ok(dns_positive()),
         CaseKind::SsrfMixedAnswers => Ok(ssrf_mixed_answers()),
         CaseKind::DnsSelection => Ok(dns_selection()),
         CaseKind::DnsRebind => Ok(dns_rebind()),
         CaseKind::ProxyEvidence => Ok(proxy_evidence()),
+        CaseKind::ProxyEvidencePositive => Ok(proxy_evidence_positive()),
         CaseKind::PoolReuse => pool_reuse(),
         CaseKind::PoolSessionPartition => pool_partition(true),
         CaseKind::PoolFingerprintPartition => pool_partition(false),
         CaseKind::PoolBound => pool_bound(),
+        CaseKind::PoolAllDimensions => pool_all_dimensions(),
+        CaseKind::BoundsExact => Ok(bounds_exact()),
         CaseKind::MetadataBound => Ok(body_bound("metadata")),
         CaseKind::BodyBound => Ok(body_bound("body")),
         CaseKind::DecompressionBound => Ok(body_bound("decompression")),
         CaseKind::ByteCredit => byte_credit(),
         CaseKind::RetryBound => Ok(retry_bound()),
+        CaseKind::RetryAllowed => retry_allowed(),
         CaseKind::CancellationCorrelation => cancellation_correlation(),
         CaseKind::CancellationPool => cancellation_pool(),
         CaseKind::SanitizedReplay => sanitized_replay(),
@@ -505,8 +830,32 @@ fn local_case(
     credits.grant(body_bytes)?;
     let response = execute_local(&target, path, range, &mut credits)?;
     let receipt = server.finish()?;
-    let expected_status = if range.is_some() { 206 } else { 200 };
-    if response.status != expected_status || credits.accepted() != body_bytes {
+    let (expected_status, expected_body, required_header) = match path {
+        "/ok" => (200, b"ferric-transport".as_slice(), None),
+        "/range" => (
+            206,
+            b"2345".as_slice(),
+            Some(("content-range", "bytes 2-5/10")),
+        ),
+        "/range-invalid" => (416, b"".as_slice(), Some(("content-range", "bytes */10"))),
+        "/stream" => (200, b"stream-one-stream-two".as_slice(), None),
+        _ => {
+            return Err(TransportError::Protocol(
+                "FF-TRANSPORT-E-LOCAL-CASE".to_owned(),
+            ));
+        }
+    };
+    let header_matches = required_header
+        .is_none_or(|(name, value)| response.headers.get(name).map(String::as_str) == Some(value));
+    let streaming_fragmented = path != "/stream" || response.body_read_operations >= 3;
+    if response.status != expected_status
+        || response.body != expected_body
+        || credits.accepted() != body_bytes
+        || !header_matches
+        || !streaming_fragmented
+        || !receipt.request_line.ends_with(" HTTP/1.1")
+        || range.is_some() != receipt.headers.contains_key("range")
+    {
         return Err(TransportError::Protocol(
             "FF-TRANSPORT-E-LOCAL-ASSERTION".to_owned(),
         ));
@@ -515,9 +864,20 @@ fn local_case(
         concrete_input: format!("{}; range={range:?}", receipt.request_line),
         executed_boundary: "loopback-tcp-http1.1".to_owned(),
         observed_outcome: outcome.to_owned(),
-        connection_identity: Some(response.connection_identity),
-        wire_identity: Some(response.wire_identity),
-        pool_identity: None,
+        connection_identity: response.connection_identity,
+        wire_identity: format!(
+            "{};sha256={}",
+            response.wire_identity, response.response_sha256
+        ),
+        pool_identity: "connection-close:no-pool".to_owned(),
+        selected_address: "loopback-harness".to_owned(),
+        proxy_identity: "direct".to_owned(),
+        alpn_identity: "not_applicable:cleartext-http1".to_owned(),
+        protocol_identity: "http/1.1".to_owned(),
+        limits: BTreeMap::from([
+            ("body_bytes".to_owned(), body_bytes),
+            ("metadata_bytes".to_owned(), 16 * 1024),
+        ]),
         transcript: None,
         skipped_semantic_dependencies: Vec::new(),
     })
@@ -531,7 +891,7 @@ fn redirect_cross_origin() -> Result<CaseEvidence, TransportError> {
     )?;
     request.insert_header(
         "authorization",
-        HeaderValue::new(SECRET_CANARY, true, true)?,
+        HeaderValue::new(SECRET_CANARY, false, false)?,
     )?;
     request.insert_header("accept", HeaderValue::new("*/*", false, false)?)?;
     let result = redirect_policy().apply(&request, HttpUrl::parse("https://cdn.example/media")?)?;
@@ -664,6 +1024,36 @@ fn cookie_syntax() -> Result<CaseEvidence, TransportError> {
     ))
 }
 
+fn cookie_count_boundary() -> Result<CaseEvidence, TransportError> {
+    let source = HttpUrl::parse("https://media.example.com/")?;
+    let mut jar = CookieJar::new(1);
+    for name in ["first", "second"] {
+        let result = jar.store(
+            &source,
+            Cookie {
+                name: name.to_owned(),
+                value: "value".to_owned(),
+                domain: "media.example.com".to_owned(),
+                host_only: true,
+                path: "/".to_owned(),
+                secure: true,
+            },
+            &suffixes(),
+        );
+        if name == "second" {
+            let error = result.expect_err("second distinct cookie must exceed the bound");
+            return Ok(CaseEvidence::policy(
+                "maximum cookies=1; distinct cookie=2",
+                error.to_string(),
+            ));
+        }
+        result?;
+    }
+    Err(TransportError::Policy(
+        "FF-TRANSPORT-E-COOKIE-BOUNDARY".to_owned(),
+    ))
+}
+
 fn public_evidence() -> DnsEvidence {
     DnsEvidence {
         query_host: "media.example".to_owned(),
@@ -673,12 +1063,23 @@ fn public_evidence() -> DnsEvidence {
     }
 }
 
+fn dns_positive() -> CaseEvidence {
+    validate_dns_evidence("media.example", &public_evidence(), ProxyEvidence::Direct)
+        .expect("public evidence fixture must pass");
+    let mut evidence = CaseEvidence::policy(
+        "media.example -> 93.184.216.34 via fixture-resolver-v1",
+        "dns-public-evidence-accepted",
+    );
+    "93.184.216.34".clone_into(&mut evidence.selected_address);
+    evidence
+}
+
 fn ssrf_mixed_answers() -> CaseEvidence {
     let mut evidence = public_evidence();
     evidence
         .answers
         .push("127.0.0.1".parse().expect("static loopback fixture IP"));
-    let error = validate_dns_evidence(&evidence, ProxyEvidence::Direct)
+    let error = validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct)
         .expect_err("mixed answer fixture must fail");
     CaseEvidence::policy("93.184.216.34 + 127.0.0.1", error.to_string())
 }
@@ -686,14 +1087,14 @@ fn ssrf_mixed_answers() -> CaseEvidence {
 fn dns_selection() -> CaseEvidence {
     let mut evidence = public_evidence();
     evidence.selected = "8.8.8.8".parse().expect("static fixture IP");
-    let error = validate_dns_evidence(&evidence, ProxyEvidence::Direct)
+    let error = validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct)
         .expect_err("unapproved selection fixture must fail");
     CaseEvidence::policy("selected address absent from answers", error.to_string())
 }
 
 fn dns_rebind() -> CaseEvidence {
     let connected: IpAddr = "93.184.216.35".parse().expect("static fixture IP");
-    let error = validate_connected_address(&public_evidence(), connected)
+    let error = validate_connected_address("media.example", &public_evidence(), connected)
         .expect_err("rebinding fixture must fail");
     CaseEvidence::policy(
         "selected=93.184.216.34 connected=93.184.216.35",
@@ -702,9 +1103,30 @@ fn dns_rebind() -> CaseEvidence {
 }
 
 fn proxy_evidence() -> CaseEvidence {
-    let error = validate_dns_evidence(&public_evidence(), ProxyEvidence::Unavailable)
-        .expect_err("missing proxy evidence fixture must fail");
+    let error = validate_dns_evidence(
+        "media.example",
+        &public_evidence(),
+        ProxyEvidence::Unavailable,
+    )
+    .expect_err("missing proxy evidence fixture must fail");
     CaseEvidence::policy("proxy destination evidence unavailable", error.to_string())
+}
+
+fn proxy_evidence_positive() -> CaseEvidence {
+    let address = "93.184.216.34".parse().expect("static fixture IP");
+    validate_dns_evidence(
+        "media.example",
+        &public_evidence(),
+        ProxyEvidence::TrustedDestinationEvidence(address),
+    )
+    .expect("trusted matching proxy evidence must pass");
+    let mut evidence = CaseEvidence::policy(
+        "trusted proxy destination=93.184.216.34",
+        "proxy-destination-evidence-accepted",
+    );
+    evidence.selected_address = address.to_string();
+    "trusted-fixture-proxy-v1".clone_into(&mut evidence.proxy_identity);
+    evidence
 }
 
 fn pool_key(partition: &str, fingerprint: &str) -> PoolKey {
@@ -732,7 +1154,7 @@ fn pool_reuse() -> Result<CaseEvidence, TransportError> {
         ));
     }
     Ok(CaseEvidence {
-        pool_identity: Some(second.key_digest),
+        pool_identity: second.key_digest,
         ..CaseEvidence::policy("identical complete pool keys", "identical-pool-key-reused")
     })
 }
@@ -758,7 +1180,7 @@ fn pool_partition(session: bool) -> Result<CaseEvidence, TransportError> {
         "fingerprint-partition-prevents-reuse"
     };
     Ok(CaseEvidence {
-        pool_identity: Some(second.key_digest),
+        pool_identity: second.key_digest,
         ..CaseEvidence::policy("pool keys differ in one security dimension", outcome)
     })
 }
@@ -773,6 +1195,76 @@ fn pool_bound() -> Result<CaseEvidence, TransportError> {
         "maximum pool entries=1; requested=2",
         error.to_string(),
     ))
+}
+
+fn pool_all_dimensions() -> Result<CaseEvidence, TransportError> {
+    let base = pool_key("session-a", "standard");
+    let mut variants = Vec::new();
+    for dimension in [
+        "scheme",
+        "origin",
+        "proxy",
+        "tls",
+        "http",
+        "fingerprint",
+        "client_certificate",
+        "session",
+        "credential",
+    ] {
+        let mut key = base.clone();
+        match dimension {
+            "scheme" => {
+                "http".clone_into(&mut key.scheme);
+                "http://media.example:80".clone_into(&mut key.origin);
+            }
+            "origin" => "https://cdn.example:443".clone_into(&mut key.origin),
+            "proxy" => "proxy-a".clone_into(&mut key.proxy_identity),
+            "tls" => "tls-alternate".clone_into(&mut key.tls_identity),
+            "http" => "http2-standard".clone_into(&mut key.http_identity),
+            "fingerprint" => "fingerprint-a".clone_into(&mut key.fingerprint_identity),
+            "client_certificate" => {
+                "cert-a".clone_into(&mut key.client_certificate_identity);
+            }
+            "session" => "session-b".clone_into(&mut key.session_partition),
+            "credential" => "origin-cdn".clone_into(&mut key.credential_scope),
+            _ => unreachable!("static pool-key dimension"),
+        }
+        variants.push((dimension, key));
+    }
+    let mut registry = PoolRegistry::new(variants.len() + 1);
+    let base_use = registry.acquire(base)?;
+    for (dimension, variant) in variants {
+        let acquired = registry.acquire(variant)?;
+        if acquired.reused || acquired.connection_id == base_use.connection_id {
+            return Err(TransportError::Policy(format!(
+                "FF-TRANSPORT-E-POOL-DIMENSION: {dimension}"
+            )));
+        }
+    }
+    Ok(CaseEvidence::policy(
+        "each complete pool-key dimension varied independently",
+        "all-pool-key-dimensions-partitioned",
+    ))
+}
+
+fn bounds_exact() -> CaseEvidence {
+    BodyBudget {
+        maximum_metadata_bytes: 10,
+        maximum_body_bytes: 20,
+        maximum_decompressed_bytes: 30,
+    }
+    .validate(10, 20, 30)
+    .expect("exact bounds fixture must pass");
+    let mut evidence = CaseEvidence::policy(
+        "metadata=10 body=20 decompressed=30",
+        "exact-resource-bounds-accepted",
+    );
+    evidence.limits = BTreeMap::from([
+        ("metadata_bytes".to_owned(), 10),
+        ("body_bytes".to_owned(), 20),
+        ("decompressed_bytes".to_owned(), 30),
+    ]);
+    evidence
 }
 
 fn body_bound(kind: &str) -> CaseEvidence {
@@ -811,46 +1303,117 @@ fn byte_credit() -> Result<CaseEvidence, TransportError> {
 }
 
 fn retry_bound() -> CaseEvidence {
-    let maximum_retries = 2_u8;
-    let attempted_retry = 3_u8;
-    let outcome = if attempted_retry > maximum_retries {
-        "FF-TRANSPORT-E-RETRY-LIMIT"
-    } else {
-        "retry-allowed"
-    };
-    CaseEvidence::policy("maximum_retries=2 attempted_retry=3", outcome)
+    let mut budget = RetryBudget::new(2);
+    budget.retry().expect("first retry");
+    budget.retry().expect("second retry");
+    let error = budget.retry().expect_err("third retry must fail");
+    CaseEvidence::policy("maximum_retries=2 attempted_retry=3", error.to_string())
 }
 
-fn cancellation_correlation() -> Result<CaseEvidence, TransportError> {
-    let mut cancellation = CancellationModel::new("request-a")?;
-    let generation = cancellation.request()?;
-    let error = cancellation
-        .acknowledge("request-b", generation)
-        .expect_err("wrong request acknowledgement must fail");
+fn retry_allowed() -> Result<CaseEvidence, TransportError> {
+    let mut budget = RetryBudget::new(2);
+    budget.retry()?;
+    let exact = budget.retry()?;
+    if exact != 2 {
+        return Err(TransportError::Policy(
+            "FF-TRANSPORT-E-RETRY-BOUNDARY".to_owned(),
+        ));
+    }
     Ok(CaseEvidence::policy(
-        "request-a cancellation acknowledged as request-b",
-        error.to_string(),
+        "maximum_retries=2 retries_used=2",
+        "retry-exact-limit-accepted",
     ))
 }
 
+fn cancellation_correlation() -> Result<CaseEvidence, TransportError> {
+    let request_id = RequestId::new("request_cancel").map_err(contract_error)?;
+    let target = RequestId::new("request_target").map_err(contract_error)?;
+    let requester = ProducerId::new("producer_requester").map_err(contract_error)?;
+    let acknowledger = ProducerId::new("producer_acknowledger").map_err(contract_error)?;
+    let request = CancellationRequest {
+        header: EnvelopeHeader {
+            schema_id: "ff.cancel@1".to_owned(),
+            version: SchemaVersion { major: 1, minor: 0 },
+            request_id: request_id.clone(),
+            producer_id: requester,
+            job_id: None,
+            sequence: 1,
+        },
+        target_request_id: target,
+        generation: 1,
+        reason: "transport_cancelled".to_owned(),
+    };
+    let acknowledgement = CancellationAcknowledgement {
+        header: EnvelopeHeader {
+            schema_id: "ff.cancel@1".to_owned(),
+            version: SchemaVersion { major: 1, minor: 0 },
+            request_id,
+            producer_id: acknowledger.clone(),
+            job_id: None,
+            sequence: 2,
+        },
+        target_request_id: RequestId::new("request_wrong").map_err(contract_error)?,
+        generation: 1,
+        outcome: CancellationOutcome::Accepted,
+    };
+    let error = validate_cancellation_correlation(
+        &request,
+        &acknowledgement,
+        &acknowledger,
+        ProtocolLimits::default(),
+    )
+    .expect_err("wrong target acknowledgement must fail");
+    Ok(CaseEvidence::policy(
+        "WP-005 cancellation request/ack target mismatch",
+        format!("FF-TRANSPORT-E-CANCEL-CORRELATION: {error:?}"),
+    ))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn contract_error(error: fforager_contracts::IdError) -> TransportError {
+    TransportError::Cancellation(format!("FF-TRANSPORT-E-CONTRACT-ID: {error:?}"))
+}
+
 fn cancellation_pool() -> Result<CaseEvidence, TransportError> {
+    let key = pool_key("session-cancel", "standard");
+    let mut registry = PoolRegistry::new(2);
+    let before = registry.acquire(key.clone())?;
     let mut cancellation = CancellationModel::new("request-a")?;
     let generation = cancellation.request()?;
+    let probe = run_cancellation_probe()?;
+    if !probe.socket_shutdown || !probe.worker_reaped || probe.partial_body_bytes != 7 {
+        return Err(TransportError::Cancellation(
+            "FF-TRANSPORT-E-CANCEL-WORKER-REAP".to_owned(),
+        ));
+    }
     cancellation.acknowledge("request-a", generation)?;
     if cancellation.pool_reusable() {
         return Err(TransportError::Cancellation(
             "FF-TRANSPORT-E-CANCELLED-POOL-REUSE".to_owned(),
         ));
     }
-    Ok(CaseEvidence::policy(
-        "request-a generation=1 acknowledged",
+    if !registry.discard(&key) {
+        return Err(TransportError::Cancellation(
+            "FF-TRANSPORT-E-CANCELLED-POOL-DISCARD".to_owned(),
+        ));
+    }
+    let after = registry.acquire(key)?;
+    if after.reused || after.connection_id == before.connection_id {
+        return Err(TransportError::Cancellation(
+            "FF-TRANSPORT-E-CANCELLED-POOL-REUSE".to_owned(),
+        ));
+    }
+    let mut evidence = CaseEvidence::policy(
+        "request-a generation=1; partial socket shutdown; worker reaped; pool discarded",
         "cancelled-connection-not-reusable",
-    ))
+    );
+    evidence.pool_identity = after.key_digest;
+    Ok(evidence)
 }
 
 fn sanitized_replay() -> Result<CaseEvidence, TransportError> {
     let url = HttpUrl::parse(&format!(
-        "https://media.example/video?token={SECRET_CANARY}&quality=best"
+        "https://media.example/video?access_token={SECRET_CANARY}&quality={SECRET_CANARY}"
     ))?;
     let mut request_headers = BTreeMap::new();
     request_headers.insert(
@@ -861,12 +1424,20 @@ fn sanitized_replay() -> Result<CaseEvidence, TransportError> {
         "accept".to_owned(),
         HeaderValue::new("video/*", false, false)?,
     );
+    request_headers.insert(
+        "x-auth-token".to_owned(),
+        HeaderValue::new(SECRET_CANARY, false, false)?,
+    );
     let response_headers = BTreeMap::from([
         (
             "date".to_owned(),
             "Mon, 01 Jan 2024 00:00:00 GMT".to_owned(),
         ),
         ("set-cookie".to_owned(), SECRET_CANARY.to_owned()),
+        (
+            "location".to_owned(),
+            format!("https://cdn.example/file?signature={SECRET_CANARY}"),
+        ),
     ]);
     let transcript = sanitize_exchange(
         "replay-a",
@@ -900,24 +1471,57 @@ fn url_bounds() -> CaseEvidence {
 }
 
 fn counterfactual_proof(manifest: &CorpusManifest, cases: &[CaseReport]) -> CounterfactualProof {
-    let mut mutated = cases.to_vec();
-    let mutation = if let Some(first) = mutated.first_mut() {
-        first.observed_outcome.push_str("-mutated");
-        format!("{} observed_outcome appended with -mutated", first.id)
-    } else {
-        "no case available".to_owned()
-    };
-    match validate_aggregate_evidence(manifest, &mutated) {
-        Ok(_) => CounterfactualProof {
-            mutation,
-            rejected_by_same_oracle: false,
-            rejection: "same oracle accepted mutation".to_owned(),
-        },
-        Err(error) => CounterfactualProof {
-            mutation,
-            rejected_by_same_oracle: true,
-            rejection: error,
-        },
+    let behavior_result = manifest
+        .cases
+        .iter()
+        .position(|case| {
+            CandidateAdapter::std_first()
+                .negotiate(case.requested_capabilities.iter().copied())
+                .execution_allowed
+        })
+        .map_or_else(
+            || Err("no supported case available".to_owned()),
+            |index| {
+                let capability = manifest.cases[index]
+                    .requested_capabilities
+                    .iter()
+                    .next()
+                    .copied()
+                    .ok_or_else(|| "counterfactual case has no capability".to_owned())?;
+                let deficient = CandidateAdapter::std_first().without_capability(capability);
+                let mut mutated = cases.to_vec();
+                mutated[index] = run_case(&manifest.cases[index], &deficient);
+                validate_aggregate_evidence(manifest, &mutated).map(|_| ())
+            },
+        );
+    let evidence_result = cases
+        .iter()
+        .position(|case| !case.blocked_capabilities.is_empty())
+        .map_or_else(
+            || Err("no blocked case available".to_owned()),
+            |index| {
+                let mut mutated = cases.to_vec();
+                mutated[index].blocked_capabilities.clear();
+                let requested = mutated[index].requested_capabilities.clone();
+                mutated[index].satisfied_capabilities.clone_from(&requested);
+                validate_aggregate_evidence(manifest, &mutated).map(|_| ())
+            },
+        );
+    let rejected = behavior_result.is_err() && evidence_result.is_err();
+    CounterfactualProof {
+        mutation:
+            "remove one supported adapter capability; separately clear blocked evidence while preserving declarations"
+                .to_owned(),
+        rejected_by_same_oracle: rejected,
+        rejection: format!(
+            "behavior={}; evidence={}",
+            behavior_result
+                .err()
+                .unwrap_or_else(|| "accepted".to_owned()),
+            evidence_result
+                .err()
+                .unwrap_or_else(|| "accepted".to_owned())
+        ),
     }
 }
 
@@ -935,21 +1539,8 @@ mod tests {
     use super::*;
 
     fn manifest() -> CorpusManifest {
-        CorpusManifest {
-            schema_id: SCHEMA_ID.to_owned(),
-            corpus_id: CORPUS_ID.to_owned(),
-            normalization_version: NORMALIZATION_VERSION.to_owned(),
-            candidate_identity: CandidateAdapter::std_first().identity().to_owned(),
-            max_cases: 4,
-            cases: vec![CorpusCase {
-                id: "standard-capability".to_owned(),
-                kind: CaseKind::StandardCapability,
-                mandatory: true,
-                proof_class: ProofClass::Structural,
-                requested_capabilities: BTreeSet::from([Capability::Http11]),
-                expected_outcome: "standard-capabilities-supported".to_owned(),
-            }],
-        }
+        serde_json::from_str(include_str!("../../../fixtures/transport-v1/manifest.json"))
+            .expect("canonical manifest")
     }
 
     #[test]
@@ -982,15 +1573,7 @@ mod tests {
 
     #[test]
     fn mandatory_blocked_capability_forces_failed_spike_verdict() {
-        let mut manifest = manifest();
-        manifest.cases.push(CorpusCase {
-            id: "tls-fingerprint-blocked".to_owned(),
-            kind: CaseKind::TlsFingerprintBlocked,
-            mandatory: true,
-            proof_class: ProofClass::Protocol,
-            requested_capabilities: BTreeSet::from([Capability::TlsFingerprint]),
-            expected_outcome: "FF-TRANSPORT-E-TLS-FINGERPRINT-BLOCKED".to_owned(),
-        });
+        let manifest = manifest();
         let report = run_corpus(&manifest).expect("corpus");
         assert_eq!(
             report.verdict,
@@ -1000,25 +1583,42 @@ mod tests {
 
     #[test]
     fn report_never_contains_secret_canary() {
-        let case = CorpusCase {
-            id: "sanitized-replay".to_owned(),
-            kind: CaseKind::SanitizedReplay,
-            mandatory: true,
-            proof_class: ProofClass::Security,
-            requested_capabilities: BTreeSet::from([Capability::Replay]),
-            expected_outcome: "transcript-deterministic-and-sanitized".to_owned(),
-        };
-        let mut manifest = manifest();
-        manifest.cases = vec![case];
+        let manifest = manifest();
         let report = run_corpus(&manifest).expect("corpus");
         let encoded = serde_json::to_string(&report).expect("report JSON");
         assert!(!encoded.contains(SECRET_CANARY));
     }
 
     #[test]
+    fn missing_canonical_case_is_rejected() {
+        let mut manifest = manifest();
+        manifest.cases.pop();
+        assert!(
+            validate_manifest(&manifest)
+                .expect_err("missing case")
+                .contains("CANONICAL-CORPUS")
+        );
+    }
+
+    #[test]
+    fn forged_blocked_capability_state_is_rejected() {
+        let manifest = manifest();
+        let report = run_corpus(&manifest).expect("corpus");
+        let mut cases = report.cases;
+        let blocked = cases
+            .iter_mut()
+            .find(|case| !case.blocked_capabilities.is_empty())
+            .expect("blocked case");
+        blocked.blocked_capabilities.clear();
+        blocked.satisfied_capabilities = blocked.requested_capabilities.clone();
+        assert!(validate_aggregate_evidence(&manifest, &cases).is_err());
+    }
+
+    #[test]
     fn ip_policy_error_is_specific_for_rebinding() {
         assert!(matches!(
             validate_connected_address(
+                "media.example",
                 &public_evidence(),
                 "93.184.216.35".parse().expect("fixture IP")
             ),

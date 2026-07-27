@@ -70,6 +70,14 @@
       "expected_outcome": "range-206-2-5"
     },
     {
+      "id": "range-invalid-rejection",
+      "kind": "range_invalid",
+      "mandatory": true,
+      "proof_class": "protocol",
+      "requested_capabilities": ["http11", "range"],
+      "expected_outcome": "range-416-rejected"
+    },
+    {
       "id": "streaming-byte-credits",
       "kind": "streaming_local",
       "mandatory": true,
@@ -126,6 +134,22 @@
       "expected_outcome": "FF-TRANSPORT-E-COOKIE-SYNTAX: invalid cookie"
     },
     {
+      "id": "cookie-count-boundary",
+      "kind": "cookie_count_boundary",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["cookie_scope"],
+      "expected_outcome": "FF-TRANSPORT-E-BOUND: cookie_count observed 2 exceeds 1"
+    },
+    {
+      "id": "dns-public-evidence-positive",
+      "kind": "dns_positive",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["dns_provenance", "ssrf_policy"],
+      "expected_outcome": "dns-public-evidence-accepted"
+    },
+    {
       "id": "ssrf-mixed-answer-rejection",
       "kind": "ssrf_mixed_answers",
       "mandatory": true,
@@ -158,6 +182,14 @@
       "expected_outcome": "FF-TRANSPORT-E-PROXY-DESTINATION-EVIDENCE"
     },
     {
+      "id": "proxy-destination-evidence-positive",
+      "kind": "proxy_evidence_positive",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["dns_provenance", "ssrf_policy"],
+      "expected_outcome": "proxy-destination-evidence-accepted"
+    },
+    {
       "id": "pool-complete-key-reuse",
       "kind": "pool_reuse",
       "mandatory": true,
@@ -188,6 +220,22 @@
       "proof_class": "resource",
       "requested_capabilities": ["pool_partition"],
       "expected_outcome": "FF-TRANSPORT-E-BOUND: pool_entries observed 2 exceeds 1"
+    },
+    {
+      "id": "pool-all-dimensions-partition",
+      "kind": "pool_all_dimensions",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["pool_partition"],
+      "expected_outcome": "all-pool-key-dimensions-partitioned"
+    },
+    {
+      "id": "resource-exact-boundaries",
+      "kind": "bounds_exact",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["metadata_bounds", "body_bounds", "decompression_bounds"],
+      "expected_outcome": "exact-resource-bounds-accepted"
     },
     {
       "id": "response-metadata-bound",
@@ -227,7 +275,15 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["retry_bounds"],
-      "expected_outcome": "FF-TRANSPORT-E-RETRY-LIMIT"
+      "expected_outcome": "FF-TRANSPORT-E-BOUND: retry_attempts observed 3 exceeds 2"
+    },
+    {
+      "id": "retry-exact-limit",
+      "kind": "retry_allowed",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["retry_bounds"],
+      "expected_outcome": "retry-exact-limit-accepted"
     },
     {
       "id": "cancellation-correlation",
@@ -235,7 +291,7 @@
       "mandatory": true,
       "proof_class": "runtime",
       "requested_capabilities": ["cancellation"],
-      "expected_outcome": "FF-TRANSPORT-E-CANCEL-CORRELATION: acknowledgement mismatch"
+      "expected_outcome": "FF-TRANSPORT-E-CANCEL-CORRELATION: CorrelationMismatch { field: \"target_request_id\" }"
     },
     {
       "id": "cancellation-pool-invalidation",

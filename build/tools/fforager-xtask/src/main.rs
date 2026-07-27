@@ -20,6 +20,8 @@ const ARCH_GATE: &str = "FF-GATE-ARCH-001";
 const PR_GATE: &str = "FF-GATE-PR-001";
 const RUNTIME_GATE: &str = "FF-GATE-RUNTIME-001";
 const DEEP_GATE: &str = "FF-GATE-DEEP-001";
+const TRANSPORT_MANIFEST_DECLARATION_SHA256: &str =
+    "78e7b3326a0a00942979b8add1975893b213c1d1769dc1ff806defdd5aa6d7c2";
 const FAILURE_PROOF_CLASS: &str = "structural";
 static COMMAND_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
@@ -666,29 +668,287 @@ fn run_transport_corpus(root: &Path) -> Result<(), String> {
 }
 
 fn execute_transport_corpus(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
-    run_command_with_proof_class(
-        root,
+    let source_before = source_state(root)?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("transport report clock: {error}"))?
+        .as_nanos();
+    let report_relative = format!(
+        "build/reports/wp-ff-007-transport-report-{}-{nonce}.json",
+        std::process::id()
+    );
+    let report_path = root.join(&report_relative);
+    if report_path.exists() {
+        return Err(format!(
+            "transport report path unexpectedly exists: {report_relative}"
+        ));
+    }
+    let args = [
+        "run".to_owned(),
+        "--manifest-path".to_owned(),
+        "build/Cargo.toml".to_owned(),
+        "--locked".to_owned(),
+        "-p".to_owned(),
+        "fforager-transport".to_owned(),
+        "--bin".to_owned(),
+        "fforager-transport-corpus".to_owned(),
+        "--".to_owned(),
+        "--manifest".to_owned(),
+        "build/fixtures/transport-v1/manifest.json".to_owned(),
+        "--report".to_owned(),
+        report_relative.clone(),
+    ];
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = cargo_proof_output(root, "cargo", &arg_refs)?;
+    if !output.contains("FAILED_SPIKE_REQUIRES_OPERATOR_DECISION")
+        && !output.contains("PASS_PURE_RUST_PATH")
+    {
+        return Err("transport corpus output omitted aggregate verdict".to_owned());
+    }
+    validate_transport_report(root, &report_path)?;
+    let source_after = source_state(root)?;
+    if source_before.git_commit != source_after.git_commit
+        || source_before.dirty != source_after.dirty
+        || source_before.dirty_paths != source_after.dirty_paths
+        || source_before.content_fingerprint != source_after.content_fingerprint
+    {
+        return Err("source changed while transport corpus executed".to_owned());
+    }
+    checks.push(pass_with_class(
         "wp-ff-007-transport-corpus",
         "semantic",
-        "non-shipped local transport corpus and aggregate evidence oracle",
-        "cargo",
-        &[
-            "run",
-            "--manifest-path",
-            "build/Cargo.toml",
-            "--locked",
-            "-p",
-            "fforager-transport",
-            "--bin",
-            "fforager-transport-corpus",
-            "--",
-            "--manifest",
-            "build/fixtures/transport-v1/manifest.json",
-            "--report",
-            "build/reports/wp-ff-007-transport-report.json",
-        ],
-        checks,
-    )
+        "non-shipped local transport corpus and strict report consumer",
+        &format!("fresh strict report validated at {report_relative}; source remained stable"),
+    ));
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_transport_report(root: &Path, path: &Path) -> Result<(), String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("read transport report {}: {error}", path.display()))?;
+    let report: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("parse transport report {}: {error}", path.display()))?;
+    let object = report
+        .as_object()
+        .ok_or("transport report root is not an object")?;
+    let expected_top = BTreeSet::from([
+        "schema_id",
+        "corpus_id",
+        "normalization_version",
+        "candidate_identity",
+        "manifest_declaration_sha256",
+        "candidate_implementation_sha256",
+        "semantic_projection_sha256",
+        "zero_product_progress",
+        "cases",
+        "summary",
+        "counterfactual",
+        "residual_uncertainties",
+        "verdict",
+    ]);
+    let observed_top = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if observed_top != expected_top {
+        return Err(format!(
+            "transport report top-level schema drift: {observed_top:?}"
+        ));
+    }
+    if object.get("schema_id").and_then(Value::as_str)
+        != Some("fforager.transport-corpus-report.v1")
+        || object.get("corpus_id").and_then(Value::as_str) != Some("WP-FF-007-transport-corpus-v1")
+        || object.get("zero_product_progress").and_then(Value::as_bool) != Some(true)
+        || object
+            .get("manifest_declaration_sha256")
+            .and_then(Value::as_str)
+            != Some(TRANSPORT_MANIFEST_DECLARATION_SHA256)
+    {
+        return Err("transport report authority or zero-progress binding mismatch".to_owned());
+    }
+    let candidate_digest = transport_candidate_source_sha256(root)?;
+    if object
+        .get("candidate_implementation_sha256")
+        .and_then(Value::as_str)
+        != Some(candidate_digest.as_str())
+        || object
+            .get("semantic_projection_sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|value| value.len() != 64)
+    {
+        return Err("transport report implementation or semantic digest invalid".to_owned());
+    }
+    let verdict = object
+        .get("verdict")
+        .and_then(Value::as_str)
+        .ok_or("transport report verdict missing")?;
+    if !matches!(
+        verdict,
+        "PASS_PURE_RUST_PATH" | "FAILED_SPIKE_REQUIRES_OPERATOR_DECISION"
+    ) {
+        return Err(format!("transport report verdict invalid: {verdict}"));
+    }
+    let cases = object
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("transport report cases missing")?;
+    if cases.is_empty() {
+        return Err("transport report cases empty".to_owned());
+    }
+    let mut blocked_case_count = 0_u64;
+    for case in cases {
+        let case = case
+            .as_object()
+            .ok_or("transport report case is not an object")?;
+        let expected_case_fields = BTreeSet::from([
+            "id",
+            "mandatory",
+            "proof_class",
+            "family",
+            "scenario_class",
+            "concrete_input",
+            "executed_boundary",
+            "requested_capabilities",
+            "satisfied_capabilities",
+            "blocked_capabilities",
+            "connection_identity",
+            "wire_identity",
+            "pool_identity",
+            "selected_address",
+            "proxy_identity",
+            "alpn_identity",
+            "protocol_identity",
+            "limits",
+            "timing_phases_micros",
+            "transcript",
+            "expected_outcome",
+            "observed_outcome",
+            "status",
+            "exact_mismatch",
+            "skipped_semantic_dependencies",
+            "duration_micros",
+        ]);
+        let observed_case_fields = case.keys().map(String::as_str).collect::<BTreeSet<_>>();
+        if observed_case_fields != expected_case_fields {
+            return Err(format!(
+                "transport report case schema drift: {observed_case_fields:?}"
+            ));
+        }
+        for field in [
+            "id",
+            "family",
+            "scenario_class",
+            "executed_boundary",
+            "connection_identity",
+            "wire_identity",
+            "pool_identity",
+            "selected_address",
+            "proxy_identity",
+            "alpn_identity",
+            "protocol_identity",
+        ] {
+            if case
+                .get(field)
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            {
+                return Err(format!("transport report case omits {field}"));
+            }
+        }
+        if !case.get("transcript").is_some_and(Value::is_object)
+            || !case
+                .get("timing_phases_micros")
+                .and_then(Value::as_object)
+                .is_some_and(|phases| phases.contains_key("total"))
+            || case.get("status").and_then(Value::as_str) != Some("PASS")
+        {
+            return Err("transport report case evidence shape is invalid".to_owned());
+        }
+        let requested = json_string_set(case.get("requested_capabilities"), "requested")?;
+        let satisfied = json_string_set(case.get("satisfied_capabilities"), "satisfied")?;
+        let blocked = case
+            .get("blocked_capabilities")
+            .and_then(Value::as_array)
+            .ok_or("transport report blocked capabilities missing")?;
+        let blocked_set = blocked
+            .iter()
+            .map(|item| {
+                item.as_object()
+                    .and_then(|object| object.get("capability"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .ok_or("transport report blocked capability malformed")
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if !satisfied.is_disjoint(&blocked_set)
+            || satisfied
+                .union(&blocked_set)
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                != requested
+        {
+            return Err("transport report capability partition is contradictory".to_owned());
+        }
+        if !blocked_set.is_empty() {
+            blocked_case_count = blocked_case_count.saturating_add(1);
+        }
+    }
+    let summary = object
+        .get("summary")
+        .and_then(Value::as_object)
+        .ok_or("transport report summary missing")?;
+    let count = u64::try_from(cases.len()).map_err(|error| error.to_string())?;
+    if summary.get("total").and_then(Value::as_u64) != Some(count)
+        || summary.get("passed").and_then(Value::as_u64) != Some(count)
+        || summary.get("failed").and_then(Value::as_u64) != Some(0)
+        || summary.get("mandatory_total").and_then(Value::as_u64) != Some(count)
+        || summary.get("mandatory_passed").and_then(Value::as_u64) != Some(count)
+        || summary.get("mandatory_blocked").and_then(Value::as_u64) != Some(blocked_case_count)
+    {
+        return Err("transport report summary does not match case evidence".to_owned());
+    }
+    if object
+        .get("counterfactual")
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("rejected_by_same_oracle"))
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return Err("transport report counterfactual was not rejected".to_owned());
+    }
+    Ok(())
+}
+
+fn json_string_set(value: Option<&Value>, field: &str) -> Result<BTreeSet<String>, String> {
+    value
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("transport report {field} capabilities missing"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("transport report {field} capability malformed"))
+        })
+        .collect()
+}
+
+fn transport_candidate_source_sha256(root: &Path) -> Result<String, String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut digest = Sha256::new();
+    for relative in [
+        "build/crates/fforager-transport/src/policy.rs",
+        "build/crates/fforager-transport/src/local_server.rs",
+    ] {
+        let bytes = fs::read(root.join(relative))
+            .map_err(|error| format!("read transport candidate source {relative}: {error}"))?;
+        digest.update(bytes);
+    }
+    let bytes = digest.finalize();
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
 }
 
 fn execute_compatibility_replay_boundaries(

@@ -66,7 +66,7 @@ artifact_role = "non_shipped_transport_capability_spike"
 shipped = false
 test_only = false
 publish_allowed = false
-allowed_internal_dependencies = []
+allowed_internal_dependencies = [{ package = "fforager-contracts", kinds = ["normal"], optional = false }]
 split_trigger = "WP-FF-007-transport-fingerprint-spike-v1-AC-002"
 feature_owner = "WP-FF-007-transport-fingerprint-spike-v1"
 profile = "phase0_prerequisite_spike"

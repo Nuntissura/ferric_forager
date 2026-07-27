@@ -499,6 +499,7 @@ fn run() -> Result<(), String> {
         [command, rest @ ..] if command == "compatibility-live-canaries" => {
             compatibility::run_live_canaries(&root, &args, rest)
         }
+        [command] if command == "transport-corpus" => run_transport_corpus(&root),
         [gate, evidence] if gate == "verify-pr" && evidence == "--evidence-from-taskboard" => {
             run_verify_pr(&root, &args)
         }
@@ -515,7 +516,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|transport-corpus|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -624,6 +625,7 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
         artifacts: vec![
             "build/fixtures/contracts/inventory.json".to_owned(),
             "build/reports".to_owned(),
+            "build/reports/wp-ff-007-transport-report.json".to_owned(),
             "build/target".to_owned(),
         ],
     };
@@ -640,6 +642,7 @@ fn run_verify_deep_checks(
     run_rust_verification(root, checks)?;
     execute_public_boundary_counterexample_test(root, checks)?;
     execute_compatibility_replay_boundaries(root, checks)?;
+    execute_transport_corpus(root, checks)?;
     run_doctests(root, checks)?;
     validate_contract_inventory(root, checks)?;
     validate_contract_manual(root, checks)?;
@@ -648,9 +651,44 @@ fn run_verify_deep_checks(
     checks.append(&mut architecture.checks);
     checks.push(pass(
         "deep-proof-surface",
-        "locked workspace, contract inventory, model manual, data-only scan, public-boundary counterexamples, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
+        "locked workspace, contract inventory, model manual, data-only scan, public-boundary counterexamples, transport corpus, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
     ));
     Ok(architecture)
+}
+
+fn run_transport_corpus(root: &Path) -> Result<(), String> {
+    let mut checks = Vec::new();
+    execute_transport_corpus(root, &mut checks)?;
+    println!(
+        "COMPLETE WP-FF-007 transport corpus; report=build/reports/wp-ff-007-transport-report.json"
+    );
+    Ok(())
+}
+
+fn execute_transport_corpus(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
+    run_command_with_proof_class(
+        root,
+        "wp-ff-007-transport-corpus",
+        "semantic",
+        "non-shipped local transport corpus and aggregate evidence oracle",
+        "cargo",
+        &[
+            "run",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "-p",
+            "fforager-transport",
+            "--bin",
+            "fforager-transport-corpus",
+            "--",
+            "--manifest",
+            "build/fixtures/transport-v1/manifest.json",
+            "--report",
+            "build/reports/wp-ff-007-transport-report.json",
+        ],
+        checks,
+    )
 }
 
 fn execute_compatibility_replay_boundaries(
@@ -7359,6 +7397,7 @@ fn validate_finding_dispositions(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> {
     match finding_id {
         "WP-FF-005-FINDING-WIRE-001" => {
@@ -7732,6 +7771,8 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
     for directory in [
         "build/fixtures/architecture",
         "build/fixtures/contracts",
+        "build/fixtures/transport-v1",
+        "build/crates/fforager-transport",
         "build/crates/fforager-testkit",
         "build/tools/fforager-xtask/src",
         "product/crates",

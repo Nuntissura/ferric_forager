@@ -278,6 +278,41 @@ The worker is quiet and bounded. If an interrupted manual run leaves `fforager-j
 
 </topic>
 
+<topic id="phase-0-transport-fingerprint-spike" status="active" version="1" wp="WP-FF-007-transport-fingerprint-spike-v1" ingestable="true" updated_at="2026-07-27">
+
+## Operate the transport capability and security corpus
+
+WP-FF-007 is a non-shipped Prerequisite 0D spike. It owns the mandatory transport corpus that WP-FF-004 did not provide. WP-FF-004 remains the authority for stable transcript normalization and identifiers; WP-FF-007 owns fingerprint, HTTP wire, redirect, cookie, SSRF/DNS, proxy-evidence, pooling, resource-bound, retry, cancellation, and replay cases. Neither packet provides product transport capability or product-phase progress.
+
+Run the exact corpus from the repository root:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- transport-corpus
+```
+
+The command reads `build/fixtures/transport-v1/manifest.json`, executes `build/crates/fforager-transport`, and atomically writes `build/reports/wp-ff-007-transport-report.json`. The manifest is strict and bounded, every case is mandatory, case IDs are unique and stable, and every result records the concrete input, executed boundary, negotiated capability set, identities when available, exact expected and observed outcomes, skipped semantic dependencies, and proof class. A counterfactual changes an observed outcome and must be rejected by the same aggregate oracle.
+
+The current authorized candidate is `ferric-std-first-transport-spike-v1`. It provides real bounded loopback HTTP/1.1, range, and streaming evidence plus deterministic policy evidence for redirects, cookies, DNS/SSRF, pooling, transcripts, resource bounds, retries, and cancellation. The loopback server is reachable only through a private harness target; public SSRF policy still rejects loopback and other special-use addresses.
+
+Read the aggregate result literally:
+
+- `PASS_PURE_RUST_PATH` means every mandatory capability was executed without a blocked capability.
+- `FAILED_SPIKE_REQUIRES_OPERATOR_DECISION` means all declared case oracles may have passed, but one or more mandatory capabilities were blocked before execution. This is a completed fail-closed spike result, not permission to substitute standard HTTP or claim browser parity.
+
+The std-first candidate currently blocks browser-equivalent TLS ClientHello fingerprinting, browser-equivalent HTTP/2 wire fingerprinting, HTTP/2 execution, trusted proxy destination evidence, and decompression execution. A request for any blocked capability returns a typed stable diagnostic before network execution; standard HTTP must never silently stand in for fingerprint parity.
+
+Safety and recovery:
+
+- Do not add Python, `yt-dlp`, BoringSSL, curl, curl-impersonate, `curl_cffi`, native TLS, or another external runtime/native dependency.
+- Do not connect the local harness grant to a caller-supplied URL or weaken SSRF policy to reach fixtures.
+- Do not share a pool entry across origin, proxy, TLS, HTTP, fingerprint, client-certificate, session, or credential-scope key differences.
+- Do not persist raw authorization, proxy authorization, cookies, API keys, or secret query values. The report rejects its secret canary.
+- If a case differs, inspect its `exact_mismatch`, concrete input, and executed boundary; repair the implementation or declared corpus deliberately and rerun the same command.
+- If the aggregate verdict is failed, retain the blocked-capability list and residual uncertainties for Operator selection. Do not auto-promote or add a forbidden fallback.
+- The canonical `verify-deep` and `verify-pr` gates execute this corpus and therefore refresh the same report.
+
+</topic>
+
 <topic id="runtime-proof-contract" status="active" version="1" wp="WP-FF-012-runtime-truth-gates-v1" ingestable="true" updated_at="2026-07-19">
 
 ## Declare production runtime proof

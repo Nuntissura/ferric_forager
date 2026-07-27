@@ -133,6 +133,20 @@ struct DependencyDecision {
     approval_id: String,
     features: Vec<String>,
     default_features: bool,
+    #[serde(default)]
+    exception_id: Option<String>,
+}
+
+#[derive(Debug)]
+struct NativeDependencyException {
+    id: String,
+    owner: String,
+    approval_id: String,
+    allowed_consumers: BTreeSet<String>,
+    allowed_direct_dependencies: BTreeSet<String>,
+    allowed_versions: BTreeSet<String>,
+    allowed_native_link_packages: BTreeSet<String>,
+    allowed_runtime_classes: BTreeSet<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -533,6 +547,117 @@ fn repo_root() -> Result<PathBuf, String> {
         .nth(3)
         .map(Path::to_path_buf)
         .ok_or_else(|| "cannot derive repository root from CARGO_MANIFEST_DIR".to_owned())
+}
+
+fn shared_repository_root(root: &Path) -> Result<PathBuf, String> {
+    let dot_git = root.join(".git");
+    if !dot_git.exists() || dot_git.is_dir() {
+        return Ok(root.to_path_buf());
+    }
+    if !dot_git.is_file() {
+        return Err(format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: {} is neither a Git directory nor a linked-worktree metadata file",
+            dot_git.display()
+        ));
+    }
+
+    let gitdir_line = read_single_line_metadata(&dot_git, "linked-worktree gitdir")?;
+    let gitdir_value = gitdir_line.strip_prefix("gitdir: ").ok_or_else(|| {
+        format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: {} does not contain an exact gitdir declaration",
+            dot_git.display()
+        )
+    })?;
+    let gitdir = canonical_metadata_path(root, gitdir_value, "linked-worktree gitdir")?;
+    let commondir_path = gitdir.join("commondir");
+    let commondir_value = read_single_line_metadata(&commondir_path, "linked-worktree commondir")?;
+    let common_git_dir =
+        canonical_metadata_path(&gitdir, &commondir_value, "linked-worktree commondir")?;
+    if common_git_dir.file_name() != Some(OsStr::new(".git")) {
+        return Err(format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: linked-worktree common directory must resolve to a .git directory; observed {}",
+            common_git_dir.display()
+        ));
+    }
+    common_git_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            format!(
+                "FF-ARCH-E-WORKTREE-TOPOLOGY: cannot derive shared repository root from {}",
+                common_git_dir.display()
+            )
+        })
+}
+
+fn read_single_line_metadata(path: &Path, label: &str) -> Result<String, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("FF-ARCH-E-WORKTREE-TOPOLOGY: read {label}: {error}"))?;
+    let normalized = text.replace("\r\n", "\n");
+    let line = normalized.strip_suffix('\n').unwrap_or(&normalized);
+    if line.is_empty() || line.contains('\n') {
+        return Err(format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: {label} must contain exactly one non-empty line"
+        ));
+    }
+    Ok(line.to_owned())
+}
+
+fn canonical_metadata_path(base: &Path, value: &str, label: &str) -> Result<PathBuf, String> {
+    let declared = Path::new(value);
+    let path = if declared.is_absolute() {
+        declared.to_path_buf()
+    } else {
+        base.join(declared)
+    };
+    path.canonicalize().map_err(|error| {
+        format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: resolve {label} {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn canonical_paths_equal(left: &Path, right: &Path) -> Result<bool, String> {
+    let left = left
+        .canonicalize()
+        .map_err(|error| format!("canonicalize {}: {error}", left.display()))?;
+    let right = right
+        .canonicalize()
+        .map_err(|error| format!("canonicalize {}: {error}", right.display()))?;
+    Ok(left == right)
+}
+
+fn validate_linked_worktree_layout(root: &Path, shared_root: &Path) -> Result<(), String> {
+    let root_parent = root.parent().ok_or_else(|| {
+        format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: linked worktree has no parent: {}",
+            root.display()
+        )
+    })?;
+    let expected_parent = shared_root.join(".worktrees");
+    if !canonical_paths_equal(root_parent, &expected_parent).map_err(|error| {
+        format!("FF-ARCH-E-WORKTREE-TOPOLOGY: validate worktree parent: {error}")
+    })? {
+        return Err(format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: linked worktree must be a direct child of {}; observed {}",
+            expected_parent.display(),
+            root.display()
+        ));
+    }
+
+    let local_artifacts = root.join(".fforager-artifacts");
+    let shared_artifacts = shared_root.join(".fforager-artifacts");
+    if !canonical_paths_equal(&local_artifacts, &shared_artifacts).map_err(|error| {
+        format!("FF-ARCH-E-WORKTREE-TOPOLOGY: validate shared artifact root: {error}")
+    })? {
+        return Err(format!(
+            "FF-ARCH-E-WORKTREE-TOPOLOGY: {} must resolve to the shared artifact root {}",
+            local_artifacts.display(),
+            shared_artifacts.display()
+        ));
+    }
+    Ok(())
 }
 
 fn disposable_artifact_root(root: &Path) -> PathBuf {
@@ -2832,7 +2957,9 @@ fn canonical_contract_manual_commands() -> Vec<&'static str> {
 
 fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
     let policy: ArchitecturePolicy = read_toml(&root.join("build/architecture-policy.toml"))?;
-    validate_policy_identity(&policy)?;
+    let native_exceptions =
+        read_native_dependency_exceptions(&root.join(&policy.exception_authority))?;
+    validate_policy_identity(&policy, &native_exceptions)?;
     validate_artifact_layout(root)?;
     let tooling: ToolingPolicy = read_toml(&root.join("build/tooling-policy.toml"))?;
     validate_tooling_policy(&tooling)?;
@@ -2844,7 +2971,7 @@ fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
     validate_workspace(root, &policy, &metadata, &mut checks)?;
     validate_internal_graph(&policy, &metadata, &mut checks)?;
     validate_three_roots(root, &policy, &mut checks)?;
-    validate_dependencies(&policy, &metadata, &mut checks)?;
+    validate_dependencies(&policy, &metadata, &native_exceptions, &mut checks)?;
     let canonical_rules = required_architecture_rules(&root.join(".GOV/rules/build-rules.yaml"))?;
     validate_rule_map(&rule_map, &canonical_rules, &mut checks)?;
     let fixtures = validate_fixtures(root, &rule_map, &mut checks)?;
@@ -2873,7 +3000,10 @@ fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
     })
 }
 
-fn validate_policy_identity(policy: &ArchitecturePolicy) -> Result<(), String> {
+fn validate_policy_identity(
+    policy: &ArchitecturePolicy,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
+) -> Result<(), String> {
     if policy.schema_id != "ff.architecture_policy@2"
         || policy.file_id != "FF-GOV-BUILD-ARCH-POLICY-001"
         || policy.schema_version != "2.0.0"
@@ -2908,9 +3038,16 @@ fn validate_policy_identity(policy: &ArchitecturePolicy) -> Result<(), String> {
             "architecture-policy canonical path mismatch: {exact_paths:?}"
         ));
     }
-    if unapproved_exception_diagnostic(policy.exception_decision_ids.len()).is_some() {
+    let declared_exception_ids = policy
+        .exception_decision_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let authorized_exception_ids = native_exceptions.keys().cloned().collect::<BTreeSet<_>>();
+    if declared_exception_ids != authorized_exception_ids {
         return Err(
-            "FF-ARCH-E-UNAPPROVED-EXCEPTION: canonical exception allowlist is empty".to_owned(),
+            "FF-ARCH-E-UNAPPROVED-EXCEPTION: architecture policy and canonical exception allowlist differ"
+                .to_owned(),
         );
     }
     let expected_forbidden = BTreeSet::from([
@@ -2935,7 +3072,17 @@ fn validate_policy_identity(policy: &ArchitecturePolicy) -> Result<(), String> {
     {
         return Err("unsafe or direct-edge decision policy mismatch".to_owned());
     }
-    if policy.allowed_runtime_or_native_dependencies != ["FFmpeg", "ffprobe"] {
+    let expected_runtime_or_native_dependencies = ["FFmpeg".to_owned(), "ffprobe".to_owned()]
+        .into_iter()
+        .chain(authorized_exception_ids)
+        .collect::<BTreeSet<_>>();
+    if policy
+        .allowed_runtime_or_native_dependencies
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        != expected_runtime_or_native_dependencies
+    {
         return Err("architecture-policy changed the approved runtime/native boundary".to_owned());
     }
     Ok(())
@@ -3732,14 +3879,6 @@ fn validate_three_roots(
             "{diagnostic}: wrong_paths={existing_wrong:?}; selectors={existing:?}"
         ));
     }
-    let exception_authority = fs::read_to_string(root.join(&policy.exception_authority))
-        .map_err(|e| format!("read exception authority: {e}"))?;
-    if !exception_authority
-        .lines()
-        .any(|line| line.trim() == "canonical_allowlist: []")
-    {
-        return Err("exception authority does not expose the canonical empty allowlist".to_owned());
-    }
     scan_product_runtime_literals(root)?;
     scan_product_oracle_boundary(root)?;
     scan_ferric_implementation_independence(root)?;
@@ -4017,9 +4156,10 @@ fn product_oracle_source_diagnostic(source: &str) -> Option<&'static str> {
 fn validate_dependencies(
     policy: &ArchitecturePolicy,
     metadata: &Metadata,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
     checks: &mut Vec<Check>,
 ) -> Result<(), String> {
-    let decisions = validate_dependency_decisions(policy)?;
+    let decisions = validate_dependency_decisions(policy, native_exceptions)?;
     let packages = metadata.workspace_packages();
     if packages.is_empty() {
         return Err("workspace has no package".to_owned());
@@ -4032,10 +4172,10 @@ fn validate_dependencies(
         validate_product_oracle_dependencies(package, policy, &workspace_names)?;
         validate_direct_dependencies(package, &decisions, &workspace_names)?;
     }
-    validate_transitive_dependencies(policy, metadata)?;
+    validate_transitive_dependencies(policy, metadata, native_exceptions)?;
     checks.push(pass(
         "dependency-policy",
-        "all direct external dependencies have exact per-consumer decisions; transitive build/proc-macro packages match policy and no package declares native links",
+        "all direct external dependencies have exact per-consumer decisions; transitive build/proc-macro/native-link packages exactly match policy and canonical exceptions; BoringSSL source is vendored and environment/precompiled overrides are absent",
     ));
     Ok(())
 }
@@ -4068,9 +4208,10 @@ fn validate_product_oracle_dependencies(
     Ok(())
 }
 
-fn validate_dependency_decisions(
-    policy: &ArchitecturePolicy,
-) -> Result<BTreeMap<(&str, &str), &DependencyDecision>, String> {
+fn validate_dependency_decisions<'policy>(
+    policy: &'policy ArchitecturePolicy,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
+) -> Result<BTreeMap<(&'policy str, &'policy str), &'policy DependencyDecision>, String> {
     let decisions: BTreeMap<_, _> = policy
         .dependency_decisions
         .iter()
@@ -4100,7 +4241,6 @@ fn validate_dependency_decisions(
                     | "shipped_rust_product"
             )
             || decision.purpose.trim().is_empty()
-            || decision.native
             || decision.version.trim().is_empty()
             || !work_packet_base_owner_valid(&decision.owner)
             || decision.allowed_consumers != [decision.consumer.as_str()]
@@ -4114,8 +4254,41 @@ fn validate_dependency_decisions(
                 decision.name
             ));
         }
+        if !dependency_native_exception_valid(decision, native_exceptions) {
+            return Err(format!(
+                "FF-ARCH-E-UNAPPROVED-NATIVE-DEPENDENCY: invalid native exception for {}",
+                decision.name
+            ));
+        }
     }
     Ok(decisions)
+}
+
+fn dependency_native_exception_valid(
+    decision: &DependencyDecision,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
+) -> bool {
+    if !decision.native {
+        return decision.exception_id.is_none();
+    }
+    let Some(exception_id) = decision.exception_id.as_deref() else {
+        return false;
+    };
+    let Some(exception) = native_exceptions.get(exception_id) else {
+        return false;
+    };
+    exception.owner == decision.owner
+        && exception.approval_id == decision.approval_id
+        && exception.allowed_consumers.contains(&decision.consumer)
+        && exception
+            .allowed_direct_dependencies
+            .contains(&decision.name)
+        && exception
+            .allowed_versions
+            .contains(&format!("{}@{}", decision.name, decision.version))
+        && exception
+            .allowed_runtime_classes
+            .contains(&decision.runtime_class)
 }
 
 fn work_packet_base_owner_valid(owner: &str) -> bool {
@@ -4204,17 +4377,16 @@ fn validate_direct_dependencies(
 fn validate_transitive_dependencies(
     policy: &ArchitecturePolicy,
     metadata: &Metadata,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
 ) -> Result<(), String> {
     let mut observed_build = BTreeSet::new();
     let mut observed_proc = BTreeSet::new();
+    let mut observed_native_links = BTreeSet::new();
     for package in &metadata.packages {
-        if package.links.is_some() {
-            return Err(format!(
-                "native links package is unapproved: {}",
-                package.name
-            ));
-        }
         let identity = format!("{}@{}", package.name, package.version);
+        if package.links.is_some() {
+            observed_native_links.insert(identity.clone());
+        }
         for target in &package.targets {
             if target.is_custom_build() {
                 observed_build.insert(identity.clone());
@@ -4234,12 +4406,464 @@ fn validate_transitive_dependencies(
         .iter()
         .cloned()
         .collect();
+    let expected_native_links = policy
+        .exception_decision_ids
+        .iter()
+        .filter_map(|id| native_exceptions.get(id))
+        .flat_map(|exception| exception.allowed_native_link_packages.iter().cloned())
+        .collect::<BTreeSet<_>>();
     if observed_build != expected_build || observed_proc != expected_proc {
         return Err(format!(
             "transitive build/proc-macro surface mismatch: build={observed_build:?}, proc={observed_proc:?}"
         ));
     }
+    if observed_native_links != expected_native_links {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-LINK-SURFACE: expected {expected_native_links:?}, observed {observed_native_links:?}"
+        ));
+    }
+    validate_native_exception_reachability(policy, metadata, native_exceptions)?;
+    validate_native_supply_chain(metadata, &expected_native_links)?;
     Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_native_exception_reachability(
+    policy: &ArchitecturePolicy,
+    metadata: &Metadata,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
+) -> Result<(), String> {
+    let resolve = metadata
+        .resolve
+        .as_ref()
+        .ok_or("Cargo metadata omitted resolve graph")?;
+    for exception_id in &policy.exception_decision_ids {
+        let exception = native_exceptions.get(exception_id).ok_or_else(|| {
+            format!(
+                "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: missing native exception {exception_id}"
+            )
+        })?;
+        let governed_package_ids = metadata
+            .packages
+            .iter()
+            .filter(|package| {
+                let identity = format!("{}@{}", package.name, package.version);
+                exception.allowed_versions.contains(&identity)
+                    || exception.allowed_native_link_packages.contains(&identity)
+            })
+            .map(|package| package.id.to_string())
+            .collect::<BTreeSet<_>>();
+        if governed_package_ids.is_empty() {
+            return Err(format!(
+                "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {exception_id} has no selected package in the resolve graph"
+            ));
+        }
+        for workspace_id in &metadata.workspace_members {
+            let workspace_id = workspace_id.to_string();
+            let package = metadata
+                .packages
+                .iter()
+                .find(|package| package.id.to_string() == workspace_id)
+                .ok_or_else(|| {
+                    format!(
+                        "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: workspace package {workspace_id} is absent from metadata"
+                    )
+                })?;
+            let member = policy
+                .members
+                .iter()
+                .find(|member| member.name == package.name.as_str())
+                .ok_or_else(|| {
+                    format!(
+                        "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: workspace package {} has no member policy",
+                        package.name
+                    )
+                })?;
+            let mut pending = vec![workspace_id.clone()];
+            let mut visited = BTreeSet::new();
+            let mut reaches_exception = false;
+            while let Some(package_id) = pending.pop() {
+                if !visited.insert(package_id.clone()) {
+                    continue;
+                }
+                if governed_package_ids.contains(&package_id) {
+                    reaches_exception = true;
+                    break;
+                }
+                let Some(node) = resolve
+                    .nodes
+                    .iter()
+                    .find(|node| node.id.to_string() == package_id)
+                else {
+                    continue;
+                };
+                pending.extend(
+                    node.deps
+                        .iter()
+                        .map(|dependency| dependency.pkg.to_string()),
+                );
+            }
+            if !reaches_exception {
+                continue;
+            }
+            if member.shipped
+                || member.manifest.starts_with("product/")
+                || !exception.allowed_consumers.contains(&member.name)
+            {
+                return Err(format!(
+                    "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {} reaches {exception_id} but is not an allowed non-shipped consumer",
+                    member.name
+                ));
+            }
+            let workspace_node = resolve
+                .nodes
+                .iter()
+                .find(|node| node.id.to_string() == workspace_id)
+                .ok_or_else(|| {
+                    format!(
+                        "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION: {} has no resolve node",
+                        member.name
+                    )
+                })?;
+            for dependency in &workspace_node.deps {
+                let direct_package_id = dependency.pkg.to_string();
+                let mut pending = vec![direct_package_id.clone()];
+                let mut visited = BTreeSet::new();
+                let mut direct_edge_reaches_exception = false;
+                while let Some(package_id) = pending.pop() {
+                    if !visited.insert(package_id.clone()) {
+                        continue;
+                    }
+                    if governed_package_ids.contains(&package_id) {
+                        direct_edge_reaches_exception = true;
+                        break;
+                    }
+                    let Some(node) = resolve
+                        .nodes
+                        .iter()
+                        .find(|node| node.id.to_string() == package_id)
+                    else {
+                        continue;
+                    };
+                    pending.extend(
+                        node.deps
+                            .iter()
+                            .map(|nested_dependency| nested_dependency.pkg.to_string()),
+                    );
+                }
+                if !direct_edge_reaches_exception {
+                    continue;
+                }
+                let direct_package = metadata
+                    .packages
+                    .iter()
+                    .find(|candidate| candidate.id.to_string() == direct_package_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION: direct package {direct_package_id} is absent from metadata"
+                        )
+                    })?;
+                let decision = policy.dependency_decisions.iter().find(|decision| {
+                    decision.consumer == member.name
+                        && decision.name == direct_package.name.as_str()
+                });
+                if !exception
+                    .allowed_direct_dependencies
+                    .contains(direct_package.name.as_str())
+                    || decision.is_none_or(|decision| {
+                        !decision.native
+                            || decision.exception_id.as_deref() != Some(exception_id.as_str())
+                    })
+                {
+                    return Err(format!(
+                        "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION: direct dependency {} -> {} reaches {exception_id} without its own matching native decision",
+                        member.name, direct_package.name
+                    ));
+                }
+            }
+            let direct_exception_decisions = policy
+                .dependency_decisions
+                .iter()
+                .filter(|decision| {
+                    decision.consumer == member.name
+                        && exception
+                            .allowed_direct_dependencies
+                            .contains(&decision.name)
+                })
+                .collect::<Vec<_>>();
+            if direct_exception_decisions.is_empty()
+                || direct_exception_decisions.iter().any(|decision| {
+                    !decision.native
+                        || decision.exception_id.as_deref() != Some(exception_id.as_str())
+                })
+            {
+                return Err(format!(
+                    "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {} reaches {exception_id} without an explicit matching native dependency decision",
+                    member.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_native_supply_chain(
+    metadata: &Metadata,
+    expected_native_links: &BTreeSet<String>,
+) -> Result<(), String> {
+    let forbidden_environment = std::env::vars_os()
+        .filter_map(|(name, _)| name.into_string().ok())
+        .filter(|name| native_source_override_variable(name))
+        .collect::<BTreeSet<_>>();
+    if !forbidden_environment.is_empty() {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE-OVERRIDE: native source or toolchain overrides are forbidden: {forbidden_environment:?}"
+        ));
+    }
+    let resolve = metadata
+        .resolve
+        .as_ref()
+        .ok_or("Cargo metadata omitted resolve graph")?;
+    for identity in expected_native_links {
+        let Some((name, version)) = identity.rsplit_once('@') else {
+            return Err(format!(
+                "FF-ARCH-E-NATIVE-SOURCE: invalid native package identity {identity}"
+            ));
+        };
+        let package = metadata
+            .packages
+            .iter()
+            .find(|package| package.name.as_str() == name && package.version.to_string() == version)
+            .ok_or_else(|| {
+                format!("FF-ARCH-E-NATIVE-SOURCE: metadata omitted native package {identity}")
+            })?;
+        let selected_features = resolve
+            .nodes
+            .iter()
+            .find(|node| node.id == package.id)
+            .map(|node| {
+                node.features
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<BTreeSet<_>>()
+            })
+            .ok_or_else(|| {
+                format!("FF-ARCH-E-NATIVE-SOURCE: resolve graph omitted native package {identity}")
+            })?;
+        let manifest_dir = package
+            .manifest_path
+            .parent()
+            .ok_or_else(|| {
+                format!("FF-ARCH-E-NATIVE-SOURCE: manifest has no parent for {identity}")
+            })?
+            .as_std_path();
+        match name {
+            "boring-sys2" | "btls-sys" => {
+                validate_boringssl_source_dir(identity, manifest_dir, &selected_features)?;
+            }
+            "zstd-sys" => {
+                validate_zstd_source_dir(identity, manifest_dir, &selected_features)?;
+            }
+            "clang-sys" => {
+                validate_clang_source_dir(identity, manifest_dir, &selected_features)?;
+            }
+            _ => {
+                return Err(format!(
+                    "FF-ARCH-E-NATIVE-SOURCE: {identity} has no governed source validator"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_source_override_variable(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    name.contains("BORING_BSSL")
+        || matches!(
+            name.as_str(),
+            "ZSTD_SYS_USE_PKG_CONFIG"
+                | "ZSTD_LIB_DIR"
+                | "ZSTD_INCLUDE_DIR"
+                | "LIBCLANG_PATH"
+                | "LLVM_CONFIG_PATH"
+                | "CLANG_PATH"
+                | "BINDGEN_EXTRA_CLANG_ARGS"
+                | "PKG_CONFIG_PATH"
+                | "PKG_CONFIG_LIBDIR"
+                | "VCPKG_ROOT"
+                | "CMAKE_TOOLCHAIN_FILE"
+        )
+}
+
+fn validate_boringssl_source_dir(
+    identity: &str,
+    manifest_dir: &Path,
+    selected_features: &BTreeSet<String>,
+) -> Result<(), String> {
+    if selected_features
+        .iter()
+        .any(|feature| matches!(feature.as_str(), "fips" | "fips-link-precompiled"))
+    {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} selected forbidden FIPS/precompiled feature surface {selected_features:?}"
+        ));
+    }
+    let vendored_markers = [
+        manifest_dir.join("deps/boringssl/CMakeLists.txt"),
+        manifest_dir.join("deps/boringssl/src/CMakeLists.txt"),
+    ];
+    if !vendored_markers.iter().any(|marker| marker.is_file()) {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} has no packaged BoringSSL CMake marker; build-time source acquisition would be possible"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_zstd_source_dir(
+    identity: &str,
+    manifest_dir: &Path,
+    selected_features: &BTreeSet<String>,
+) -> Result<(), String> {
+    if selected_features.contains("pkg-config") || selected_features.contains("bindgen") {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE-OVERRIDE: {identity} selected a host-discovery feature: {selected_features:?}"
+        ));
+    }
+    if !manifest_dir.join("zstd/lib/zstd.h").is_file()
+        || !manifest_dir.join("zstd/lib/common").is_dir()
+    {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} has no packaged zstd source markers"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_clang_source_dir(
+    identity: &str,
+    manifest_dir: &Path,
+    selected_features: &BTreeSet<String>,
+) -> Result<(), String> {
+    if !selected_features.contains("runtime")
+        || selected_features.contains("static")
+        || selected_features.contains("libcpp")
+    {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} must use runtime discovery without static or libcpp linkage: {selected_features:?}"
+        ));
+    }
+    if !manifest_dir.join("build.rs").is_file() || !manifest_dir.join("Cargo.toml").is_file() {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} has no packaged build-source markers"
+        ));
+    }
+    Ok(())
+}
+
+fn read_native_dependency_exceptions(
+    path: &Path,
+) -> Result<BTreeMap<String, NativeDependencyException>, String> {
+    let text = fs::read_to_string(path).map_err(|error| {
+        format!(
+            "read native exception authority {}: {error}",
+            path.display()
+        )
+    })?;
+    let document = parse_single_yaml(&text, &path.display().to_string())
+        .map_err(|error| format!("FF-ARCH-E-POLICY-SCHEMA: {error}"))?;
+    let authority = document
+        .as_mapping_get("exception_authority")
+        .ok_or("build rules omit exception_authority")?;
+    let rows = authority
+        .as_mapping_get("canonical_allowlist")
+        .and_then(Yaml::as_sequence)
+        .ok_or("exception_authority canonical_allowlist is not a sequence")?;
+    let expected_keys = BTreeSet::from([
+        "allow_build_scripts",
+        "allow_build_time_downloads",
+        "allow_packaging_or_release",
+        "allow_prebuilt_binaries",
+        "allow_product_use",
+        "allowed_consumers",
+        "allowed_direct_dependencies",
+        "allowed_native_link_packages",
+        "allowed_runtime_classes",
+        "allowed_versions",
+        "approval_id",
+        "id",
+        "kind",
+        "owner",
+        "promotion_requires_new_operator_decision",
+        "reason",
+        "removal_trigger",
+        "status",
+    ]);
+    let mut result = BTreeMap::new();
+    for row in rows {
+        let mapping = row
+            .as_mapping()
+            .ok_or("native exception row is not a mapping")?;
+        let keys = mapping
+            .keys()
+            .map(|key| {
+                key.as_str()
+                    .ok_or("native exception row has a non-string key")
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if keys != expected_keys {
+            return Err(format!(
+                "FF-ARCH-E-EXCEPTION-SCHEMA: native exception keys are invalid: {keys:?}"
+            ));
+        }
+        let id = yaml_string(row, "id")?;
+        let owner = yaml_string(row, "owner")?;
+        let approval_id = yaml_string(row, "approval_id")?;
+        if !id.starts_with("FF-DEC-")
+            || yaml_string(row, "kind")? != "native_dependency"
+            || yaml_string(row, "status")? != "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY"
+            || !work_packet_base_owner_valid(owner)
+            || !decision_approval_matches_owner(approval_id, owner)
+            || !yaml_bool(row, "allow_build_scripts")?
+            || yaml_bool(row, "allow_build_time_downloads")?
+            || yaml_bool(row, "allow_prebuilt_binaries")?
+            || yaml_bool(row, "allow_product_use")?
+            || yaml_bool(row, "allow_packaging_or_release")?
+            || !yaml_bool(row, "promotion_requires_new_operator_decision")?
+            || yaml_string(row, "reason")?.trim().is_empty()
+            || yaml_string(row, "removal_trigger")?.trim().is_empty()
+        {
+            return Err(format!(
+                "FF-ARCH-E-EXCEPTION-SCHEMA: native exception {id} violates the bounded policy"
+            ));
+        }
+        let exception = NativeDependencyException {
+            id: id.to_owned(),
+            owner: owner.to_owned(),
+            approval_id: approval_id.to_owned(),
+            allowed_consumers: yaml_string_set(row, "allowed_consumers")?,
+            allowed_direct_dependencies: yaml_string_set(row, "allowed_direct_dependencies")?,
+            allowed_versions: yaml_string_set(row, "allowed_versions")?,
+            allowed_native_link_packages: yaml_string_set(row, "allowed_native_link_packages")?,
+            allowed_runtime_classes: yaml_string_set(row, "allowed_runtime_classes")?,
+        };
+        if exception.allowed_consumers.is_empty()
+            || exception.allowed_direct_dependencies.is_empty()
+            || exception.allowed_versions.is_empty()
+            || exception.allowed_runtime_classes.is_empty()
+        {
+            return Err(format!(
+                "FF-ARCH-E-EXCEPTION-SCHEMA: native exception {id} has an empty required scope"
+            ));
+        }
+        if result.insert(exception.id.clone(), exception).is_some() {
+            return Err(format!(
+                "FF-ARCH-E-EXCEPTION-SCHEMA: duplicate native exception {id}"
+            ));
+        }
+    }
+    Ok(result)
 }
 
 fn required_architecture_rules(path: &Path) -> Result<BTreeSet<String>, String> {
@@ -4315,6 +4939,34 @@ fn yaml_string<'a>(mapping: &'a Yaml<'_>, key: &str) -> Result<&'a str, String> 
         .and_then(Yaml::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| format!("YAML mapping has no nonempty string {key}"))
+}
+
+fn yaml_bool(mapping: &Yaml<'_>, key: &str) -> Result<bool, String> {
+    mapping
+        .as_mapping_get(key)
+        .and_then(Yaml::as_bool)
+        .ok_or_else(|| format!("YAML mapping has no boolean {key}"))
+}
+
+fn yaml_string_set(mapping: &Yaml<'_>, key: &str) -> Result<BTreeSet<String>, String> {
+    let values = mapping
+        .as_mapping_get(key)
+        .and_then(Yaml::as_sequence)
+        .ok_or_else(|| format!("YAML mapping has no sequence {key}"))?;
+    let parsed = values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|item| !item.trim().is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| format!("YAML sequence {key} contains a non-string or empty value"))
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if parsed.len() != values.len() {
+        return Err(format!("YAML sequence {key} contains duplicate values"));
+    }
+    Ok(parsed)
 }
 
 #[allow(
@@ -8357,6 +9009,33 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-007-FINDING-DEEP-DECLARATION-005" => Some(
             "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution",
         ),
+        "WP-FF-015-FINDING-OPERATIONAL-ADMISSION-001" | "WP-FF-015-FINDING-DIAGNOSTICS-010" => {
+            Some(
+                "fforager_transport::adjudication::tests::operational_profile_is_blocked_before_network_on_all_missing_semantics",
+            )
+        }
+        "WP-FF-015-FINDING-LIVE-AUTHORITY-002" => Some(
+            "fforager_transport::adjudication::tests::explicitly_authorized_live_observation_still_requires_dns_and_ssrf_authority",
+        ),
+        "WP-FF-015-FINDING-RUNTIME-ADMISSION-003" => Some(
+            "fforager_transport::adjudication::tests::occupied_runtime_lane_is_immediate_typed_refusal_before_io",
+        ),
+        "WP-FF-015-FINDING-RESOURCE-REPORT-004" => Some(
+            "fforager-wreq-live-probe::tests::persisted_report_uses_the_same_production_bound_before_commit",
+        ),
+        "WP-FF-015-FINDING-REPORT-CONTAINMENT-005" => Some(
+            "fforager-wreq-live-probe::tests::persisted_report_destination_is_repository_contained",
+        ),
+        "WP-FF-015-FINDING-NATIVE-EDGE-006" => {
+            Some("xtask::tests::native_exception_mutations_reach_production_validation")
+        }
+        "WP-FF-015-FINDING-NATIVE-SOURCE-007" => {
+            Some("xtask::tests::every_allowed_native_link_has_a_source_policy_and_override_guard")
+        }
+        "WP-FF-015-FINDING-VERDICT-ORACLE-008" => Some(
+            "fforager_transport::adjudication::tests::aggregate_adjudication_is_failed_zero_progress_and_strictly_reloaded",
+        ),
+        "WP-FF-015-FINDING-PROVENANCE-009" => Some("FF-GATE-ARCH-001::dependency-policy"),
         "WP-FF-016-FINDING-TREE-REF-001" => {
             Some("xtask::secret_scan::tests::tree_root_and_ref_names_are_scanned_before_push")
         }
@@ -9065,6 +9744,10 @@ fn validate_rust_verification_environment(root: &Path) -> Result<(), String> {
             "FF-ARCH-E-RUST-ENV-OVERRIDE: verification refuses compiler, lint, wrapper, or toolchain overrides: {overrides:?}"
         ));
     }
+    validate_rust_verification_configs(root)
+}
+
+fn validate_rust_verification_configs(root: &Path) -> Result<(), String> {
     let mut config_paths = root
         .ancestors()
         .flat_map(|ancestor| {
@@ -9083,23 +9766,37 @@ fn validate_rust_verification_environment(root: &Path) -> Result<(), String> {
     let canonical_config = "[build]\ntarget-dir = \".fforager-artifacts/cargo-target\"\n";
     let repository_root = repo_root()?;
     let mut allowed = vec![root.join(".cargo/config.toml")];
-    if root.starts_with(&repository_root) {
+    let dot_git = root.join(".git");
+    if !dot_git.exists() && root.starts_with(&repository_root) {
         allowed.push(repository_root.join(".cargo/config.toml"));
+        if repository_root.join(".git").is_file() {
+            let shared_root = shared_repository_root(&repository_root)?;
+            validate_linked_worktree_layout(&repository_root, &shared_root)?;
+            allowed.push(shared_root.join(".cargo/config.toml"));
+        }
     }
-    let invalid = config_paths
-        .into_iter()
-        .filter(|path| path.exists())
-        .filter_map(|path| {
-            if allowed.iter().any(|candidate| candidate == &path)
-                && fs::read_to_string(&path)
-                    .is_ok_and(|text| text.replace("\r\n", "\n") == canonical_config)
-            {
-                None
-            } else {
-                Some(path.display().to_string())
-            }
-        })
-        .collect::<Vec<_>>();
+    if dot_git.is_file() {
+        let shared_root = shared_repository_root(root)?;
+        validate_linked_worktree_layout(root, &shared_root)?;
+        allowed.push(shared_root.join(".cargo/config.toml"));
+    }
+    let mut invalid = Vec::new();
+    for path in config_paths.into_iter().filter(|path| path.exists()) {
+        let allowed_path = allowed
+            .iter()
+            .any(|candidate| canonical_paths_equal(candidate, &path).unwrap_or(false));
+        let canonical_contents = fs::read_to_string(&path)
+            .is_ok_and(|text| text.replace("\r\n", "\n") == canonical_config);
+        if !allowed_path || !canonical_contents {
+            let reason = match (allowed_path, canonical_contents) {
+                (false, false) => "path-and-contents",
+                (false, true) => "path",
+                (true, false) => "contents",
+                (true, true) => unreachable!(),
+            };
+            invalid.push(format!("{} ({reason})", path.display()));
+        }
+    }
     if invalid.is_empty() {
         Ok(())
     } else {
@@ -10718,6 +11415,7 @@ mod tests {
             approval_id: "WP-FF-003-executable-gate-bootstrap-v1-AC-002".to_owned(),
             features: vec!["derive".to_owned()],
             default_features: true,
+            exception_id: None,
         };
         assert!(dependency_features_match(
             &["derive".to_owned()],
@@ -10747,6 +11445,63 @@ mod tests {
     }
 
     #[test]
+    fn boringssl_source_policy_rejects_missing_vendoring_and_precompiled_features() {
+        let root = test_root("boringssl-source-policy");
+        fs::create_dir_all(&root).unwrap();
+        let empty = BTreeSet::new();
+        let error = validate_boringssl_source_dir("boring-sys2@4.15.15", &root, &empty)
+            .expect_err("missing vendored source marker must fail");
+        assert!(error.contains("FF-ARCH-E-NATIVE-SOURCE"));
+
+        let marker = root.join("deps/boringssl/CMakeLists.txt");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, "cmake_minimum_required(VERSION 3.10)\n").unwrap();
+        validate_boringssl_source_dir("boring-sys2@4.15.15", &root, &empty)
+            .expect("packaged source marker");
+
+        let selected_features = ["fips-link-precompiled".to_owned()].into_iter().collect();
+        let error = validate_boringssl_source_dir("boring-sys2@4.15.15", &root, &selected_features)
+            .expect_err("precompiled feature must fail");
+        assert!(error.contains("FF-ARCH-E-NATIVE-PRECOMPILED"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn every_allowed_native_link_has_a_source_policy_and_override_guard() {
+        assert!(native_source_override_variable("BORING_BSSL_PATH"));
+        assert!(native_source_override_variable("ZSTD_LIB_DIR"));
+        assert!(native_source_override_variable("LIBCLANG_PATH"));
+        assert!(native_source_override_variable("PKG_CONFIG_PATH"));
+        assert!(!native_source_override_variable("CARGO_TARGET_DIR"));
+
+        let root = test_root("native-source-policies");
+        fs::create_dir_all(root.join("zstd/lib/common")).unwrap();
+        fs::write(root.join("zstd/lib/zstd.h"), "#define ZSTD_VERSION 1\n").unwrap();
+        validate_zstd_source_dir("zstd-sys@test", &root, &BTreeSet::new())
+            .expect("packaged zstd source");
+        let zstd_error = validate_zstd_source_dir(
+            "zstd-sys@test",
+            &root,
+            &BTreeSet::from(["pkg-config".to_owned()]),
+        )
+        .expect_err("host zstd discovery must fail");
+        assert!(zstd_error.contains("FF-ARCH-E-NATIVE-SOURCE-OVERRIDE"));
+
+        fs::write(root.join("build.rs"), "fn main() {}\n").unwrap();
+        fs::write(root.join("Cargo.toml"), "[package]\nname='fixture'\n").unwrap();
+        validate_clang_source_dir(
+            "clang-sys@test",
+            &root,
+            &BTreeSet::from(["runtime".to_owned()]),
+        )
+        .expect("runtime clang discovery");
+        let clang_error = validate_clang_source_dir("clang-sys@test", &root, &BTreeSet::new())
+            .expect_err("missing runtime discovery");
+        assert!(clang_error.contains("FF-ARCH-E-NATIVE-SOURCE"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn representative_repository_mutations_reach_production_validation() {
         assert_architecture_mutation_fails(
             "shipped-before-bootstrap",
@@ -10764,7 +11519,7 @@ mod tests {
             |root| {
                 replace_file_text(
                     &root.join("build/architecture-policy.toml"),
-                    "exception_decision_ids = []",
+                    "exception_decision_ids = [\"FF-DEC-001\"]",
                     "exception_decision_ids = [\"SELF-AUTHORIZED\"]",
                 );
             },
@@ -10828,6 +11583,71 @@ mod tests {
                 fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
             },
             "FF-ARCH-E-WRONG-ROOT",
+        );
+    }
+
+    #[test]
+    fn native_exception_mutations_reach_production_validation() {
+        assert_architecture_mutation_fails(
+            "native-exception-wrong-consumer",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allowed_consumers: [fforager-transport]",
+                    "allowed_consumers: [fforager-xtask]",
+                );
+            },
+            "FF-ARCH-E-UNAPPROVED-NATIVE-DEPENDENCY",
+        );
+        assert_architecture_mutation_fails(
+            "native-exception-hidden-link-package",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "\"clang-sys@1.8.1\", ",
+                    "",
+                );
+            },
+            "FF-ARCH-E-NATIVE-LINK-SURFACE",
+        );
+        assert_architecture_mutation_fails(
+            "native-exception-product-promotion",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allow_product_use: false",
+                    "allow_product_use: true",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "native-exception-shipped-product-reachability",
+            mutate_shipped_product_native_reachability,
+            "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY",
+        );
+        assert_architecture_mutation_fails(
+            "native-exception-direct-edge-misattribution",
+            mutate_direct_native_edge_misattribution,
+            "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION",
+        );
+    }
+
+    #[test]
+    fn native_exception_shipped_product_reachability_rejects_actual_resolve_graph() {
+        let root = architecture_sandbox("native-exception-shipped-product-resolve-graph");
+        mutate_shipped_product_native_reachability(&root);
+        let policy: ArchitecturePolicy =
+            read_toml(&root.join("build/architecture-policy.toml")).unwrap();
+        let native_exceptions =
+            read_native_dependency_exceptions(&root.join(&policy.exception_authority)).unwrap();
+        let metadata = cargo_metadata(&root, &policy).unwrap();
+        let error = validate_native_exception_reachability(&policy, &metadata, &native_exceptions)
+            .unwrap_err();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(
+            error.contains("FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY"),
+            "expected shipped-product reachability rejection, observed {error}"
         );
     }
 
@@ -11408,6 +12228,78 @@ product_root = "product"
         );
     }
 
+    #[test]
+    fn linked_worktree_metadata_resolves_only_the_shared_dot_git_root() {
+        let shared = test_root("linked-worktree-metadata");
+        let worktree = shared.join(".worktrees/candidate");
+        let gitdir = shared.join(".git/worktrees/candidate");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::create_dir_all(&gitdir).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            "gitdir: ../../.git/worktrees/candidate\n",
+        )
+        .unwrap();
+        fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+
+        assert_eq!(
+            shared_repository_root(&worktree).unwrap(),
+            shared.canonicalize().unwrap()
+        );
+        fs::remove_dir_all(&shared).unwrap();
+    }
+
+    #[test]
+    fn linked_worktree_metadata_rejects_a_common_directory_outside_dot_git() {
+        let shared = test_root("linked-worktree-bad-commondir");
+        let worktree = shared.join(".worktrees/candidate");
+        let gitdir = shared.join(".git/worktrees/candidate");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::create_dir_all(&gitdir).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            "gitdir: ../../.git/worktrees/candidate\n",
+        )
+        .unwrap();
+        fs::write(gitdir.join("commondir"), "../../..\n").unwrap();
+
+        let error = shared_repository_root(&worktree).unwrap_err();
+        assert!(
+            error.contains("must resolve to a .git directory"),
+            "{error}"
+        );
+        fs::remove_dir_all(&shared).unwrap();
+    }
+
+    #[test]
+    fn current_linked_worktree_resolves_its_shared_config_and_artifact_root() {
+        let root = repo_root().unwrap();
+        if !root.join(".git").is_file() {
+            return;
+        }
+        let shared = shared_repository_root(&root).unwrap();
+        validate_linked_worktree_layout(&root, &shared).unwrap();
+        assert!(
+            canonical_paths_equal(
+                &shared.join(".cargo/config.toml"),
+                &root
+                    .ancestors()
+                    .find(|ancestor| ancestor.join(".git").is_dir())
+                    .unwrap()
+                    .join(".cargo/config.toml")
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn verification_sandbox_in_linked_worktree_allows_only_canonical_ancestor_configs() {
+        let sandbox = test_root("verification-sandbox-config");
+        fs::create_dir_all(&sandbox).unwrap();
+        validate_rust_verification_configs(&sandbox).unwrap();
+        fs::remove_dir_all(&sandbox).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn bounded_process_timeout_returns_incomplete_evidence() {
@@ -11535,8 +12427,48 @@ product_root = "product"
     }
 
     fn replace_file_text(path: &Path, before: &str, after: &str) {
-        let text = fs::read_to_string(path).unwrap();
-        assert!(text.contains(before), "missing mutation anchor {before}");
-        fs::write(path, text.replacen(before, after, 1)).unwrap();
+        replace_text_in_file(path, before, after)
+            .unwrap_or_else(|error| panic!("mutation failed for {}: {error}", path.display()));
+    }
+
+    fn mutate_shipped_product_native_reachability(root: &Path) {
+        replace_file_text(
+            &root.join("product/crates/fforager-core/Cargo.toml"),
+            "fforager-contracts = { version = \"0.1.0\", path = \"../fforager-contracts\" }",
+            "fforager-contracts = { version = \"0.1.0\", path = \"../fforager-contracts\" }\nwreq.workspace = true",
+        );
+        replace_file_text(
+            &root.join("build/Cargo.lock"),
+            "name = \"fforager-core\"\nversion = \"0.1.0\"\ndependencies = [\n \"fforager-contracts\",\n]",
+            "name = \"fforager-core\"\nversion = \"0.1.0\"\ndependencies = [\n \"fforager-contracts\",\n \"wreq\",\n]",
+        );
+        replace_file_text(
+            &root.join("build/architecture-policy.toml"),
+            "[[dependency_decisions]]\nname = \"toml\"",
+            "[[dependency_decisions]]\nname = \"wreq\"\nversion = \"6.0.0-rc.29\"\nconsumer = \"fforager-core\"\nruntime_class = \"shipped_rust_product\"\npurpose = \"Mutation-only shipped consumer bypass probe.\"\nnative = false\nowner = \"WP-FF-015-wreq-transport-adjudication\"\nallowed_consumers = [\"fforager-core\"]\nreason = \"Mutation-only reachability proof.\"\nremoval_trigger = \"Mutation sandbox is deleted after the assertion.\"\napproval_id = \"WP-FF-015-wreq-transport-adjudication-v1-AC-001\"\nfeatures = [\"stream\", \"tokio-rt\", \"webpki-roots\"]\ndefault_features = false\n\n[[dependency_decisions]]\nname = \"toml\"",
+        );
+    }
+
+    fn mutate_direct_native_edge_misattribution(root: &Path) {
+        replace_file_text(
+            &root.join("build/Cargo.toml"),
+            "wreq-util = { version = \"=3.0.0-rc.14\", default-features = false, features = [\"emulation\"] }",
+            "wreq-util = { version = \"=3.0.0-rc.14\", default-features = false, features = [\"emulation\"] }\nbtls = \"=0.5.6\"",
+        );
+        replace_file_text(
+            &root.join("build/crates/fforager-transport/Cargo.toml"),
+            "wreq-util.workspace = true",
+            "wreq-util.workspace = true\nbtls.workspace = true",
+        );
+        replace_file_text(
+            &root.join("build/Cargo.lock"),
+            "dependencies = [\n \"fforager-contracts\",\n \"futures-util\",",
+            "dependencies = [\n \"btls\",\n \"fforager-contracts\",\n \"futures-util\",",
+        );
+        replace_file_text(
+            &root.join("build/architecture-policy.toml"),
+            "[[dependency_decisions]]\nname = \"wreq\"\nversion = \"6.0.0-rc.29\"",
+            "[[dependency_decisions]]\nname = \"btls\"\nversion = \"0.5.6\"\nconsumer = \"fforager-transport\"\nruntime_class = \"non_shipped_phase0_prerequisite\"\npurpose = \"Mutation-only direct native edge bypass probe.\"\nnative = false\nowner = \"WP-FF-015-wreq-transport-adjudication\"\nallowed_consumers = [\"fforager-transport\"]\nreason = \"Mutation-only attribution proof.\"\nremoval_trigger = \"Mutation sandbox is deleted after the assertion.\"\napproval_id = \"WP-FF-015-wreq-transport-adjudication-v1-AC-001\"\nfeatures = []\ndefault_features = true\n\n[[dependency_decisions]]\nname = \"wreq\"\nversion = \"6.0.0-rc.29\"",
+        );
     }
 }

@@ -42,6 +42,39 @@ impl std::fmt::Debug for LocalHarnessTarget {
     }
 }
 
+impl LocalHarnessTarget {
+    #[cfg(test)]
+    pub(crate) fn url(&self, path: &str) -> String {
+        format!("http://{}:{}{path}", self.address.ip(), self.address.port())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn authorization(&self) -> &str {
+        &self.authorization
+    }
+
+    #[cfg(test)]
+    pub(crate) fn acknowledge_fragment(&self) -> Result<(), TransportError> {
+        let receiver = self.fragment_rx.lock().map_err(|_| {
+            TransportError::Protocol("FF-TRANSPORT-E-HARNESS-FRAGMENT-LOCK".to_owned())
+        })?;
+        receiver
+            .recv_timeout(IO_TIMEOUT)
+            .map_err(|error| {
+                TransportError::Protocol(format!(
+                    "FF-TRANSPORT-E-HARNESS-FRAGMENT-RECEIVE: {error}"
+                ))
+            })
+            .and_then(|_| {
+                self.fragment_ack_tx.send(()).map_err(|error| {
+                    TransportError::Protocol(format!(
+                        "FF-TRANSPORT-E-HARNESS-FRAGMENT-ACK: {error}"
+                    ))
+                })
+            })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapturedRequest {
@@ -100,6 +133,9 @@ impl LocalProtocolServer {
                 }
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).map_err(|error| {
+                            format!("FF-TRANSPORT-E-HARNESS-CLIENT-MODE: {error}")
+                        })?;
                         stream
                             .set_read_timeout(Some(IO_TIMEOUT))
                             .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-TIMEOUT: {error}"))?;
@@ -124,6 +160,9 @@ impl LocalProtocolServer {
                     }
                 }
             };
+            if request_target(&request)? == "/delay-headers" {
+                thread::sleep(Duration::from_millis(100));
+            }
             let response = response_for(&request)?;
             request_tx
                 .send(request)
@@ -142,6 +181,7 @@ impl LocalProtocolServer {
                     .recv_timeout(IO_TIMEOUT)
                     .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-FRAGMENT-ACK: {error}"))?;
             }
+            wait_for_peer_close(&mut stream, response.wait_for_peer_close)?;
             Ok(())
         });
         Ok(Self {
@@ -369,81 +409,180 @@ fn read_request(stream: &mut TcpStream) -> Result<CapturedRequest, String> {
 struct ResponsePlan {
     head: Vec<u8>,
     body_chunks: Vec<Vec<u8>>,
+    wait_for_peer_close: bool,
 }
 
+fn wait_for_peer_close(stream: &mut TcpStream, required: bool) -> Result<(), String> {
+    if !required {
+        return Ok(());
+    }
+    let mut byte = [0_u8; 1];
+    match stream.read(&mut byte) {
+        Ok(0) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::BrokenPipe
+            ) =>
+        {
+            Ok(())
+        }
+        Ok(_) => Err("FF-TRANSPORT-E-HARNESS-UNEXPECTED-BODY".to_owned()),
+        Err(error) => Err(format!("FF-TRANSPORT-E-HARNESS-PEER-CLOSE: {error}")),
+    }
+}
+
+#[allow(clippy::too_many_lines)]
 fn response_for(request: &CapturedRequest) -> Result<ResponsePlan, String> {
-    let path = request
-        .request_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| "FF-TRANSPORT-E-HARNESS-TARGET".to_owned())?;
-    let (status, reason, headers, body_chunks) = match path.split('?').next().unwrap_or(path) {
-        "/ok" => (200, "OK", Vec::new(), vec![b"ferric-transport".to_vec()]),
-        "/range" => {
-            if request.headers.get("range").map(String::as_str) != Some("bytes=2-5") {
-                return Err("FF-TRANSPORT-E-HARNESS-RANGE-EXPECTATION".to_owned());
+    let path = request_target(request)?;
+    let (status, reason, headers, body_chunks, wait_for_peer_close) =
+        match path.split('?').next().unwrap_or(path) {
+            "/ok" => (
+                200,
+                "OK",
+                Vec::new(),
+                vec![b"ferric-transport".to_vec()],
+                false,
+            ),
+            "/range" => {
+                if request.headers.get("range").map(String::as_str) != Some("bytes=2-5") {
+                    return Err("FF-TRANSPORT-E-HARNESS-RANGE-EXPECTATION".to_owned());
+                }
+                (
+                    206,
+                    "Partial Content",
+                    vec![("Content-Range", "bytes 2-5/10")],
+                    vec![b"2345".to_vec()],
+                    false,
+                )
             }
-            (
-                206,
-                "Partial Content",
-                vec![("Content-Range", "bytes 2-5/10")],
-                vec![b"2345".to_vec()],
-            )
-        }
-        "/range-boundary" => {
-            if request.headers.get("range").map(String::as_str) != Some("bytes=9-9") {
-                return Err("FF-TRANSPORT-E-HARNESS-RANGE-EXPECTATION".to_owned());
+            "/range-boundary" => {
+                if request.headers.get("range").map(String::as_str) != Some("bytes=9-9") {
+                    return Err("FF-TRANSPORT-E-HARNESS-RANGE-EXPECTATION".to_owned());
+                }
+                (
+                    206,
+                    "Partial Content",
+                    vec![("Content-Range", "bytes 9-9/10")],
+                    vec![b"9".to_vec()],
+                    false,
+                )
             }
-            (
-                206,
-                "Partial Content",
-                vec![("Content-Range", "bytes 9-9/10")],
-                vec![b"9".to_vec()],
-            )
-        }
-        "/range-invalid" => (
-            416,
-            "Range Not Satisfiable",
-            vec![("Content-Range", "bytes */10")],
-            Vec::new(),
-        ),
-        "/stream" => (
-            200,
-            "OK",
-            Vec::new(),
-            vec![
-                b"stream-".to_vec(),
-                b"one-".to_vec(),
-                b"stream-".to_vec(),
-                b"two".to_vec(),
-            ],
-        ),
-        "/stream-small" => (200, "OK", Vec::new(), vec![b"stream".to_vec()]),
-        "/huge-length" => (
-            200,
-            "OK",
-            vec![("X-FF-Override-Length", "18446744073709551615")],
-            Vec::new(),
-        ),
-        _ => (404, "Not Found", Vec::new(), vec![b"not-found".to_vec()]),
-    };
+            "/range-invalid" => (
+                416,
+                "Range Not Satisfiable",
+                vec![("Content-Range", "bytes */10")],
+                Vec::new(),
+                false,
+            ),
+            "/stream" => (
+                200,
+                "OK",
+                Vec::new(),
+                vec![
+                    b"stream-".to_vec(),
+                    b"one-".to_vec(),
+                    b"stream-".to_vec(),
+                    b"two".to_vec(),
+                ],
+                false,
+            ),
+            "/stream-small" => (200, "OK", Vec::new(), vec![b"stream".to_vec()], false),
+            "/redirect" => (302, "Found", vec![("Location", "/ok")], Vec::new(), false),
+            "/set-cookie" => (
+                200,
+                "OK",
+                vec![("Set-Cookie", "ff-session=secret; Path=/")],
+                Vec::new(),
+                false,
+            ),
+            "/gzip" => (
+                200,
+                "OK",
+                vec![("Content-Encoding", "gzip")],
+                vec![vec![
+                    31, 139, 8, 0, 0, 0, 0, 0, 0, 10, 75, 75, 45, 42, 202, 76, 214, 77, 175, 202,
+                    44, 208, 45, 72, 172, 204, 201, 79, 76, 1, 0, 191, 75, 160, 215, 19, 0, 0, 0,
+                ]],
+                false,
+            ),
+            "/huge-length" => (
+                200,
+                "OK",
+                vec![("X-FF-Override-Length", "18446744073709551615")],
+                Vec::new(),
+                true,
+            ),
+            "/declared-oversize" => (
+                200,
+                "OK",
+                vec![("X-FF-Override-Length", "1073741824")],
+                Vec::new(),
+                true,
+            ),
+            "/chunked-oversize" => (
+                200,
+                "OK",
+                vec![("X-FF-Transfer-Encoding", "chunked")],
+                vec![vec![b'x'; 128]],
+                false,
+            ),
+            _ => (
+                404,
+                "Not Found",
+                Vec::new(),
+                vec![b"not-found".to_vec()],
+                false,
+            ),
+        };
+    let chunked = headers
+        .iter()
+        .any(|(name, value)| *name == "X-FF-Transfer-Encoding" && *value == "chunked");
     let body_len = body_chunks.iter().map(Vec::len).sum::<usize>();
     let override_length = headers
         .iter()
         .find(|(name, _)| *name == "X-FF-Override-Length")
         .map(|(_, value)| *value);
     let content_length_text = override_length.map_or_else(|| body_len.to_string(), str::to_owned);
-    let mut head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length_text}\r\nConnection: close\r\n"
-    )
-    .into_bytes();
+    let mut head = if chunked {
+        format!("HTTP/1.1 {status} {reason}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n")
+            .into_bytes()
+    } else {
+        format!(
+            "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length_text}\r\nConnection: close\r\n"
+        )
+        .into_bytes()
+    };
     for (name, value) in headers {
-        if name != "X-FF-Override-Length" {
+        if !matches!(name, "X-FF-Override-Length" | "X-FF-Transfer-Encoding") {
             head.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
         }
     }
     head.extend_from_slice(b"\r\n");
-    Ok(ResponsePlan { head, body_chunks })
+    let body_chunks = if chunked {
+        let payload = body_chunks.concat();
+        let mut encoded = format!("{:x}\r\n", payload.len()).into_bytes();
+        encoded.extend_from_slice(&payload);
+        encoded.extend_from_slice(b"\r\n0\r\n\r\n");
+        vec![encoded]
+    } else {
+        body_chunks
+    };
+    Ok(ResponsePlan {
+        head,
+        body_chunks,
+        wait_for_peer_close,
+    })
+}
+
+fn request_target(request: &CapturedRequest) -> Result<&str, String> {
+    request
+        .request_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| "FF-TRANSPORT-E-HARNESS-TARGET".to_owned())
 }
 
 fn read_response(

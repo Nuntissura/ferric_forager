@@ -1,7 +1,7 @@
 ---
 file_id: FF-PRODUCT-MODEL-MANUAL-001
 file_kind: model_manual
-updated_at: "2026-07-26"
+updated_at: "2026-07-28"
 ---
 
 <topic id="phase-0-purpose" status="active" version="4" wp="WP-FF-006-rust-youtube-challenge-spike-v1" updated_at="2026-07-26">
@@ -313,6 +313,66 @@ Safety and recovery:
 - If a case differs, inspect its `exact_mismatch`, concrete input, and executed boundary; repair the implementation or declared corpus deliberately and rerun the same command.
 - If the aggregate verdict is failed, retain the blocked-capability list and residual uncertainties for Operator selection. Do not auto-promote or add a forbidden fallback.
 - The canonical `verify-deep` and `verify-pr` gates execute this corpus and therefore refresh the same report.
+
+</topic>
+
+<topic id="phase-0-wreq-transport-adjudication" status="active" version="1" wp="WP-FF-015-wreq-transport-adjudication-v1" ingestable="true" updated_at="2026-07-28">
+
+## Adjudicate the exact-pinned wreq dependency candidate
+
+WP-FF-015 compares stable `wreq 5.3.0` with exact-pinned `wreq 6.0.0-rc.29` plus `wreq-util 3.0.0-rc.14` under narrow exception `FF-DEC-001`. The exception is limited to the non-shipped `fforager-transport` prerequisite package. It does not authorize a product dependency, production promotion, packaging, release, a general native dependency, or product progress.
+
+Run the current release-candidate regressions from the repository root with one Cargo process and the shared repository-local target:
+
+```powershell
+cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-transport --all-features
+```
+
+Reproduce the stable control sequentially from its reachable sanitized checkpoint. Do not run stable and release-candidate builds concurrently because their BoringSSL packages use the same native link identity:
+
+```powershell
+powershell -NoProfile -File build/scripts/new-worktree.ps1 -WorktreeId wp15-stable-replay -Branch codex/wp15-stable-replay -StartPoint 7dae6b6
+Push-Location .worktrees/wp15-stable-replay
+cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-transport --all-features
+Pop-Location
+git worktree unlock .worktrees/wp15-stable-replay
+git worktree remove .worktrees/wp15-stable-replay
+git branch -D codex/wp15-stable-replay
+```
+
+Emit the aggregate adjudication report with a new collision-free name:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMddTHHmmssZ"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-transport --bin fforager-wreq-adjudication -- --output "build/reports/wp-ff-015-wreq-adjudication-$stamp.json"
+```
+
+The command strictly reloads a freshly reconstructed report before committing it atomically. Read the stdout verdict literally:
+
+- `PASS_WREQ_ADJUDICATION` is possible only when every mandatory operational capability and residual dependency/build constraint is satisfied.
+- `FAILED_WREQ_ADJUDICATION_REQUIRES_OPERATOR_DECISION` is the current expected result. It is a completed fail-closed prerequisite verdict, not transport promotion.
+
+The report records both exact dependency candidates, features, profile coverage, native-link surfaces, the selected non-shipped result, the complete operational capability decision, residual blocker codes, `zero_product_progress: true`, and `product_promotion_authorized: false`. Its strict consumer rejects unknown fields, changed dependency identities, removed blockers, forged PASS, or any other divergence from a fresh deterministic reconstruction.
+
+The current candidate configures `chrome-136-windows`, disables ambient proxy use, redirects, cookie storage, and transparent decompression, bounds connection/read/total time, caps idle and total pool size, and bounds response accumulation. Configuration and structural echo data do not prove browser parity. Operational profile admission therefore blocks before network I/O on missing TLS fingerprint parity, HTTP/2 fingerprint parity, Ferric-authoritative DNS provenance, pre-connect and peer-address SSRF enforcement, immutable pool partitioning, and wreq cancellation/teardown proof. Dependency response chunks can transiently exist before Ferric's accumulated-body check, and the native toolchain has only the declared Windows host proof; both remain explicit aggregate blockers.
+
+The live boundary is non-canonical and requires opt-in in both the CLI and library API:
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMddTHHmmssZ"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-transport --bin fforager-wreq-live-probe -- --enable-live --output "build/reports/wp-ff-015-wreq-live-refusal-$stamp.json"
+```
+
+The current expected live result is exit code `1` with `blocked_external_wire`. It refuses before dependency DNS or socket I/O because the candidate lacks Ferric-authoritative DNS and SSRF enforcement. Do not weaken this refusal, reuse an older structural observation as current proof, or treat endpoint-provided JA3/JA4/Akamai text as independent browser parity.
+
+Failure and recovery:
+
+- `FF-WREQ-E-SATURATED`: another request owns the single adjudication runtime lane. Retry after it completes; there is no unbounded admission queue.
+- `FF-WREQ-E-NESTED-RUNTIME`: invoke the synchronous command outside an existing Tokio runtime.
+- `FF-WREQ-E-REPORT-COLLISION`: choose a new report name. Existing reports are immutable.
+- `FF-WREQ-E-REPORT-CONTAINMENT`: repair `build/reports/` so it resolves inside the repository; do not redirect reports through a junction or symlink.
+- native-edge, source, feature, link, or host diagnostics: restore the exact `FF-DEC-001` graph and rerun architecture, dependency, transport, and adjudication checks. Do not broaden the exception.
+- after all WP-FF-015 proof is recorded and before starting another task, run `powershell -NoProfile -File build/scripts/clean-artifacts.ps1`; this removes only disposable content under the shared `.fforager-artifacts/` root.
 
 </topic>
 

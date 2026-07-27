@@ -3,10 +3,19 @@
 //!
 //! This crate is Phase 0 prerequisite evidence. It is not a product transport.
 
+pub mod adjudication;
 pub mod corpus;
 mod local_server;
 mod policy;
 
+pub use adjudication::{
+    AdjudicationError, AdjudicationObservation, EvidenceState, FingerprintProfile,
+    FingerprintReceipt, LiveNetworkAuthorization, LiveProbeOptions, LiveProbeVerdict,
+    LiveWireProbeReport, PersistedLiveProbeReport, PolicyConveniences, ProfileParityStatus,
+    StructuralWireEvidence, WreqAdjudicationAdapter, WreqAdjudicationReport,
+    WreqAdjudicationVerdict, run_wreq_adjudication, validate_live_wire_probe_report,
+    validate_persisted_live_probe_report, validate_wreq_adjudication_report,
+};
 pub use corpus::{
     AggregateVerdict, CorpusManifest, CorpusReport, run_corpus, validate_aggregate_evidence,
 };

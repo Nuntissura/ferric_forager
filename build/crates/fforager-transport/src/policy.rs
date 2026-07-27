@@ -98,7 +98,7 @@ impl CandidateAdapter {
             if self.supported.contains(capability) {
                 satisfied.insert(*capability);
             } else {
-                blocked.push(blocked_capability(*capability));
+                blocked.push(blocked_capability_for(&self.identity, *capability));
             }
         }
         CapabilityDecision {
@@ -180,6 +180,48 @@ impl ExecutionGrant {
 }
 
 fn blocked_capability(capability: Capability) -> BlockedCapability {
+    blocked_capability_for("ferric-std-first-transport-spike-v1", capability)
+}
+
+fn blocked_capability_for(candidate: &str, capability: Capability) -> BlockedCapability {
+    if candidate == "ferric-wreq-adjudication-v1" {
+        let (code, reason) = match capability {
+            Capability::TlsFingerprint => (
+                "FF-TRANSPORT-E-WREQ-TLS-PARITY-BLOCKED",
+                "the exact wreq profile is configured, but independent browser ClientHello parity has not been established",
+            ),
+            Capability::Http2Fingerprint => (
+                "FF-TRANSPORT-E-WREQ-H2-PARITY-BLOCKED",
+                "the exact wreq profile is configured, but independent browser HTTP/2 wire parity has not been established",
+            ),
+            Capability::DnsProvenance => (
+                "FF-TRANSPORT-E-WREQ-DNS-PROVENANCE-BLOCKED",
+                "wreq dependency DNS is not bound to a Ferric-authoritative resolver receipt",
+            ),
+            Capability::SsrfPolicy => (
+                "FF-TRANSPORT-E-WREQ-SSRF-BLOCKED",
+                "wreq execution is not bound to Ferric pre-connect and peer-address SSRF validation",
+            ),
+            Capability::PoolPartition => (
+                "FF-TRANSPORT-E-WREQ-POOL-PARTITION-BLOCKED",
+                "separate clients and bounded pools do not prove immutable Ferric execution-context partitioning",
+            ),
+            Capability::Cancellation => (
+                "FF-TRANSPORT-E-WREQ-CANCELLATION-BLOCKED",
+                "wreq cancellation and blocking resolver teardown are not proven through the Ferric operation boundary",
+            ),
+            _ => (
+                "FF-TRANSPORT-E-WREQ-CAPABILITY-BLOCKED",
+                "the exact-pinned wreq adjudication candidate does not prove this capability",
+            ),
+        };
+        return BlockedCapability {
+            capability,
+            code: code.to_owned(),
+            reason: reason.to_owned(),
+        };
+    }
+
     let (code, reason) = match capability {
         Capability::TlsFingerprint => (
             "FF-TRANSPORT-E-TLS-FINGERPRINT-BLOCKED",

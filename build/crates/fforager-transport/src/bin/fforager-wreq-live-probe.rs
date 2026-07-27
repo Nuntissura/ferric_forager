@@ -6,7 +6,7 @@ use fforager_transport::{
 };
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -17,6 +17,36 @@ static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 struct RunOutcome {
     exit_code: i32,
     receipt: String,
+}
+
+#[derive(Debug)]
+struct BoundedJsonWriter {
+    bytes: Vec<u8>,
+    observed: usize,
+}
+
+impl BoundedJsonWriter {
+    fn new() -> Self {
+        Self {
+            bytes: Vec::new(),
+            observed: 0,
+        }
+    }
+}
+
+impl io::Write for BoundedJsonWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.observed = self.observed.saturating_add(buffer.len());
+        if self.observed > MAX_REPORT_BYTES {
+            return Err(io::Error::other("bounded JSON report exceeded limit"));
+        }
+        self.bytes.extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn main() {
@@ -37,11 +67,9 @@ fn main() {
 
 fn run(arguments: impl Iterator<Item = String>) -> Result<RunOutcome, String> {
     let output = parse_arguments(arguments)?;
-    let options = LiveProbeOptions {
-        maximum_body_bytes: 1024 * 1024,
-    };
-    let result =
-        WreqAdjudicationAdapter::new().and_then(|adapter| adapter.execute_live_wire_probe(options));
+    let options = LiveProbeOptions::explicitly_authorized(1024 * 1024);
+    let result = WreqAdjudicationAdapter::new()
+        .and_then(|adapter| adapter.execute_live_wire_observation(options));
     let (report, exit_code) = match result {
         Ok(evidence) => (PersistedLiveProbeReport::observed(evidence), 0),
         Err(error) => (PersistedLiveProbeReport::blocked(error.to_string()), 1),
@@ -91,7 +119,7 @@ fn report_path(value: &str) -> Result<PathBuf, String> {
             .is_some_and(|component| component.as_os_str() == "reports")
         && components.len() >= 3;
     if valid {
-        Ok(path.to_path_buf())
+        Ok(repository_root().join(path))
     } else {
         Err("output must be a space-free relative build/reports/NAME.json path".to_owned())
     }
@@ -101,24 +129,81 @@ fn write_persisted_report_atomic(
     path: &Path,
     report: &PersistedLiveProbeReport,
 ) -> Result<(), String> {
-    let mut bytes = serde_json::to_vec_pretty(report)
-        .map_err(|error| format!("FF-WREQ-E-REPORT-ENCODE: {error}"))?;
-    bytes.push(b'\n');
+    let bytes = encode_bounded_json_report(report)?;
     validate_persisted_live_probe_report(&bytes).map_err(|error| error.to_string())?;
+    validate_report_destination(path)?;
     write_report_bytes_atomic(path, &bytes)
 }
 
+#[cfg(test)]
 fn write_json_report_atomic(path: &Path, report: &impl Serialize) -> Result<(), String> {
-    let mut bytes = serde_json::to_vec_pretty(report)
-        .map_err(|error| format!("FF-WREQ-E-REPORT-ENCODE: {error}"))?;
-    bytes.push(b'\n');
-    if bytes.len() > MAX_REPORT_BYTES {
-        return Err(format!(
-            "FF-WREQ-E-REPORT-BOUNDS: {} exceeds {MAX_REPORT_BYTES}",
-            bytes.len()
-        ));
-    }
+    let bytes = encode_bounded_json_report(report)?;
     write_report_bytes_atomic(path, &bytes)
+}
+
+fn encode_bounded_json_report(report: &impl Serialize) -> Result<Vec<u8>, String> {
+    let mut writer = BoundedJsonWriter::new();
+    if let Err(error) = serde_json::to_writer_pretty(&mut writer, report) {
+        if writer.observed > MAX_REPORT_BYTES {
+            return Err(format!(
+                "FF-WREQ-E-REPORT-BOUNDS: {} exceeds {MAX_REPORT_BYTES}",
+                writer.observed
+            ));
+        }
+        return Err(format!("FF-WREQ-E-REPORT-ENCODE: {error}"));
+    }
+    if let Err(error) = writer.write_all(b"\n") {
+        if writer.observed > MAX_REPORT_BYTES {
+            return Err(format!(
+                "FF-WREQ-E-REPORT-BOUNDS: {} exceeds {MAX_REPORT_BYTES}",
+                writer.observed
+            ));
+        }
+        return Err(format!("FF-WREQ-E-REPORT-ENCODE: {error}"));
+    }
+    Ok(writer.bytes)
+}
+
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("transport manifest must be below build/crates")
+        .to_path_buf()
+}
+
+fn validate_report_destination(path: &Path) -> Result<(), String> {
+    let lexical_root = repository_root();
+    let lexical_reports = lexical_root.join("build").join("reports");
+    let parent = path
+        .parent()
+        .ok_or_else(|| "FF-WREQ-E-REPORT-PARENT: report has no parent".to_owned())?;
+    if !path.is_absolute() || !parent.starts_with(&lexical_reports) {
+        return Err(
+            "FF-WREQ-E-REPORT-CONTAINMENT: report is outside canonical build/reports".to_owned(),
+        );
+    }
+    let root = fs::canonicalize(&lexical_root)
+        .map_err(|error| format!("FF-WREQ-E-REPORT-ROOT: {error}"))?;
+    fs::create_dir_all(&lexical_reports)
+        .map_err(|error| format!("FF-WREQ-E-REPORT-DIR: {error}"))?;
+    let canonical_reports = fs::canonicalize(&lexical_reports)
+        .map_err(|error| format!("FF-WREQ-E-REPORT-CONTAINMENT: {error}"))?;
+    if !canonical_reports.starts_with(&root) {
+        return Err(
+            "FF-WREQ-E-REPORT-CONTAINMENT: build/reports resolves outside the repository"
+                .to_owned(),
+        );
+    }
+    fs::create_dir_all(parent).map_err(|error| format!("FF-WREQ-E-REPORT-DIR: {error}"))?;
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|error| format!("FF-WREQ-E-REPORT-CONTAINMENT: {error}"))?;
+    if !canonical_parent.starts_with(&canonical_reports) {
+        return Err(
+            "FF-WREQ-E-REPORT-CONTAINMENT: report parent resolves outside build/reports".to_owned(),
+        );
+    }
+    Ok(())
 }
 
 fn write_report_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -198,10 +283,13 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock")
             .as_nanos();
-        std::env::temp_dir().join(format!(
-            "fforager-wreq-live-probe-{case}-{}-{timestamp}",
-            std::process::id()
-        ))
+        repository_root()
+            .join(".fforager-artifacts")
+            .join("test-runs")
+            .join(format!(
+                "fforager-wreq-live-probe-{case}-{}-{timestamp}",
+                std::process::id()
+            ))
     }
 
     #[test]
@@ -221,7 +309,20 @@ mod tests {
                 .into_iter(),
         )
         .expect("valid path");
-        assert_eq!(path, Path::new("build/reports/live-proof.json"));
+        assert_eq!(
+            path,
+            repository_root().join("build/reports/live-proof.json")
+        );
+    }
+
+    #[test]
+    fn persisted_report_destination_is_repository_contained() {
+        let outside = repository_root()
+            .join(".fforager-artifacts")
+            .join("test-runs")
+            .join("escaped-report.json");
+        let error = validate_report_destination(&outside).expect_err("outside report");
+        assert!(error.contains("FF-WREQ-E-REPORT-CONTAINMENT"));
     }
 
     #[test]
@@ -241,6 +342,18 @@ mod tests {
         let path = directory.join("report.json");
         let oversized = "x".repeat(MAX_REPORT_BYTES);
         let error = write_json_report_atomic(&path, &oversized).expect_err("report bound");
+        assert!(error.contains("FF-WREQ-E-REPORT-BOUNDS"));
+        assert!(!path.exists());
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn persisted_report_uses_the_same_production_bound_before_commit() {
+        let directory = temporary_directory("persisted-bounds");
+        let path = directory.join("report.json");
+        let report = PersistedLiveProbeReport::blocked("x".repeat(MAX_REPORT_BYTES));
+        let error =
+            write_persisted_report_atomic(&path, &report).expect_err("persisted report bound");
         assert!(error.contains("FF-WREQ-E-REPORT-BOUNDS"));
         assert!(!path.exists());
         assert!(!directory.exists());

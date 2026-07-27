@@ -60,9 +60,9 @@
     "superseded_by": null
   },
   "scope": {
-    "summary": "Use the Operator-approved narrow BoringSSL exception to adjudicate wreq as Ferric's fingerprint-capable transport candidate without promoting the experiment into shipped product code.",
+    "summary": "Use the Operator-approved narrow BoringSSL exception to adjudicate wreq as Ferric's fingerprint-capable transport candidate while retaining the experiment as prerequisite-only evidence.",
     "product_impact": "PREREQUISITE",
-    "zero_progress_declaration": "Zero product progress. Zero shipped capability progress. Zero runtime completion. Zero packaging or release progress. Zero phase progress. WP-015 remains non-shipped Phase 0 dependency-adjudication evidence under build/ and must be consumed and re-proven through the first shipped transport vertical slice.",
+    "zero_progress_declaration": "Zero product progress. Zero capability progress. Zero runtime completion. Zero packaging or release progress. Zero phase progress. WP-015 remains Phase 0 dependency-adjudication evidence under build/ and must be consumed and re-proven through the first production transport vertical slice.",
     "in_scope": [
       "Exact-pinned wreq 6.0.0-rc.29 and matching wreq-util 3.0.0-rc.14 dependency integration in the non-shipped fforager-transport package.",
       "A reproducible stable wreq 5.3.0 control build and capability comparison before the final candidate is selected.",
@@ -74,7 +74,7 @@
       "Independent adversarial implementation review through transport security, resource/lifecycle, and native supply-chain/build lenses."
     ],
     "non_goals": [
-      "Adding wreq or BoringSSL to a shipped product package.",
+      "Never add wreq or BoringSSL to product packages.",
       "Approving a production dependency or general BoringSSL/native-library exception.",
       "Claiming complete browser parity, full network compatibility, extractor compatibility, or replacement parity.",
       "Delegating redirect, cookie, DNS/SSRF, retry, decompression, pool-partition, cancellation, or transcript policy authority to wreq.",
@@ -226,8 +226,17 @@
         "FF-BUILD-031",
         "FF-BUILD-034",
         "FF-BUILD-035",
+        "FF-BUILD-036",
         "FF-BUILD-037",
         "FF-BUILD-038",
+        "FF-BUILD-039",
+        "FF-BUILD-040",
+        "FF-BUILD-041",
+        "FF-BUILD-042",
+        "FF-BUILD-043",
+        "FF-BUILD-044",
+        "FF-BUILD-045",
+        "FF-BUILD-046",
         "FF-BUILD-047",
         "FF-BUILD-048",
         "FF-BUILD-050",
@@ -244,16 +253,28 @@
         "FF-BUILD-077",
         "FF-BUILD-078",
         "FF-BUILD-079",
+        "FF-BUILD-080",
+        "FF-BUILD-081",
+        "FF-BUILD-082",
         "FF-BUILD-083",
+        "FF-BUILD-084",
+        "FF-BUILD-085",
         "FF-BUILD-086",
+        "FF-BUILD-087",
         "FF-BUILD-088",
+        "FF-BUILD-089",
         "FF-BUILD-090",
         "FF-BUILD-091",
+        "FF-BUILD-092",
+        "FF-BUILD-093",
+        "FF-BUILD-094",
+        "FF-BUILD-095",
         "FF-BUILD-096",
-        "FF-BUILD-098"
+        "FF-BUILD-097",
+        "FF-BUILD-098",
+        "FF-BUILD-099"
       ],
       "acceptance_or_authority_ids": [
-        "FF-DEC-001",
         "WP-FF-015-wreq-transport-adjudication-v1-AC-001",
         "WP-FF-015-wreq-transport-adjudication-v1-AC-002",
         "WP-FF-015-wreq-transport-adjudication-v1-AC-003",
@@ -264,15 +285,13 @@
         "WP-FF-015-wreq-transport-adjudication-v1-AC-008"
       ],
       "scope_and_risk_matrix": {
-        "accepted_scope": [
-          "narrow non-shipped wreq/BoringSSL dependency exception",
-          "stable-versus-release-candidate control",
-          "capability-gated adapter",
-          "native build and supply-chain inspection",
-          "behavior-sensitive deterministic and opt-in live proof",
-          "three-lens adversarial implementation review"
+        "required_outcomes": [
+          "Mechanically enforce the narrow non-shipped FF-DEC-001 dependency exception and exact native surface.",
+          "Compare stable wreq 5.3.0 with exact-pinned wreq 6.0.0-rc.29 under one bounded candidate contract.",
+          "Emit one strict fail-closed adjudication verdict with exact blockers, zero product progress, and no promotion authority.",
+          "Complete and remediate independent transport-security, resource-lifecycle, and native-supply-chain reviews."
         ],
-        "risks": [
+        "risk_cases": [
           "configured emulation is mistaken for wire proof",
           "wreq becomes policy authority for redirects, cookies, proxies, or decompression",
           "DNS or proxy evidence is unavailable but execution proceeds",
@@ -280,63 +299,181 @@
           "cancellation leaves poisoned reusable work",
           "native build scripts, symbols, links, or artifacts exceed the exception",
           "release-candidate drift or profile churn breaks reproducibility",
-          "non-shipped evidence is misreported as product progress"
-        ],
-        "verification": [
-          "public-boundary capability and wire probes",
-          "negative policy and mutation fixtures",
-          "exact Cargo metadata/source/link/build inspection",
-          "bounded streaming, cancellation, timeout, and sanitizer probes",
-          "architecture, runtime-ceiling, deep, and PR gates",
-          "independent adversarial reviews and post-remediation rerun"
+          "prerequisite evidence is overstated beyond its non-product scope"
         ]
       },
       "reuse_candidates_in_order_with_result": [
         {
-          "candidate": "No new mechanism",
+          "candidate": "no mechanism beyond the accepted outcome",
           "result": "Rejected by WP-007: 31 mandatory typed blockers remain and browser TLS/HTTP2 fingerprint parity is not executable."
         },
         {
-          "candidate": "Existing Ferric WP-007 candidate, corpus, policy, local server, and strict report consumer",
+          "candidate": "reuse current Ferric code",
           "result": "Selected as the authoritative capability/security/evidence envelope."
         },
         {
-          "candidate": "Rust core or std",
+          "candidate": "Rust core/std",
           "result": "Retained for deterministic policy, bounds, identities, and local harness but cannot implement the required browser wire behavior."
         },
         {
-          "candidate": "Approved platform capability",
+          "candidate": "approved platform capability",
           "result": "Rejected as incomplete and non-portable for coordinated TLS and HTTP/2 browser fingerprints."
         },
         {
-          "candidate": "Already-approved dependency",
+          "candidate": "already-approved dependency",
           "result": "Rejected by WP-007: reqwest/hyper/rustls do not expose or promise complete browser TLS/HTTP2 parity."
         },
         {
-          "candidate": "Smallest complete implementation",
+          "candidate": "smallest complete clear implementation",
           "result": "Selected: exact-pinned wreq/wreq-util behind the existing non-shipped adapter, with the smallest explicit BoringSSL exception."
         }
       ],
-      "artifact_specific_justification": "Wreq is used only for the wire behavior absent from the std-first candidate. Ferric retains policy, evidence, bounds, cancellation, and diagnostics so the dependency cannot silently redefine accepted behavior.",
-      "pre_simplification_verdict": "PENDING_IMPLEMENTATION",
-      "simplification_changes": [],
-      "post_simplification_verdict": "PENDING_IMPLEMENTATION",
-      "complete_post_change_verification": [],
-      "ceilings_exceptions_and_evidence": {
-        "exception_id": "FF-DEC-001",
-        "scope": "Exact-pinned wreq/wreq-util and exact audited BoringSSL link surface for fforager-transport only.",
-        "promotion_boundary": "No product, packaging, release, or general native-dependency approval; a new explicit Operator decision and production-runtime proof are required.",
-        "when_deliberate_ceiling": {
-          "ceiling_id": "WP-FF-015-wreq-transport-adjudication-v1-CEILING-001",
-          "current_ceiling": "Non-shipped Windows-first dependency adjudication with deterministic local and explicitly opt-in live evidence.",
-          "replacement_trigger": "The first shipped transport vertical slice or a declared product-promotion request.",
-          "likely_upgrade_path": "A separately authorized product adapter that reuses the proven capability envelope and passes cross-platform staged-artifact runtime proof.",
-          "trigger_detection_method": "Taskboard selection of a RUNTIME packet naming wreq/BoringSSL as a product dependency.",
-          "linked_evidence": [
-            "WP-FF-007 failed-spike report",
-            "WP-FF-015 dependency and behavior reports"
+      "artifact_specific_justification": {
+        "wreq-adapter": "Confines exact-pinned release-candidate mechanics behind the retained Ferric capability and resource boundary.",
+        "aggregate-adjudication": "Produces and strictly reconstructs the only accepted stable-versus-RC verdict and promotion denial.",
+        "live-refusal": "Proves API and CLI opt-in cannot bypass missing Ferric DNS provenance and SSRF authority.",
+        "native-validator": "Attributes every direct dependency edge and validates every allowed native-link source and feature surface.",
+        "model-manual": "Gives a no-context model exact stable replay, candidate, verdict, live-refusal, recovery, and cleanup commands."
+      },
+      "pre_simplification_verdict": "FAIL: the initial release-candidate adapter could execute a configured fingerprint profile while mandatory fingerprint, DNS/SSRF, pool, and cancellation semantics remained blocked; the public live API bypassed CLI opt-in; runtime admission was unbounded; native exception validation did not attribute every direct edge; report encoding and placement were not fully resource- or containment-safe; and no strict aggregate adjudication verdict existed.",
+      "simplification_changes": [
+        "Retained one exact-pinned release candidate behind the existing WP-007 capability boundary and removed any path that could treat configured emulation as operational admission.",
+        "Changed the live path from external structural observation to explicit API-and-CLI opt-in followed by a typed DNS/SSRF refusal before network I/O.",
+        "Reused the existing Cargo metadata architecture validator and added direct-edge attribution instead of introducing a second dependency scanner.",
+        "Emitted one deterministic strict aggregate failed verdict rather than separate manually asserted capability, dependency, and promotion decisions."
+      ],
+      "post_simplification_verdict": "PASS: the bounded dependency adjudication honestly yields FAILED_WREQ_ADJUDICATION_REQUIRES_OPERATOR_DECISION. The exact candidate remains prerequisite evidence, every unresolved production semantic remains an executable blocker, promotion is forbidden, and the zero-progress ceiling remains.",
+      "complete_post_change_verification": [
+        "cargo fmt --manifest-path build/Cargo.toml --all",
+        "cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-transport --all-features: 45 library, 2 adjudication CLI, and 7 live-report CLI tests passed",
+        "cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask: 107 tests passed",
+        "cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- architecture-check: PASS FF-GATE-ARCH-001",
+        "fforager-wreq-adjudication emitted FAILED_WREQ_ADJUDICATION_REQUIRES_OPERATOR_DECISION and a strict report",
+        "fforager-wreq-live-probe emitted blocked_external_wire with expected exit 1 before dependency DNS or socket I/O"
+      ],
+      "adversarial_review": {
+        "DIFF_ATTACK_SURFACES": [
+          "Contract and serialization boundary: configured emulation, semantic capability admission, strict dependency and fingerprint receipts, aggregate verdict fields, and live-network authorization.",
+          "Resource and lifecycle boundary: runtime-lane admission, request/read/total deadlines, body and report allocation, pool size, teardown inside and outside async contexts, and blocking dependency resolver behavior.",
+          "Integration and native supply-chain boundary: DNS and peer authority, proxy state, redirects, cookies, decompression, direct dependency attribution, native links, source markers, host variables, and supported-host limits.",
+          "Gate and oracle boundary: structural observation versus independent parity, stale checkpoints, forged PASS, removed blockers, report containment, collision handling, and zero-progress/product-promotion fields."
+        ],
+        "INDEPENDENT_CHECKS_RUN": [
+          "Transport-security reviewer Halley independently traced operational profile admission, live-network bypasses, DNS/SSRF timing, structural fingerprint evidence, capability diagnostics, and stable-versus-RC proof; the pre-remediation verdict was FAIL.",
+          "Resource-architecture reviewer Poincare independently traced runtime locking, timeout and cancellation ownership, dependency resolver teardown, pool limits and partitioning, body/report allocation, and temp-root hygiene; the pre-remediation verdict was FAIL.",
+          "Oracle-integrity and native-supply-chain reviewer Anscombe independently traced FF-DEC-001 direct-edge attribution, all native-link packages, source/build overrides, stable/RC provenance, report identity, supported-host evidence, and product-promotion claims; the pre-remediation verdict was FAIL.",
+          "After remediation, the primary executed the 54-test transport matrix, 107-test xtask matrix, exact architecture gate, strict aggregate adjudication command, expected live-refusal command, and report mutation consumers."
+        ],
+        "COUNTERFACTUAL_CHECKS": [
+          "Removing HTTP/2 from the release-candidate capability set changes the same operational boundary decision and is rejected.",
+          "Changing the strict aggregate verdict to PASS while residual blockers remain is rejected by a fresh deterministic reconstruction.",
+          "Adding a direct btls dependency with native=false is rejected because each direct edge reaching FF-DEC-001 must carry its own matching native decision.",
+          "Selecting zstd host discovery, removing packaged native source markers, or changing BoringSSL to a precompiled/FIPS surface is rejected by executable native-source policy tests."
+        ],
+        "BOUNDARY_PROBES": [
+          "The public operational-profile method requests HTTP/1.1, HTTP/2, body bounds, TLS and HTTP/2 fingerprint semantics, DNS provenance, SSRF policy, immutable pool partitioning, and cancellation before any network operation.",
+          "The explicitly authorized live API still returns typed DNS and SSRF blockers before dependency DNS or socket I/O; the CLI persists that refusal atomically.",
+          "An occupied runtime lane returns FF-WREQ-E-SATURATED immediately, and delayed loopback headers exercise the real wreq read-timeout path.",
+          "Aggregate and live reports are bounded while serializing, strictly reloaded, collision-safe, and canonically confined to repository build/reports."
+        ],
+        "NEGATIVE_PATH_CHECKS": [
+          "Unsupported chrome-149-windows refuses without fallback; configured chrome-136 evidence remains observation-only and cannot upgrade HTTP/1.1 or parity status.",
+          "Ambient proxies, redirects, cookie storage, and transparent decompression remain disabled; oversized declared and unknown-length bodies fail at their bounded checks.",
+          "Nested runtime construction, runtime saturation, timeout, malformed wire receipts, outer/inner report mutations, oversized reports, report collisions, and escaped report paths fail closed.",
+          "Wrong native consumers, hidden native links, direct-edge misattribution, source overrides, feature drift, and unsupported-host mutations fail closed. No product promotion or production reachability is authorized."
+        ],
+        "INDEPENDENT_FINDINGS": [
+          {
+            "finding_id": "WP-FF-015-FINDING-OPERATIONAL-ADMISSION-001",
+            "finding": "A configured Chrome profile executed transport mechanics even though mandatory fingerprint, DNS/SSRF, pool, and cancellation semantics were blocked; public operational admission now requests the complete semantic set and refuses before I/O.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::adjudication::tests::operational_profile_is_blocked_before_network_on_all_missing_semantics"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-LIVE-AUTHORITY-002",
+            "finding": "The library live API bypassed CLI opt-in and delegated DNS before Ferric SSRF authority; API-level authorization is now explicit and the live path refuses on DNS/SSRF before network I/O.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::adjudication::tests::explicitly_authorized_live_observation_still_requires_dns_and_ssrf_authority"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-RUNTIME-ADMISSION-003",
+            "finding": "Mutex admission could wait outside the request deadline; the single execution lane now uses immediate typed saturation refusal.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::adjudication::tests::occupied_runtime_lane_is_immediate_typed_refusal_before_io"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-RESOURCE-REPORT-004",
+            "finding": "Report encoding allocated an unbounded complete JSON vector before checking its size and tests used the external system temp root; bounded streaming serialization and repository-local test-runs now enforce the shared artifact policy.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager-wreq-live-probe::tests::persisted_report_uses_the_same_production_bound_before_commit"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-REPORT-CONTAINMENT-005",
+            "finding": "Lexical build/reports validation did not prevent a junction or symlink escape; production writers now canonicalize both repository and report parent before atomic commit.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager-wreq-live-probe::tests::persisted_report_destination_is_repository_contained"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-NATIVE-EDGE-006",
+            "finding": "A consumer-level native decision could mask another direct dependency reaching the governed native graph; every direct edge now requires its own allowed matching native decision.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::native_exception_mutations_reach_production_validation"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-NATIVE-SOURCE-007",
+            "finding": "Native source validation covered only BoringSSL packages and a narrow override name; every allowed native link now has a source/feature policy and relevant source/toolchain override variables fail closed.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::every_allowed_native_link_has_a_source_policy_and_override_guard"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-VERDICT-ORACLE-008",
+            "finding": "No strict aggregate command bound stable/RC identities, residual blockers, zero progress, and product-promotion denial; the aggregate producer and independent reconstruction now reject forged PASS or field drift.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::adjudication::tests::aggregate_adjudication_is_failed_zero_progress_and_strictly_reloaded"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-PROVENANCE-009",
+            "finding": "The candidate policy cited an unreachable unsanitized stable checkpoint; it now cites reachable sanitized checkpoint 7dae6b6 and the aggregate comparison records both exact dependency surfaces.",
+            "status": "REMEDIATED",
+            "proof_id": "FF-GATE-ARCH-001::dependency-policy"
+          },
+          {
+            "finding_id": "WP-FF-015-FINDING-DIAGNOSTICS-010",
+            "finding": "Release-candidate blockers reused std-first explanations; wreq now emits candidate-specific fingerprint, DNS/SSRF, pool, cancellation, and generic diagnostics.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::adjudication::tests::operational_profile_is_blocked_before_network_on_all_missing_semantics"
+          }
+        ],
+        "RESIDUAL_UNCERTAINTY": [
+          "Independent Chrome TLS ClientHello and HTTP/2 wire parity is not established; configured profile and endpoint echo remain structural observation only.",
+          "Ferric-authoritative DNS provenance, pre-connect and peer-address SSRF enforcement, immutable pool partitioning, and wreq cancellation including blocking resolver teardown are not implemented, so operational and live execution remain blocked.",
+          "A dependency response chunk may transiently exist before Ferric rejects accumulated body growth beyond its bound.",
+          "Native build and supported-host evidence is limited to the exact Windows MSVC host and declared packaged sources/tool discovery; no cross-platform product build or staged runtime is proven."
+        ],
+        "MANUAL_REVIEW": {
+          "artifact": "product/MODEL_MANUAL.md",
+          "reviewer": "Primary consolidation of Halley transport-security, Poincare resource-architecture, and Anscombe oracle/native-supply-chain reviews",
+          "method": "Direct comparison against the active packet, reachable stable checkpoint, exact RC source, public admission/live boundaries, strict aggregate report, native validator, final tests, and architecture output.",
+          "verdict": "PASS",
+          "evidence": [
+            "The manual gives exact locked Cargo commands for one-job stable replay, current candidate tests, aggregate adjudication, opt-in live refusal, and artifact cleanup.",
+            "Its recovery section explains saturation, nested runtime, report collision and containment, native-policy failure, and shared artifact cleanup.",
+            "It explicitly requires a later separately authorized production consumer to re-prove the candidate through FF-GATE-RUNTIME-001 before any operator-usable claim."
           ]
         }
+      },
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-015-wreq-transport-adjudication-v1-CEILING-001",
+        "current_ceiling": "FF-DEC-001 permits exact-pinned wreq and wreq-util only as non-shipped Windows-first dependency-adjudication evidence; operational and live network execution remain blocked.",
+        "replacement_trigger": "The first production transport vertical slice, an explicit promotion request, or a candidate that closes the recorded operational blockers.",
+        "likely_upgrade_path": "A separately authorized product adapter that reuses the capability envelope and passes independent parity, DNS/SSRF, cancellation, pool, cross-platform, and staged-runtime proof.",
+        "trigger_detection_method": "Taskboard activation of a RUNTIME packet naming wreq/BoringSSL, a new explicit Operator promotion decision, or a dependency/profile upgrade request.",
+        "linked_evidence": [
+          ".GOV/work_packets/WP-FF-015-wreq-transport-adjudication-v1/refinement.json",
+          "build/crates/fforager-transport/src/adjudication.rs",
+          "build/architecture-policy.toml",
+          "product/MODEL_MANUAL.md"
+        ]
       },
       "high_roi_additions": [
         {

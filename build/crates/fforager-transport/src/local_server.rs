@@ -160,6 +160,9 @@ impl LocalProtocolServer {
                     }
                 }
             };
+            if request_target(&request)? == "/delay-headers" {
+                thread::sleep(Duration::from_millis(100));
+            }
             let response = response_for(&request)?;
             request_tx
                 .send(request)

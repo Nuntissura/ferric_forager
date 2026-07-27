@@ -18,6 +18,8 @@ const BACKEND_VERSION: &str = "6.0.0-rc.29";
 const PROFILE_ID: &str = "chrome-136-windows";
 const LIVE_WIRE_URL: &str = "https://tls.peet.ws/api/all";
 const MAX_WIRE_RECEIPT_BYTES: u64 = 1024 * 1024;
+const STABLE_CONTROL_VERSION: &str = "5.3.0";
+const STABLE_CONTROL_CHECKPOINT: &str = "7dae6b6";
 #[cfg(test)]
 const RAW_GZIP_BYTES: &[u8] = &[
     31, 139, 8, 0, 0, 0, 0, 0, 0, 10, 75, 75, 45, 42, 202, 76, 214, 77, 175, 202, 44, 208, 45, 72,
@@ -30,6 +32,7 @@ struct ClientLimits {
     read_timeout: Duration,
     total_timeout: Duration,
     maximum_idle_per_host: usize,
+    maximum_pool_size: usize,
 }
 
 impl Default for ClientLimits {
@@ -39,6 +42,7 @@ impl Default for ClientLimits {
             read_timeout: Duration::from_secs(5),
             total_timeout: Duration::from_secs(10),
             maximum_idle_per_host: 2,
+            maximum_pool_size: 8,
         }
     }
 }
@@ -236,8 +240,36 @@ impl LocalProbeReport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiveNetworkAuthorization {
+    explicit_operator_opt_in: bool,
+}
+
+impl LiveNetworkAuthorization {
+    /// Creates the explicit API-level authorization required to attempt the
+    /// single compile-time approved external observation.
+    #[must_use]
+    pub fn explicit_operator_opt_in() -> Self {
+        Self {
+            explicit_operator_opt_in: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LiveProbeOptions {
-    pub maximum_body_bytes: u64,
+    maximum_body_bytes: u64,
+    authorization: LiveNetworkAuthorization,
+}
+
+impl LiveProbeOptions {
+    /// Creates bounded live-observation options with explicit operator opt-in.
+    #[must_use]
+    pub fn explicitly_authorized(maximum_body_bytes: u64) -> Self {
+        Self {
+            maximum_body_bytes,
+            authorization: LiveNetworkAuthorization::explicit_operator_opt_in(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -474,6 +506,7 @@ pub enum AdjudicationError {
     InvalidRequest(String),
     ClientBuild(String),
     Runtime(String),
+    Saturated,
     NestedRuntime,
     Request(String),
     UnsupportedProfile(String),
@@ -491,6 +524,10 @@ impl fmt::Display for AdjudicationError {
             }
             Self::ClientBuild(detail) => write!(formatter, "FF-WREQ-E-CLIENT-BUILD: {detail}"),
             Self::Runtime(detail) => write!(formatter, "FF-WREQ-E-RUNTIME: {detail}"),
+            Self::Saturated => write!(
+                formatter,
+                "FF-WREQ-E-SATURATED: the single bounded adjudication execution lane is occupied"
+            ),
             Self::NestedRuntime => write!(
                 formatter,
                 "FF-WREQ-E-NESTED-RUNTIME: synchronous adjudication is unavailable inside a Tokio runtime"
@@ -538,6 +575,7 @@ impl fmt::Debug for WreqAdjudicationAdapter {
             .field("backend", &BACKEND_ID)
             .field("version", &BACKEND_VERSION)
             .field("pool_max_idle_per_host", &self.limits.maximum_idle_per_host)
+            .field("pool_max_size", &self.limits.maximum_pool_size)
             .finish_non_exhaustive()
     }
 }
@@ -596,7 +634,7 @@ impl WreqAdjudicationAdapter {
         self.client_for(request.profile)?;
         let server = LocalProtocolServer::spawn().map_err(AdjudicationError::from)?;
         let target = server.target();
-        let execution = self.execute_target(
+        let execution = self.execute_observation_target(
             request.profile,
             request.maximum_body_bytes,
             &target.url(request.scenario.path()),
@@ -618,26 +656,64 @@ impl WreqAdjudicationAdapter {
         })
     }
 
-    /// Executes the single compile-time approved external endpoint.
+    /// Verifies whether this candidate may serve an operational fingerprinted
+    /// request before any socket, resolver, or request operation is started.
+    ///
+    /// # Errors
+    ///
+    /// Returns the exact unsupported profile or mandatory blocked capabilities.
+    pub fn admit_operational_profile(
+        &self,
+        profile: FingerprintProfile,
+    ) -> Result<CapabilityDecision, AdjudicationError> {
+        self.client_for(profile)?;
+        let decision = self
+            .capability_boundary
+            .negotiate(operational_capabilities(profile));
+        if decision.execution_allowed {
+            Ok(decision)
+        } else {
+            Err(AdjudicationError::CapabilityBlocked(
+                decision.blocked.clone(),
+            ))
+        }
+    }
+
+    /// Attempts the single compile-time approved external observation.
     ///
     /// The returned receipt is structural observation only. It never asserts
     /// Chrome parity and leaves fingerprint and pool semantic capabilities blocked.
+    /// The current candidate refuses before network I/O because Ferric-authoritative
+    /// DNS provenance and pre-connect/peer SSRF enforcement are not implemented.
     ///
     /// # Errors
     ///
     /// Returns a typed failure for bounds, transport, HTTP/2, or receipt structure.
-    pub fn execute_live_wire_probe(
+    pub fn execute_live_wire_observation(
         &self,
         options: LiveProbeOptions,
     ) -> Result<LiveWireProbeReport, AdjudicationError> {
         reject_nested_runtime()?;
+        if !options.authorization.explicit_operator_opt_in {
+            return Err(AdjudicationError::InvalidRequest(
+                "live network observation requires explicit API authorization".to_owned(),
+            ));
+        }
         validate_body_bound(options.maximum_body_bytes)?;
         if options.maximum_body_bytes > MAX_WIRE_RECEIPT_BYTES {
             return Err(AdjudicationError::WireReceipt(
                 "wire receipt bound exceeds 1048576 bytes".to_owned(),
             ));
         }
-        let (mut observation, body) = self.execute_target(
+        self.capability_boundary.execute_typed(
+            [Capability::DnsProvenance, Capability::SsrfPolicy],
+            |_| -> Result<(), AdjudicationError> {
+                Err(AdjudicationError::Harness(
+                    "live network capability gate unexpectedly allowed execution".to_owned(),
+                ))
+            },
+        )?;
+        let (mut observation, body) = self.execute_observation_target(
             FingerprintProfile::Chrome136Windows,
             options.maximum_body_bytes,
             LIVE_WIRE_URL,
@@ -676,7 +752,7 @@ impl WreqAdjudicationAdapter {
         }
     }
 
-    fn execute_target(
+    fn execute_observation_target(
         &self,
         profile: FingerprintProfile,
         maximum_body_bytes: u64,
@@ -686,10 +762,12 @@ impl WreqAdjudicationAdapter {
         reject_nested_runtime()?;
         validate_body_bound(maximum_body_bytes)?;
         validate_headers(&headers)?;
-        let runtime = self
-            .runtime
-            .lock()
-            .map_err(|_| AdjudicationError::Runtime("runtime lock poisoned".to_owned()))?;
+        let runtime = self.runtime.try_lock().map_err(|error| match error {
+            std::sync::TryLockError::WouldBlock => AdjudicationError::Saturated,
+            std::sync::TryLockError::Poisoned(_) => {
+                AdjudicationError::Runtime("runtime lock poisoned".to_owned())
+            }
+        })?;
         let runtime = runtime
             .as_ref()
             .ok_or_else(|| AdjudicationError::Runtime("runtime is already shut down".to_owned()))?;
@@ -791,7 +869,11 @@ impl Drop for WreqAdjudicationAdapter {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         if let Some(runtime) = runtime {
-            runtime.shutdown_background();
+            if tokio::runtime::Handle::try_current().is_ok() {
+                runtime.shutdown_background();
+            } else {
+                runtime.shutdown_timeout(Duration::from_secs(1));
+            }
         }
     }
 }
@@ -808,6 +890,7 @@ fn client_builder(limits: ClientLimits) -> wreq::ClientBuilder {
         .read_timeout(limits.read_timeout)
         .timeout(limits.total_timeout)
         .pool_max_idle_per_host(limits.maximum_idle_per_host)
+        .pool_max_size(limits.maximum_pool_size)
 }
 
 fn transport_capabilities(profile: FingerprintProfile) -> BTreeSet<Capability> {
@@ -828,6 +911,178 @@ fn semantic_capability_decision(profile: FingerprintProfile) -> CapabilityDecisi
     } else {
         empty_decision()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum WreqAdjudicationVerdict {
+    PassWreqAdjudication,
+    FailedWreqAdjudicationRequiresOperatorDecision,
+}
+
+impl WreqAdjudicationVerdict {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PassWreqAdjudication => "PASS_WREQ_ADJUDICATION",
+            Self::FailedWreqAdjudicationRequiresOperatorDecision => {
+                "FAILED_WREQ_ADJUDICATION_REQUIRES_OPERATOR_DECISION"
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DependencyCandidateEvidence {
+    version: String,
+    checkpoint: String,
+    features: Vec<String>,
+    profile_coverage: Vec<String>,
+    native_link_surface: Vec<String>,
+    result: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WreqAdjudicationReport {
+    schema_version: String,
+    verdict: WreqAdjudicationVerdict,
+    stable_control: DependencyCandidateEvidence,
+    release_candidate: DependencyCandidateEvidence,
+    selected_result: String,
+    operational_capability_decision: CapabilityDecision,
+    residual_blocker_codes: Vec<String>,
+    zero_product_progress: bool,
+    product_promotion_authorized: bool,
+}
+
+impl WreqAdjudicationReport {
+    #[must_use]
+    pub fn verdict(&self) -> WreqAdjudicationVerdict {
+        self.verdict
+    }
+}
+
+/// Reconstructs the bounded stable-versus-RC comparison and operational
+/// capability verdict without network I/O.
+///
+/// # Errors
+///
+/// Returns a typed error if the exact candidate cannot be constructed or the
+/// operational boundary produces anything other than its declared fail-closed
+/// capability decision.
+pub fn run_wreq_adjudication() -> Result<WreqAdjudicationReport, AdjudicationError> {
+    let adapter = WreqAdjudicationAdapter::new()?;
+    let decision = match adapter.admit_operational_profile(FingerprintProfile::Chrome136Windows) {
+        Err(AdjudicationError::CapabilityBlocked(blocked)) => CapabilityDecision {
+            requested: operational_capabilities(FingerprintProfile::Chrome136Windows),
+            satisfied: BTreeSet::from([
+                Capability::Http11,
+                Capability::Http2,
+                Capability::BodyBounds,
+            ]),
+            execution_allowed: false,
+            blocked,
+        },
+        Ok(decision) => decision,
+        Err(error) => return Err(error),
+    };
+    let mut residual_blocker_codes = decision
+        .blocked
+        .iter()
+        .map(|blocked| blocked.code.clone())
+        .collect::<Vec<_>>();
+    residual_blocker_codes.extend([
+        "FF-WREQ-E-DEPENDENCY-CHUNK-BOUND-BLOCKED".to_owned(),
+        "FF-WREQ-E-NATIVE-HOST-PORTABILITY-BLOCKED".to_owned(),
+    ]);
+    residual_blocker_codes.sort();
+    residual_blocker_codes.dedup();
+    let verdict = if residual_blocker_codes.is_empty() {
+        WreqAdjudicationVerdict::PassWreqAdjudication
+    } else {
+        WreqAdjudicationVerdict::FailedWreqAdjudicationRequiresOperatorDecision
+    };
+    Ok(WreqAdjudicationReport {
+        schema_version: "ff-wreq-adjudication-v1".to_owned(),
+        verdict,
+        stable_control: DependencyCandidateEvidence {
+            version: STABLE_CONTROL_VERSION.to_owned(),
+            checkpoint: STABLE_CONTROL_CHECKPOINT.to_owned(),
+            features: vec!["webpki-roots".to_owned()],
+            profile_coverage: vec!["no-maintained-profile-bundle".to_owned()],
+            native_link_surface: vec![
+                "boring-sys2@4.15.15".to_owned(),
+                "clang-sys@1.8.1".to_owned(),
+                "zstd-sys@2.0.16+zstd.1.5.7".to_owned(),
+            ],
+            result: "compiled-and-exercised-through-bounded-control-checkpoint".to_owned(),
+        },
+        release_candidate: DependencyCandidateEvidence {
+            version: BACKEND_VERSION.to_owned(),
+            checkpoint: "current-locked-source".to_owned(),
+            features: vec![
+                "stream".to_owned(),
+                "tokio-rt".to_owned(),
+                "webpki-roots".to_owned(),
+                "wreq-util/emulation".to_owned(),
+            ],
+            profile_coverage: vec![PROFILE_ID.to_owned()],
+            native_link_surface: vec![
+                "btls-sys@0.5.6".to_owned(),
+                "clang-sys@1.8.1".to_owned(),
+                "zstd-sys@2.0.16+zstd.1.5.7".to_owned(),
+            ],
+            result: "selected-for-non-shipped-adjudication-only".to_owned(),
+        },
+        selected_result: "release-candidate-retained-only-as-failed-prerequisite-evidence"
+            .to_owned(),
+        operational_capability_decision: decision,
+        residual_blocker_codes,
+        zero_product_progress: true,
+        product_promotion_authorized: false,
+    })
+}
+
+/// Strictly reloads an aggregate adjudication report and compares every field
+/// to a fresh deterministic reconstruction.
+///
+/// # Errors
+///
+/// Returns a typed report error for oversized, malformed, stale, or forged
+/// verdict content.
+pub fn validate_wreq_adjudication_report(
+    bytes: &[u8],
+) -> Result<WreqAdjudicationReport, AdjudicationError> {
+    if bytes.len() > 1024 * 1024 {
+        return Err(AdjudicationError::WireReceipt(
+            "adjudication report exceeds 1048576 bytes".to_owned(),
+        ));
+    }
+    let report: WreqAdjudicationReport = serde_json::from_slice(bytes).map_err(|_| {
+        AdjudicationError::WireReceipt("invalid strict adjudication report JSON".to_owned())
+    })?;
+    let expected = run_wreq_adjudication()?;
+    if report != expected {
+        return Err(AdjudicationError::WireReceipt(
+            "adjudication report differs from fresh deterministic reconstruction".to_owned(),
+        ));
+    }
+    Ok(report)
+}
+
+fn operational_capabilities(profile: FingerprintProfile) -> BTreeSet<Capability> {
+    let mut capabilities = transport_capabilities(profile);
+    capabilities.extend([
+        Capability::TlsFingerprint,
+        Capability::Http2Fingerprint,
+        Capability::DnsProvenance,
+        Capability::SsrfPolicy,
+        Capability::PoolPartition,
+        Capability::Cancellation,
+    ]);
+    capabilities
 }
 
 fn empty_decision() -> CapabilityDecision {
@@ -1057,8 +1312,6 @@ fn encode_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Barrier};
-    use std::thread;
 
     fn eligible_observation() -> AdjudicationObservation {
         AdjudicationObservation {
@@ -1329,39 +1582,153 @@ mod tests {
     }
 
     #[test]
-    fn parallel_callers_share_one_bounded_runtime_lane() {
-        let adapter = Arc::new(WreqAdjudicationAdapter::new().expect("adapter"));
-        let barrier = Arc::new(Barrier::new(3));
-        let workers = [
-            FingerprintProfile::None,
-            FingerprintProfile::Chrome136Windows,
-        ]
-        .into_iter()
-        .map(|profile| {
-            let adapter = Arc::clone(&adapter);
-            let barrier = Arc::clone(&barrier);
-            thread::spawn(move || {
-                barrier.wait();
-                adapter.execute_local_probe(LocalProbeRequest {
-                    scenario: LocalProbeScenario::Ok,
-                    profile,
-                    maximum_body_bytes: 64,
-                })
-            })
+    fn occupied_runtime_lane_is_immediate_typed_refusal_before_io() {
+        let adapter = WreqAdjudicationAdapter::new().expect("adapter");
+        let _occupied = adapter.runtime.lock().expect("occupy runtime lane");
+        let error = adapter
+            .execute_observation_target(
+                FingerprintProfile::None,
+                64,
+                "http://127.0.0.1:9/this-must-not-be-requested",
+                Vec::new(),
+            )
+            .expect_err("occupied lane must fail closed");
+        assert_eq!(error, AdjudicationError::Saturated);
+    }
+
+    #[test]
+    fn wreq_read_timeout_is_typed_and_bounded_on_the_local_wire() {
+        let adapter = WreqAdjudicationAdapter::with_limits(ClientLimits {
+            connect_timeout: Duration::from_millis(50),
+            read_timeout: Duration::from_millis(20),
+            total_timeout: Duration::from_millis(50),
+            maximum_idle_per_host: 1,
+            maximum_pool_size: 1,
         })
-        .collect::<Vec<_>>();
-        barrier.wait();
-        for worker in workers {
-            assert_eq!(
-                worker
-                    .join()
-                    .expect("caller thread")
-                    .expect("bounded execution")
-                    .observation()
-                    .status(),
-                200
-            );
-        }
+        .expect("adapter");
+        let server = LocalProtocolServer::spawn().expect("local server");
+        let target = server.target();
+        let error = adapter
+            .execute_observation_target(
+                FingerprintProfile::None,
+                64,
+                &target.url("/delay-headers"),
+                vec![(
+                    "x-ff-harness-authorization".to_owned(),
+                    target.authorization().to_owned(),
+                )],
+            )
+            .expect_err("delayed headers must time out");
+        drop(server);
+        assert_eq!(error, AdjudicationError::Request("timeout".to_owned()));
+    }
+
+    #[test]
+    fn operational_profile_is_blocked_before_network_on_all_missing_semantics() {
+        let adapter = WreqAdjudicationAdapter::new().expect("adapter");
+        let error = adapter
+            .admit_operational_profile(FingerprintProfile::Chrome136Windows)
+            .expect_err("profile cannot be promoted");
+        let AdjudicationError::CapabilityBlocked(blocked) = error else {
+            panic!("expected blocked capabilities");
+        };
+        let blocked = blocked
+            .into_iter()
+            .map(|item| (item.capability, item.code))
+            .collect::<BTreeSet<_>>();
+        assert!(blocked.contains(&(
+            Capability::TlsFingerprint,
+            "FF-TRANSPORT-E-WREQ-TLS-PARITY-BLOCKED".to_owned()
+        )));
+        assert!(blocked.contains(&(
+            Capability::Http2Fingerprint,
+            "FF-TRANSPORT-E-WREQ-H2-PARITY-BLOCKED".to_owned()
+        )));
+        assert!(blocked.contains(&(
+            Capability::DnsProvenance,
+            "FF-TRANSPORT-E-WREQ-DNS-PROVENANCE-BLOCKED".to_owned()
+        )));
+        assert!(blocked.contains(&(
+            Capability::SsrfPolicy,
+            "FF-TRANSPORT-E-WREQ-SSRF-BLOCKED".to_owned()
+        )));
+        assert!(blocked.contains(&(
+            Capability::PoolPartition,
+            "FF-TRANSPORT-E-WREQ-POOL-PARTITION-BLOCKED".to_owned()
+        )));
+        assert!(blocked.contains(&(
+            Capability::Cancellation,
+            "FF-TRANSPORT-E-WREQ-CANCELLATION-BLOCKED".to_owned()
+        )));
+    }
+
+    #[test]
+    fn unsupported_profile_is_refused_without_fallback() {
+        let adapter = WreqAdjudicationAdapter::new().expect("adapter");
+        assert_eq!(
+            adapter
+                .admit_operational_profile(FingerprintProfile::Chrome149Windows)
+                .expect_err("unsupported profile"),
+            AdjudicationError::UnsupportedProfile("chrome-149-windows".to_owned())
+        );
+    }
+
+    #[test]
+    fn explicitly_authorized_live_observation_still_requires_dns_and_ssrf_authority() {
+        let adapter = WreqAdjudicationAdapter::new().expect("adapter");
+        let error = adapter
+            .execute_live_wire_observation(LiveProbeOptions::explicitly_authorized(1024))
+            .expect_err("live observation must refuse before dependency DNS");
+        let AdjudicationError::CapabilityBlocked(blocked) = error else {
+            panic!("expected blocked capabilities");
+        };
+        assert_eq!(
+            blocked
+                .into_iter()
+                .map(|item| item.capability)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([Capability::DnsProvenance, Capability::SsrfPolicy])
+        );
+    }
+
+    #[test]
+    fn aggregate_adjudication_is_failed_zero_progress_and_strictly_reloaded() {
+        let report = run_wreq_adjudication().expect("aggregate adjudication");
+        assert_eq!(
+            report.verdict(),
+            WreqAdjudicationVerdict::FailedWreqAdjudicationRequiresOperatorDecision
+        );
+        assert!(report.zero_product_progress);
+        assert!(!report.product_promotion_authorized);
+        let encoded = serde_json::to_vec(&report).expect("report JSON");
+        validate_wreq_adjudication_report(&encoded).expect("strict reload");
+
+        let mut forged: serde_json::Value = serde_json::from_slice(&encoded).expect("report value");
+        forged["verdict"] = serde_json::Value::String("PASS_WREQ_ADJUDICATION".to_owned());
+        assert!(
+            validate_wreq_adjudication_report(&serde_json::to_vec(&forged).expect("forged report"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn supported_transport_capability_removal_changes_the_same_boundary_oracle() {
+        let mut adapter = WreqAdjudicationAdapter::new().expect("adapter");
+        adapter.capability_boundary = adapter
+            .capability_boundary
+            .clone()
+            .without_capability(Capability::Http2);
+        let error = adapter
+            .admit_operational_profile(FingerprintProfile::Chrome136Windows)
+            .expect_err("counterfactual must remain blocked");
+        let AdjudicationError::CapabilityBlocked(blocked) = error else {
+            panic!("expected blocked capabilities");
+        };
+        assert!(
+            blocked
+                .iter()
+                .any(|item| item.capability == Capability::Http2)
+        );
     }
 
     #[test]

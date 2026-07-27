@@ -49,14 +49,14 @@
       "verified_at_utc": "2026-07-27T06:49:50Z"
     },
     "closure_commit": "7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb",
-    "main_containment_status": "PENDING",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "d8abdf0ce30d6317f8d04d909ea284ba51735dd7"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Back up the accepted closure branch remotely, merge it into main, mechanically prove closure-commit containment, then synchronize packet and taskboard state to VALIDATED.",
+    "next_action": "Await Operator selection before activating another work packet.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -218,7 +218,9 @@
       "PASS: FF-GATE-RUNTIME-001 prerequisite ceiling; build/reports/runtime-truth-check-1785133209907899900-34008.json",
       "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1785133849901780900-91492.json",
       "PASS: FF-GATE-PR-001 on clean commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb; build/reports/verify-pr-1785134637217474200-89412.json",
-      "PASS: oracle-integrity reviewer Anscombe, transport-security reviewer Halley, and resource-architecture reviewer Poincare each returned final PASS after remediation"
+      "PASS: oracle-integrity reviewer Anscombe, transport-security reviewer Halley, and resource-architecture reviewer Poincare each returned final PASS after remediation",
+      "PASS: remote backup origin/codex/transport-fingerprint-spike was verified at 807c16fb97cf72fef8f76d52e74bf176b87d88f0",
+      "PASS: closure commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb and remote backup commit 807c16fb97cf72fef8f76d52e74bf176b87d88f0 are ancestors of main merge d8abdf0ce30d6317f8d04d909ea284ba51735dd7"
     ],
     "not_proven": [
       "Browser TLS fingerprint parity or HTTP/2 fingerprint parity",

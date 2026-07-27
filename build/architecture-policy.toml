@@ -18,8 +18,8 @@ internal_edge_default = "deny"
 forbidden_layer_edges = ["engine->frontend", "engine->adapter", "engine->watcher", "adapter->adapter", "product->watcher", "watcher->engine", "normal_or_build:product->testkit"]
 forbidden_product_runtime_roots = [".GOV", "build"]
 allowed_runtime_or_native_dependencies = ["FFmpeg", "ffprobe"]
-approved_transitive_build_packages = ["camino@1.2.4", "libc@0.2.186", "num-traits@0.2.19", "proc-macro2@1.0.107", "quote@1.0.47", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "zmij@1.0.23"]
-approved_transitive_proc_macros = ["serde_derive@1.0.228", "thiserror-impl@2.0.19"]
+approved_transitive_build_packages = ["camino@1.2.4", "crossbeam-utils@0.8.22", "getrandom@0.3.4", "icu_normalizer_data@2.0.0", "icu_properties_data@2.0.1", "libc@0.2.189", "memoffset@0.9.1", "ntapi@0.4.3", "num-traits@0.2.19", "parking_lot_core@0.9.12", "paste@1.0.15", "portable-atomic@1.14.0", "proc-macro2@1.0.107", "quote@1.0.47", "rustversion@1.0.23", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "winapi-i686-pc-windows-gnu@0.4.0", "winapi-x86_64-pc-windows-gnu@0.4.0", "winapi@0.3.9", "wit-bindgen@0.57.1", "zerocopy@0.8.55", "zmij@1.0.23"]
+approved_transitive_proc_macros = ["boa_macros@0.21.1", "bytemuck_derive@1.11.0", "derive_arbitrary@1.4.2", "displaydoc@0.2.6", "dynify-macros@0.1.2", "equator-macro@0.4.2", "num_enum_derive@0.7.6", "paste@1.0.15", "phf_macros@0.13.1", "pin-project-internal@1.1.13", "rustversion@1.0.23", "serde_derive@1.0.228", "thiserror-impl@2.0.19", "time-macros@0.2.32", "windows-implement@0.60.2", "windows-interface@0.59.3", "yoke-derive@0.8.2", "zerocopy-derive@0.8.55", "zerofrom-derive@0.1.7", "zerovec-derive@0.11.3"]
 
 [[members]]
 name = "fforager-xtask"
@@ -35,6 +35,24 @@ split_trigger = "FF-BUILD-036"
 feature_owner = "WP-FF-003-executable-gate-bootstrap-v1"
 profile = "phase0_bootstrap"
 removal_condition = "Replace only through a versioned gate-runner migration that preserves all report and proof contracts."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
+name = "fforager-javascript"
+manifest = "build/crates/fforager-javascript/Cargo.toml"
+source_root = "build/crates/fforager-javascript/src"
+layer = "build_tooling"
+artifact_role = "non_shipped_isolated_javascript_worker_spike"
+shipped = false
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = [{ package = "fforager-contracts", kinds = ["normal"], optional = false }]
+split_trigger = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001"
+feature_owner = "WP-FF-006-rust-youtube-challenge-spike-v1"
+profile = "phase0_prerequisite_spike"
+removal_condition = "Remove or replace only after the Rust JavaScript approach receives an explicit Phase-0 viability verdict and any successor preserves the bounded worker proof contract."
 runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
 unsafe_policy_ref = "FF-BUILD-050"
 exception_policy_ref = "FF-BUILD-052"
@@ -279,3 +297,138 @@ removal_trigger = "All governed TOML policy migrates through a versioned accepte
 approval_id = "WP-FF-003-executable-gate-bootstrap-v1-AC-002"
 features = []
 default_features = true
+
+[[dependency_decisions]]
+name = "boa_ast"
+version = "0.21.1"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Inspect parsed player syntax structurally and retain only Ferric-selected challenge definitions."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "The spike requires AST-level discovery rather than executing a whole site-supplied player or importing external solver code."
+removal_trigger = "The spike is removed or a validated Ferric-owned parser provides equivalent bounded structural discovery."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "boa_engine"
+version = "0.21.1"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Execute reduced site-supplied challenge behavior in a fresh pure-Rust context with explicit runtime limits."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "Boa is a current pure-Rust ECMAScript engine with instruction, loop, recursion, and stack limit controls suitable for the isolated spike."
+removal_trigger = "The spike is removed or an independently validated pure-Rust engine provides stronger equivalent bounded execution."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = ["fuzz"]
+default_features = false
+
+[[dependency_decisions]]
+name = "boa_gc"
+version = "0.21.1"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Force collection after each discarded per-job context so same-worker RSS remains inside the protocol ceiling."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "The engine context is fresh per job, but deterministic collection is required to bound retained process memory between jobs."
+removal_trigger = "Boa exposes equivalent deterministic context teardown or the isolated engine is replaced through a validated migration."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "boa_interner"
+version = "0.21.1"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Resolve interned AST identifiers during Ferric-owned player challenge discovery."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "Boa AST nodes store identifiers through the matching interner and discovery must compare their exact source identities."
+removal_trigger = "The selected parser exposes stable owned identifiers without this direct dependency or the spike is removed."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "boa_parser"
+version = "0.21.1"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Parse committed raw player JavaScript into the structural discovery input."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "Using the engine-aligned parser avoids brittle regular-expression extraction and preserves a single pinned syntax model."
+removal_trigger = "The spike is removed or a validated Ferric-owned parser supplies equivalent current-player coverage."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "serde"
+version = "1.0.228"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Strictly serialize the worker request, response, corpus manifest, and proof report DTOs."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "The spike reuses the WP-005 JSON envelope and requires deny-unknown-fields DTO validation."
+removal_trigger = "The worker boundary migrates through accepted compatibility fixtures away from Serde."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = ["derive"]
+default_features = true
+
+[[dependency_decisions]]
+name = "serde_json"
+version = "1.0.150"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Encode and decode bounded WP-005 worker envelopes, manifests, and machine proof reports."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "The accepted versioned JavaScript worker contract and committed corpus use strict JSON representations."
+removal_trigger = "The worker protocol and retained corpus migrate through an accepted non-JSON compatibility plan."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "sha2"
+version = "0.11.0"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Verify raw-player identity and bind cache/report evidence to exact source bytes."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "The corpus contract requires exact SHA-256 provenance before any site-supplied player code is parsed or evaluated."
+removal_trigger = "Rust supplies a standard SHA-256 implementation or the corpus identity contract migrates through an accepted decision."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002"
+features = []
+default_features = false
+
+[[dependency_decisions]]
+name = "sysinfo"
+version = "0.39.6"
+consumer = "fforager-javascript"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Measure worker RSS and prove termination, reaping, and process absence from the supervising Rust process."
+native = false
+owner = "WP-FF-006-rust-youtube-challenge-spike"
+allowed_consumers = ["fforager-javascript"]
+reason = "Boa has no exact heap quota, so the WP-005 process memory ceiling requires an independent parent-side RSS supervisor."
+removal_trigger = "The selected engine exposes a validated exact memory cap or the operating-system supervisor migrates to an approved equivalent."
+approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004"
+features = ["system"]
+default_features = false

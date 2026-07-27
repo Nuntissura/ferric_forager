@@ -2,7 +2,7 @@
   "schema_id": "ff.work_packet_refinement@1",
   "file_id": "WP-FF-006-rust-youtube-challenge-spike-v1-REFINEMENT-001",
   "wp_id": "WP-FF-006-rust-youtube-challenge-spike-v1",
-  "updated_at_utc": "2026-07-26T21:07:39Z",
+  "updated_at_utc": "2026-07-27T00:36:00Z",
   "operator_request": "Ensure Ferric Forager is understood and enforced as an independent Rust replacement for yt-dlp with added features and never depends on yt-dlp; invalidate and remove any WP-006 implementation path that executes or requires yt-dlp-family code.",
   "basis": {
     "research_status": "COMPLETE_SELECTED_FERRIC_OWNED_RUST_PATH",
@@ -82,6 +82,11 @@
         "source": "https://crates.io/crates/sysinfo/0.39.6",
         "identity": "sysinfo 0.39.6, Rust 1.95 minimum, MIT, inspected with cargo info on 2026-07-26",
         "evidence": "The system-only feature provides cross-platform child RSS observation without an external runtime, build-time download, Cargo links entry, or native library. It is selected only for parent process supervision and peak-memory evidence."
+      },
+      {
+        "source": "https://rustsec.org/advisories/RUSTSEC-2024-0436.html",
+        "identity": "RUSTSEC-2024-0436 from the current locally provisioned RustSec database inspected by cargo-deny 0.20.2 on 2026-07-27",
+        "evidence": "paste 1.0.15 is archived and unmaintained, with no safe upgrade listed. Cargo tree proves it is a transitive Boa 0.21.1 proc-macro dependency. The bounded deny exception names the exact advisory and reason, applies only to this non-shipped prerequisite, and requires removal or new authorization before a later product consumer."
       }
     ],
     "selected_approach": [
@@ -89,6 +94,7 @@
       "Implement Ferric-owned discovery by parsing each raw player with Boa's parser, locating the combined n/signature URL-transform wrapper through structural markers, and emitting a side-effect-reduced program containing only declarations and assignment/literal expression statements from the player IIFE. Do not use regex-only discovery and do not evaluate the original full player initialization path.",
       "Use checked-in raw site-supplied player programs plus inert provenance-bound expected observations for multiple pinned player generations. No external solver source, generated solver asset, package, executable, or runtime is imported, executed, bundled, or required.",
       "Enforce input, output, frame, instruction, loop, recursion, stack, wall-time, job-count, age, and RSS/recycle bounds; use parent process supervision for non-cooperative timeout and cancellation.",
+      "Pin the local fforager-contracts dependency to version 0.1.0 and record one reasoned cargo-deny exception for RUSTSEC-2024-0436 because Boa 0.21.1 has no safe paste upgrade; do not carry that exception into a later product consumer without explicit re-authorization.",
       "Emit deterministic per-case reports and an aggregate PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION verdict only after dependency-independence proof passes."
     ],
     "rejected_options": [
@@ -98,6 +104,7 @@
       "Regex-only player discovery because current NewPipe source retains multiple patterns plus lexer fallback and recent releases document recurring n-function breakage.",
       "Full raw-player evaluation because browser initialization code introduces irrelevant effects, ambient host assumptions, avoidable compatibility surface, and a larger attack/resource boundary.",
       "Adding a second JavaScript parser such as SWC because Boa already supplies the parser required by the selected engine and a second parser would enlarge dependency and maintenance cost without closing a current acceptance gap.",
+      "Patching Boa to substitute pastey during this spike because the upstream dependency is transitive, no reviewed drop-in patch is part of Boa 0.21.1, and carrying a local engine fork would enlarge the attack and maintenance surface beyond the bounded non-shipped evidence need.",
       "A handwritten case-specific transform table because it would echo fixture expectations rather than discover and solve real player behavior.",
       "Network-downloading EJS/player assets during build or test because it violates deterministic offline proof and the no-build-download boundary.",
       "Treating generic Test262 or simple eval success as YouTube challenge compatibility proof."
@@ -124,7 +131,7 @@
   },
   "corpus_contract": {
     "oracle_identity": "Ferric-owned YouTube challenge corpus; optional external comparison observations carry separate pinned provenance",
-    "mandatory_cases": "Every pinned case in the future checked-in WP-006 manifest binds raw site-player bytes, variant, challenge type, input, inert expected observation, and provenance without bundling or executing external solver code.",
+    "mandatory_cases": "Every pinned case in the checked-in WP-006 manifest binds raw site-player bytes, variant, challenge type, input, inert expected observation, and provenance without bundling or executing external solver code.",
     "pass_threshold": "100 percent exact output agreement for mandatory deterministic cases, with no skipped or structurally-only cases.",
     "live_canary_policy": "Optional, non-blocking, separately labeled, sanitized, and never allowed to replace deterministic corpus proof.",
     "failure_bundle": "Case ID, upstream identities, script/player hashes, engine identity, bounded non-secret input, expected and observed result, typed error, limits, duration, process/RSS observation, and replay command."
@@ -145,7 +152,7 @@
       "maximum_worker_age_millis": 300000
     },
     "capabilities": "No registered network, filesystem, environment, process, dynamic import, module loader, console, timer, or secret-bearing host functions.",
-    "isolation": "The future selected Rust engine must create a fresh capability-free execution context per job; host-owned content-addressed artifacts must not permit durable JavaScript heap or global state across jobs.",
+    "isolation": "The selected Rust engine creates a fresh capability-free execution context per job; host-owned content-addressed prepared-program artifacts do not retain JavaScript heap or global state across jobs.",
     "termination": "Engine budgets are cooperative first-line controls; parent wall deadline/cancellation may terminate and reap the separate worker. Timeout is a bounded policy outcome, not proof that arbitrary code could never finish.",
     "memory": "Input/output and engine structural limits are exact; parent RSS supervision provides bounded detection and forced worker termination. The report must state OS hard-containment coverage and residual race/overshoot rather than claim a perfect in-engine heap cap."
   },

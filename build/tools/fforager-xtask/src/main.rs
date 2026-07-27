@@ -7353,6 +7353,24 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-005-FINDING-GATE-INVENTORY-001" => {
             Some("xtask::tests::contract_inventory_rejects_required_field_and_stable_id_mutations")
         }
+        "WP-FF-006-FINDING-COUNTERFACTUAL-001" => {
+            Some("fforager_js_corpus::tests::oracle_counterfactual_rejects_mutated_expected_output")
+        }
+        "WP-FF-006-FINDING-CANCEL-ACK-002" => Some("WP-FF-006-PROBE-CANCELLATION"),
+        "WP-FF-006-FINDING-AST-DISCOVERY-003" => Some(
+            "fforager_javascript::tests::structural_discovery_skips_prelude_iife_and_unrelated_markers",
+        ),
+        "WP-FF-006-FINDING-CACHE-EVIDENCE-004" => Some("WP-FF-006-PROBE-CACHE-KEY"),
+        "WP-FF-006-FINDING-REPORT-MANIFEST-005" => {
+            Some("build/reports/wp-ff-006-youtube-challenge-report.json")
+        }
+        "WP-FF-006-FINDING-CORRELATION-006" => {
+            Some("fforager_js_corpus::tests::full_response_correlation_rejects_forged_tuple_fields")
+        }
+        "WP-FF-006-FINDING-PROBE-AUTHORITY-007" => Some("WP-FF-006-PROBE-PROBE-AUTHORITY"),
+        "WP-FF-006-FINDING-FATAL-TYPING-008" => Some("WP-FF-006-PROBE-PATH-CONFINEMENT"),
+        "WP-FF-006-FINDING-QUARANTINE-009" => Some("WP-FF-006-PROBE-QUARANTINE"),
+        "WP-FF-006-FINDING-RAII-REAP-010" => Some("fforager_js_corpus::Supervisor::drop"),
         "WP-FF-013-FINDING-SEMANTIC-REPLAY-001" => Some(
             "xtask::compatibility::tests::native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes",
         ),
@@ -10156,6 +10174,58 @@ mod tests {
                 .unwrap_err()
                 .contains("exact canonical executable proof")
         );
+    }
+
+    #[test]
+    fn wp006_adversarial_findings_bind_exact_executable_proofs() {
+        let expected = [
+            (
+                "WP-FF-006-FINDING-COUNTERFACTUAL-001",
+                "fforager_js_corpus::tests::oracle_counterfactual_rejects_mutated_expected_output",
+            ),
+            (
+                "WP-FF-006-FINDING-CANCEL-ACK-002",
+                "WP-FF-006-PROBE-CANCELLATION",
+            ),
+            (
+                "WP-FF-006-FINDING-AST-DISCOVERY-003",
+                "fforager_javascript::tests::structural_discovery_skips_prelude_iife_and_unrelated_markers",
+            ),
+            (
+                "WP-FF-006-FINDING-CACHE-EVIDENCE-004",
+                "WP-FF-006-PROBE-CACHE-KEY",
+            ),
+            (
+                "WP-FF-006-FINDING-REPORT-MANIFEST-005",
+                "build/reports/wp-ff-006-youtube-challenge-report.json",
+            ),
+            (
+                "WP-FF-006-FINDING-CORRELATION-006",
+                "fforager_js_corpus::tests::full_response_correlation_rejects_forged_tuple_fields",
+            ),
+            (
+                "WP-FF-006-FINDING-PROBE-AUTHORITY-007",
+                "WP-FF-006-PROBE-PROBE-AUTHORITY",
+            ),
+            (
+                "WP-FF-006-FINDING-FATAL-TYPING-008",
+                "WP-FF-006-PROBE-PATH-CONFINEMENT",
+            ),
+            (
+                "WP-FF-006-FINDING-QUARANTINE-009",
+                "WP-FF-006-PROBE-QUARANTINE",
+            ),
+            (
+                "WP-FF-006-FINDING-RAII-REAP-010",
+                "fforager_js_corpus::Supervisor::drop",
+            ),
+        ];
+        for (finding_id, proof_id) in expected {
+            assert_eq!(
+                expected_adversarial_finding_proof(finding_id),
+                Some(proof_id)
+            );
+        }
     }
 
     #[test]

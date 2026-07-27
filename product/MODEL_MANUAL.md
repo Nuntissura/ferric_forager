@@ -192,21 +192,89 @@ These contracts do not select or implement network, storage, archive, FFmpeg, Ja
 
 </topic>
 
-<topic id="phase-0-javascript-challenge-spike" status="blocked" version="2" wp="WP-FF-006-rust-youtube-challenge-spike-v1" ingestable="true" updated_at="2026-07-26">
+<topic id="phase-0-javascript-challenge-spike" status="active" version="4" wp="WP-FF-006-rust-youtube-challenge-spike-v1" ingestable="true" updated_at="2026-07-27">
 
-## Implement the independent Rust JavaScript challenge spike
+## Operate the independent Rust JavaScript challenge spike
 
-WP-FF-006 is a non-shipped Prerequisite 0C experiment. It must prove a Ferric-owned Rust path for discovering and solving YouTube player challenges through a bounded pure-Rust JavaScript worker. It does not implement video download, extraction, a shipped JavaScript adapter, replacement parity, packaging, release, or product-phase progress.
+WP-FF-006 is a non-shipped Prerequisite 0C experiment. It proves a Ferric-owned Rust path for discovering and solving `YouTube` player `n` and signature challenges through a bounded pure-Rust JavaScript worker. It does not implement video download, extraction, a shipped JavaScript adapter, replacement parity, packaging, release, or product-phase progress.
 
-The prior prototype path that executed checked-in `yt-dlp-ejs` solver assets was invalidated and removed. Those assets would make Ferric depend on code from the yt-dlp ecosystem even without invoking the yt-dlp executable. No accepted WP-006 command exists until the packet has current research and a Ferric-owned challenge-discovery and solving implementation.
+### Navigation and identity
 
-The accepted implementation boundary is:
+- Workspace crate: `build/crates/fforager-javascript`.
+- Worker entrypoint: `build/crates/fforager-javascript/src/bin/fforager-js-worker.rs`.
+- Corpus/proof runner: `build/crates/fforager-javascript/src/bin/fforager-js-corpus.rs`.
+- Committed input contract: `build/fixtures/youtube-challenge-v1/manifest.json`.
+- Raw site-supplied players: `build/fixtures/youtube-challenge-v1/players`.
+- Generated machine verdict: `build/reports/wp-ff-006-youtube-challenge-report.json`.
+- Engine identity: `boa_engine@0.21.1`.
+- Ferric solver identity: `ferric-player-ast-v1`.
 
-- Ferric-owned Rust code discovers the relevant player functions and constructs the bounded execution request.
-- A pure-Rust JavaScript engine executes only site-supplied player behavior and Ferric-owned adapters.
-- A Ferric-owned committed corpus supplies deterministic inputs and expected observations; external implementations may be comparison provenance but never executable fixtures.
-- No command required to build, test, verify, package, release, or run Ferric may require yt-dlp, Python, a yt-dlp companion package, or downloaded/prebuilt solver code.
-- Any failure produces evidence for an Operator decision; it never authorizes a fallback.
+The raw players are inert corpus inputs. Ferric-owned Rust parses their AST, retains the discovered challenge-relevant definitions, and evaluates the reduced program in a fresh Boa context. External implementations may explain oracle provenance, but Ferric does not run, import, vendor, download, or fall back to their solver code.
+
+### Reproduce the accepted proof
+
+Run from the repository root:
+
+```powershell
+cargo build --manifest-path build/Cargo.toml --locked --release -p fforager-javascript --bins
+cargo run --manifest-path build/Cargo.toml --locked --release -p fforager-javascript --bin fforager-js-corpus
+```
+
+Success prints `PASS_RUST_ONLY_PATH build/reports/wp-ff-006-youtube-challenge-report.json`. Open that JSON and verify all of the following rather than trusting console text alone:
+
+- `verdict` is `PASS_RUST_ONLY_PATH`.
+- `mandatory_passed` equals `mandatory_total`.
+- every `cases[].matched` is `true`;
+- every `probes[].passed` is `true`;
+- `counterfactual.original_oracle_passed` and `counterfactual.mutated_oracle_rejected` are `true`;
+- `zero_product_progress` is `true`;
+- every terminal probe reports `reaped: true` and `process_absent_after_reap: true`.
+
+Optional relocatable overrides are `--manifest`, `--player-root`, and `--report`. All values are resolved from the current repository invocation; the implementation has no hardcoded workspace drive or user-profile path.
+
+### Inputs, outputs, and limits
+
+The manifest is strict JSON and binds every mandatory case to a relative player filename, exact SHA-256, challenge kind, input, expected output, engine, solver implementation, and non-executable oracle provenance. Unknown manifest or worker-input fields fail.
+
+The supervisor spawns `fforager-js-worker` with an empty inherited environment, no foreground window, no host functions registered in Boa, a fresh unguessable destructive-probe grant, and a canonical player root. Worker IPC reuses `ff.javascript-worker@1` from WP-005 with a 1 MiB frame ceiling. Requests and responses are bound by producer, request, job, sequence, compatibility, provenance, and capability-grant identity. Additional bounds are:
+
+- raw player: 4 MiB and ASCII source bytes;
+- serialized worker output: 1 MiB;
+- requested wall deadline: 20 seconds per corpus case;
+- requested/monitored worker RSS: 512 MiB;
+- Boa instruction budget: 50,000,000;
+- Boa loop budget: 5,000,000;
+- recursion depth: 512;
+- JavaScript stack size: 10,240;
+- worker native thread stack: 64 MiB;
+- cache: 8 entries and 24 MiB, keyed by script hash, solver, engine, execution mode, and extractor version;
+- worker recycle: 64 jobs or 300 seconds, whichever occurs first.
+
+The report covers exact raw-player results plus cache separation, malformed/partial/oversized frames, exact fatal protocol categories, protocol version/reference/field rejection, protocol memory ceilings, destructive-probe authorization, ambient capability denial, fresh-context isolation, hash mismatch, path confinement, timeout, acknowledged cancellation, memory pressure, crash cleanup, provenance-keyed quarantine with an operator-clear path, and quota recycling. Quarantine activates after two terminal failures for one provenance key; it does not block an independent key.
+
+### Safety constraints and prohibited substitutions
+
+- Do not add or invoke Python, `yt-dlp`, any `yt-dlp` companion package, `yt-dlp-ejs`, Node.js, Deno, Bun, QuickJS, Wasmtime, a browser runtime, a downloaded solver bundle, or an external solver executable.
+- Do not turn the corpus runner into a downloader or network extractor.
+- Do not execute the whole raw player without Ferric-owned structural reduction.
+- Do not weaken hashes, frame bounds, protocol validation, resource limits, fresh contexts, path confinement, process reaping, or the counterfactual to make a failure pass.
+- A failed spike produces `FAILED_SPIKE_REQUIRES_OPERATOR_DECISION`; it never authorizes an automatic fallback.
+- `build/deny.toml` contains one bounded advisory exception: `RUSTSEC-2024-0436` for the unmaintained `paste 1.0.15` proc-macro transitively required by Boa 0.21.1. It is not a waiver for a later product consumer; remove it when Boa removes the dependency, or require an explicit new authorization before promotion.
+
+### Failure diagnosis and recovery
+
+- `worker binary missing`: run the release `cargo build ... --bins` command, then rerun the corpus command.
+- manifest identity/hash failure: compare the exact committed manifest and player bytes; do not rewrite an oracle or hash until the corpus change is explicitly authorized.
+- `ScriptHashMismatch`: the requested player bytes and manifest digest differ. Restore the committed bytes or update the corpus as an intentional reviewed change.
+- timeout, memory, cancellation, crash, quarantine, or recycle probe failure: inspect the corresponding report row and confirm `reaped` plus `process_absent_after_reap`; never reuse or trust that worker.
+- cancellation failure: require the correlated `AcknowledgedCancelled` generation before accepting cooperative cancellation; a forced termination after the acknowledgement grace is a distinct failed probe outcome.
+- quarantine failure: retain the failing provenance key and terminal receipts, confirm no worker spawned after the second failure, and use only the explicit operator-clear path after the underlying fault is resolved.
+- challenge mismatch or no candidate: retain the report as evidence, inspect the exact raw player and Ferric AST discovery path, and require an Operator decision before changing the accepted approach.
+- stale-cache failure: verify that script hash, solver, engine, execution mode, and extractor version all participate in the key; never reuse cached heap state.
+- dependency-policy failure: inspect the exact Cargo path and advisory identity. Do not broaden wildcard or advisory policy; the only accepted advisory ID is `RUSTSEC-2024-0436` under the non-shipped WP-006 ceiling.
+- disk exhaustion during canonical gates: clean only generated Cargo/proof target outputs after resolving their absolute path inside `build/target`; retain sources, fixtures, the lockfile, and reports, then rerun the same gate.
+
+The worker is quiet and bounded. If an interrupted manual run leaves `fforager-js-worker` alive, terminate only the recorded report PID after confirming its executable path is this repository's `build/target` worker, then rerun the corpus so the process-absence probes produce fresh evidence.
 
 </topic>
 

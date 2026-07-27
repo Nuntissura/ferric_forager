@@ -4267,6 +4267,7 @@ fn required_architecture_rules(path: &Path) -> Result<BTreeSet<String>, String> 
                 | "graph_integrity"
                 | "finding_remediation"
                 | "validation_reporting"
+                | "credential_protection"
         ) && enforcement == "REQUIRED"
             && !rules.insert(id.to_owned())
         {
@@ -4545,6 +4546,11 @@ fn validate_rule_map(
                 &["proof-class-aggregation"],
                 &["proof-class-promotion", "gate-report-runtime-claim"],
             ),
+            "FF-BUILD-099" => (
+                &["counterfactual", "integration", "negative_fixture"],
+                &["credential-snapshot-boundary"],
+                &["secret-scan-provider-key"],
+            ),
             other => return Err(format!("FF-ARCH-E-UNKNOWN-RULE: {other}")),
         };
         require_exact_strings(&rule.rule_id, "proof_classes", &rule.proof_classes, proof)?;
@@ -4677,6 +4683,7 @@ fn proof_integrity_fixture_execution(
         "clippy_conf_dir_poison" => clippy_conf_dir_poison_fixture_execution(root),
         "cargo_home_poison" => cargo_home_poison_fixture_execution(root),
         "source_content_fingerprint" => source_content_fingerprint_fixture_execution(root),
+        "secret_scan_provider_key" => secret_scan_provider_key_fixture_execution(root),
         "structural_replay_behavioral_pass" => {
             let diagnostic = compatibility::structural_replay_report_mutation_diagnostic()
                 .expect_err(
@@ -4757,6 +4764,25 @@ fn proof_integrity_fixture_execution(
             ))
         }
     }
+}
+
+fn secret_scan_provider_key_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
+    let diagnostic = with_isolated_fixture_root(root, "credential-snapshot-boundary", |sandbox| {
+        secret_scan::credential_snapshot_counterfactual_diagnostic(sandbox)
+    })
+    .expect_err("credential scanner accepted staged, outgoing-tree, or outgoing-ref input");
+    if !diagnostic.starts_with("FF-SECRET-E-DETECTED:") {
+        return Err(format!(
+            "credential scanner failed for wrong reason: {diagnostic}"
+        ));
+    }
+    Ok(proof_fixture(
+        vec!["FF-SECRET-E-DETECTED".to_owned()],
+        "counterfactual",
+        "credential-snapshot-boundary",
+        "isolated Git index, direct tree-root push, and ref-name inputs containing a synthetic provider-pattern key assembled at runtime",
+        "production staged-index and pre-push snapshot scanners with exact hook integrity and value suppression",
+    ))
 }
 
 fn durable_storage_fixture_execution(
@@ -6059,7 +6085,11 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
         .ok_or("FF-RUNTIME-E-BASE-MISSING: packet base SHA is required")?;
     let activated_packet = validate_packet_activation_base(root, &id, base)?;
     let changed = changed_paths_since(root, base)?;
-    let policy: ArchitecturePolicy = read_toml(&root.join("build/architecture-policy.toml"))?;
+    let policy_path = root.join("build/architecture-policy.toml");
+    let current_policy_text =
+        fs::read_to_string(&policy_path).map_err(|error| format!("read policy: {error}"))?;
+    let policy: ArchitecturePolicy =
+        toml::from_str(&current_policy_text).map_err(|error| format!("parse policy: {error}"))?;
     let current_has_shipped_member = policy.members.iter().any(|member| member.shipped);
     let base_policy_text = command_output(
         root,
@@ -6068,11 +6098,19 @@ fn runtime_truth_check(root: &Path) -> Result<RuntimeTruthResult, String> {
     )?;
     let base_policy: ArchitecturePolicy = toml::from_str(&base_policy_text)
         .map_err(|error| format!("FF-RUNTIME-E-BASE-POLICY: {error}"))?;
+    let architecture_policy_affects_product =
+        architecture_policy_product_affecting(&base_policy_text, &current_policy_text)?;
     let base_has_shipped_member = base_policy.members.iter().any(|member| member.shipped);
     let has_shipped_member = current_has_shipped_member || base_has_shipped_member;
     let product_paths = changed
         .iter()
-        .filter(|path| product_affecting_path(path, has_shipped_member))
+        .filter(|path| {
+            if path.replace('\\', "/") == "build/architecture-policy.toml" {
+                has_shipped_member && architecture_policy_affects_product
+            } else {
+                product_affecting_path(path, has_shipped_member)
+            }
+        })
         .cloned()
         .collect::<Vec<_>>();
     if product_paths.is_empty() {
@@ -6626,6 +6664,32 @@ fn product_affecting_path(path: &str, has_shipped_member: bool) -> bool {
                 | "build/architecture-policy.toml"
                 | "rust-toolchain.toml"
         )
+}
+
+fn architecture_policy_product_affecting(
+    base_text: &str,
+    current_text: &str,
+) -> Result<bool, String> {
+    let mut base: toml::Value =
+        toml::from_str(base_text).map_err(|error| format!("FF-RUNTIME-E-BASE-POLICY: {error}"))?;
+    let mut current: toml::Value = toml::from_str(current_text)
+        .map_err(|error| format!("FF-RUNTIME-E-CURRENT-POLICY: {error}"))?;
+    normalize_architecture_policy_hygiene(&mut base)?;
+    normalize_architecture_policy_hygiene(&mut current)?;
+    Ok(base != current)
+}
+
+fn normalize_architecture_policy_hygiene(policy: &mut toml::Value) -> Result<(), String> {
+    let table = policy
+        .as_table_mut()
+        .ok_or("FF-RUNTIME-E-POLICY-SHAPE: architecture policy root is not a table")?;
+    table.remove("target_directory");
+    let roots = table
+        .get_mut("forbidden_product_runtime_roots")
+        .and_then(toml::Value::as_array_mut)
+        .ok_or("FF-RUNTIME-E-POLICY-SHAPE: forbidden_product_runtime_roots is not an array")?;
+    roots.retain(|root| root.as_str() != Some(".fforager-artifacts"));
+    Ok(())
 }
 
 fn validate_packet_activation_base(
@@ -8293,6 +8357,29 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-007-FINDING-DEEP-DECLARATION-005" => Some(
             "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution",
         ),
+        "WP-FF-016-FINDING-TREE-REF-001" => {
+            Some("xtask::secret_scan::tests::tree_root_and_ref_names_are_scanned_before_push")
+        }
+        "WP-FF-016-FINDING-HOOK-INTEGRITY-002" | "WP-FF-016-FINDING-COMPILER-DISCLOSURE-006" => {
+            Some(
+                "xtask::secret_scan::tests::hook_configuration_requires_exact_content_and_executable_index_mode",
+            )
+        }
+        "WP-FF-016-FINDING-ENCODING-CORPUS-003" => {
+            Some("xtask::secret_scan::tests::utf16_and_gitlab_provider_tokens_are_scanned")
+        }
+        "WP-FF-016-FINDING-REPLACE-REF-004" => {
+            Some("xtask::secret_scan::tests::git_replace_refs_cannot_hide_outgoing_secret")
+        }
+        "WP-FF-016-FINDING-BATCH-RESOURCE-005" => {
+            Some("xtask::secret_scan::tests::dense_provider_matches_are_bounded")
+        }
+        "WP-FF-016-FINDING-HISTORY-REF-007" => {
+            Some("xtask::secret_scan::tests::history_scans_ref_names_and_non_commit_roots")
+        }
+        "WP-FF-016-FINDING-PROOF-BOUNDARY-008" => {
+            Some("FF-GATE-ARCH-001::credential-snapshot-boundary")
+        }
         "WP-FF-013-FINDING-SEMANTIC-REPLAY-001" => Some(
             "xtask::compatibility::tests::native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes",
         ),
@@ -9005,8 +9092,7 @@ fn validate_rust_verification_environment(root: &Path) -> Result<(), String> {
         .filter_map(|path| {
             if allowed.iter().any(|candidate| candidate == &path)
                 && fs::read_to_string(&path)
-                    .map(|text| text.replace("\r\n", "\n") == canonical_config)
-                    .unwrap_or(false)
+                    .is_ok_and(|text| text.replace("\r\n", "\n") == canonical_config)
             {
                 None
             } else {
@@ -10556,7 +10642,12 @@ mod tests {
     #[test]
     fn nested_toolchain_selectors_are_inventoried() {
         let root = test_root("nested-selector");
-        for directory in [".GOV", "product/nested", ".fforager-artifacts/cargo-target"] {
+        for directory in [
+            ".GOV",
+            "product/nested",
+            "build",
+            ".fforager-artifacts/cargo-target",
+        ] {
             fs::create_dir_all(root.join(directory)).unwrap();
         }
         fs::write(root.join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
@@ -10926,6 +11017,33 @@ mod tests {
         assert!(!product_affecting_path("build/Cargo.lock", false));
         assert!(product_affecting_path("build/Cargo.lock", true));
         assert!(product_affecting_path("rust-toolchain.toml", true));
+    }
+
+    #[test]
+    fn architecture_policy_output_hygiene_is_not_product_impact() {
+        let base = r#"
+target_directory = "build/target"
+forbidden_product_runtime_roots = [".GOV", "build"]
+product_root = "product"
+"#;
+        let hygiene = r#"
+target_directory = ".fforager-artifacts/cargo-target"
+forbidden_product_runtime_roots = [".GOV", "build", ".fforager-artifacts"]
+product_root = "product"
+"#;
+        assert_eq!(
+            architecture_policy_product_affecting(base, hygiene),
+            Ok(false)
+        );
+        let runtime_boundary_change = r#"
+target_directory = ".fforager-artifacts/cargo-target"
+forbidden_product_runtime_roots = ["build", ".fforager-artifacts"]
+product_root = "product"
+"#;
+        assert_eq!(
+            architecture_policy_product_affecting(base, runtime_boundary_change),
+            Ok(true)
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "No API key commit and push guard",
     "created_at_utc": "2026-07-27T15:17:09Z",
-    "updated_at_utc": "2026-07-27T19:15:00Z"
+    "updated_at_utc": "2026-07-27T20:50:43Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -30,9 +30,9 @@
   "source_control": {
     "canonical_branch": "main",
     "base_sha": "de8b50d780224dc54a62ad2be914e9047f4b7bfd",
-    "work_branch": "codex/sanitized-main-integration",
-    "worktree_policy": "REPO_LOCAL_LINKED",
-    "worktree_id": "sanitized-main-integration",
+    "work_branch": "main",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
       "branch": null,
@@ -50,7 +50,7 @@
       "GitHub cached commit views can only be garbage-collected by GitHub Support even after all branch references are clean.",
       "Google-side key rotation or revocation is outside repository access and remains Operator-owned."
     ],
-    "next_action": "Checkpoint the hardened scanner, migrate remaining tainted local refs and stashes to sanitized lineage, then run history, architecture, and verify-pr gates before merging and pushing.",
+    "next_action": "Commit the verified final snapshot through the installed pre-commit guard, push sanitized main through the installed pre-push guard, record containment, and clean the disposable artifact root before resuming WP-FF-007.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -82,6 +82,10 @@
       ".GOV/work_packets/WP-FF-016-no-api-key-guard-v1/refinement.json",
       "build/git-hooks/pre-commit",
       "build/git-hooks/pre-push",
+      "build/crates/fforager-transport/src/corpus.rs",
+      "build/fixtures/architecture/secret-scan-provider-key/case.toml",
+      "build/fixtures/youtube-challenge-v1/manifest.json",
+      "build/rule-to-proof.toml",
       "build/tools/fforager-xtask/src/main.rs",
       "build/tools/fforager-xtask/src/secret_scan.rs"
     ],
@@ -142,8 +146,14 @@
       "id": "WP-FF-016-no-api-key-guard-v1-AC-006",
       "requirement": "Formatting, warnings-denied Clippy, focused and full tests, architecture-check, verify-pr, governance parsing, registry checks, allowed-path containment, and real secret-scan commands pass.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "PASS FF-GATE-ARCH-001; report=build/reports/architecture-check-1785181404435386800-34096.json.",
+        "PASS FF-GATE-RUNTIME-001; report=build/reports/runtime-truth-check-1785184720783636600-118560.json.",
+        "PASS FF-GATE-PR-001; report=build/reports/verify-pr-1785185423243114500-115736.json; exit code 0 after formatting, warnings-denied Clippy, documentation, dependency policy, 35 contract tests, 45 core tests, 22 transport tests, and 99 xtask tests.",
+        "The exact credential-snapshot architecture fixture executed isolated staged-index, direct-tree pre-push, and ref-name pre-push rejection boundaries with value suppression.",
+        "The sanitized YouTube fixture hashes, nested architecture selector, and shared immutable transport corpus report passed inside the aggregate gate."
+      ]
     },
     {
       "id": "WP-FF-016-no-api-key-guard-v1-AC-007",
@@ -166,13 +176,17 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-27T19:15:00Z",
-      "branch": "codex/sanitized-main-integration",
+      "recorded_at_utc": "2026-07-27T20:50:43Z",
+      "branch": "main",
       "base_sha": "de8b50d780224dc54a62ad2be914e9047f4b7bfd",
-      "head_sha": "0bc018b3961d43c72bfaa3fd76751a73da440674",
+      "head_sha": "97c06c08f8b7a978938c38dc3ea5118c7117203b",
       "dirty_paths": [
-        ".GOV/taskboard/taskboard.yaml",
         ".GOV/work_packets/WP-FF-016-no-api-key-guard-v1/packet.json",
+        "build/crates/fforager-transport/src/corpus.rs",
+        "build/fixtures/architecture/secret-scan-provider-key/case.toml",
+        "build/fixtures/youtube-challenge-v1/manifest.json",
+        "build/rule-to-proof.toml",
+        "build/tools/fforager-xtask/src/main.rs",
         "build/tools/fforager-xtask/src/secret_scan.rs"
       ],
       "checks_run": [
@@ -181,13 +195,17 @@
         "Live exact-index scan: findings=0.",
         "Live outgoing-commit scan: findings=0.",
         "Hook install and verification: PASS.",
-        "Local all-ref history scan correctly rejected six Google-key occurrences reachable only through stale pre-rewrite refs."
+        "Local all-ref history scan passes after every stale tainted ref was migrated or removed.",
+        "Focused secret_scan tests: 23 passed.",
+        "Architecture check: PASS FF-GATE-ARCH-001; report=build/reports/architecture-check-1785181404435386800-34096.json.",
+        "Runtime truth check: PASS FF-GATE-RUNTIME-001; report=build/reports/runtime-truth-check-1785184720783636600-118560.json.",
+        "Aggregate verification: PASS FF-GATE-PR-001; report=build/reports/verify-pr-1785185423243114500-115736.json; exit code 0."
       ],
       "blockers": [
         "GitHub Support is required for server-side garbage collection of cached old commit views.",
         "Google-side credential rotation or revocation is unavailable from repository access."
       ],
-      "next_action": "Commit this hardening through the installed pre-commit gate, migrate stale local refs without losing WP-015 work, and rerun the all-ref history gate."
+      "next_action": "Commit the verified final snapshot through the installed pre-commit guard, push sanitized main through the installed pre-push guard, record containment, and clean .fforager-artifacts before resuming WP-FF-007."
     }
   },
   "validation": {
@@ -321,7 +339,9 @@
         "pre-commit-hook": "Invokes the scanner against exact stage-zero index blobs before Git creates a commit.",
         "pre-push-hook": "Invokes the scanner against every outgoing complete commit snapshot before network transfer.",
         "authority-bindings": "Make installation, execution boundaries, and no-key behavior durable project rules.",
-        "work-packet": "Records the high-risk rewrite, residual cache limitation, validation, and sanitized migration state."
+        "work-packet": "Records the high-risk rewrite, residual cache limitation, validation, and sanitized migration state.",
+        "sanitized-fixture-manifest": "Rebinds the YouTube corpus manifest to the post-redaction player bytes so credential removal does not leave a stale integrity hash.",
+        "transport-test-report-cache": "Shares one immutable corpus report across report-property tests so workspace-level parallel tests do not redundantly race multiple loopback corpora."
       },
       "pre_simplification_verdict": "FAIL: reachable GitHub history contained three Google API-key strings and the repository had no mandatory before-commit or before-push credential gate.",
       "simplification_changes": [
@@ -330,6 +350,102 @@
         "Kept diagnostics to provider pattern ID, source identity, and line without retaining or printing secret values."
       ],
       "post_simplification_verdict": "PASS: the current implementation closes the direct exposed-key and local hook gaps with no new dependency, while retaining explicit limits for unknown secret formats and GitHub cache garbage collection.",
+      "adversarial_review": {
+        "DIFF_ATTACK_SURFACES": [
+          "Contract and serialization boundaries: FF-BUILD-099 authority, proof-map declarations, fixture identity, stable diagnostics, and value-suppressed output.",
+          "State and resource boundaries: stage-zero index state, outgoing ancestry, ref topology, Git object closure, bounded findings, byte limits, process output, and child deadlines.",
+          "Integration boundaries: hook files, staged hook blobs, effective core.hooksPath, Git index and object database, canonical history, worktree state, and GitHub push protection.",
+          "Gate and trust boundaries: mutable client hooks, scanner bootstrap, architecture mutation execution, verify-pr aggregation, branch protection, and residual provider-prefix coverage."
+        ],
+        "INDEPENDENT_CHECKS_RUN": [
+          "Three independent read-only reviewer lanes traced Git object integrity, transport-security bypasses, resource bounds, authority linkage, and final-snapshot governance.",
+          "The focused secret scanner suite executed 22 exact tests covering staged, history, worktree, pre-push, hook-integrity, ref, tree, encoding, and bounded-finding paths.",
+          "Effective core.hooksPath resolves to build/git-hooks and both exact staged hook blobs retain executable mode 100755 with matching worktree content.",
+          "A repository-wide Google-key-pattern search, exact-index scan, outgoing-snapshot scan, all-ref history scan, and fresh remote mirror scan each reported zero matched credentials."
+        ],
+        "COUNTERFACTUAL_CHECKS": [
+          "A direct tree-root push containing a credential blob is rejected through recursive tree closure even when commit traversal yields no commit.",
+          "Credential-shaped local and remote ref names are rejected independently of the referenced clean object and without emitting the ref value.",
+          "A staged disabled hook, altered worktree hook, non-executable index mode, or effective worktree-level hook-path override is rejected.",
+          "The architecture fixture now creates an isolated Git repository and fails unless exact staged-index, direct-tree pre-push, and ref-name pre-push boundaries all reject the synthetic key."
+        ],
+        "BOUNDARY_PROBES": [
+          "Producer-consumer boundary: committed hook constants are compared byte-for-byte with both worktree files and exact staged index blobs.",
+          "State boundary: stage-zero index entries, deleted tracked worktree files, untracked non-ignored files, and unresolved index stages have distinct fail-closed handling.",
+          "Serialization boundary: pre-push update rows validate both ref fields and both SHA-1 or SHA-256 object fields before ancestry and object-closure traversal.",
+          "Resource and integration boundary: batched cat-file reads enforce object, byte, output, and child-time limits while dense matches cap diagnostic state."
+        ],
+        "NEGATIVE_PATH_CHECKS": [
+          "Git replace refs cannot conceal a tainted outgoing object because every Git child disables replacement-object substitution.",
+          "Binary, UTF-16 little-endian, UTF-16 big-endian, GitLab, Google, and credential-shaped source-label cases reject without exposing matched values.",
+          "Malformed update rows, missing objects, unsupported object types, oversized blobs, excessive input, and timed-out Git children fail closed.",
+          "Canonical history rejects credential-shaped existing ref names and scans direct non-commit ref roots rather than limiting closure to commits."
+        ],
+        "INDEPENDENT_FINDINGS": [
+          {
+            "finding_id": "WP-FF-016-FINDING-TREE-REF-001",
+            "finding": "Direct tree-root objects and credential-shaped ref names bypassed outgoing traversal; recursive tree closure and both ref fields now reject them.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::tree_root_and_ref_names_are_scanned_before_push"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-HOOK-INTEGRITY-002",
+            "finding": "Worktree-only hook checks could approve a disabled staged hook or ineffective configuration; exact index bytes, mode, and effective configuration now gate execution.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::hook_configuration_requires_exact_content_and_executable_index_mode"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-ENCODING-CORPUS-003",
+            "finding": "The initial provider corpus missed GitLab tokens and UTF-16 representations; table-driven byte scanning now rejects the named encoded cases.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::utf16_and_gitlab_provider_tokens_are_scanned"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-REPLACE-REF-004",
+            "finding": "Git replacement refs could substitute clean objects during outgoing inspection; every scanner Git process now disables replacement-object resolution.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::git_replace_refs_cannot_hide_outgoing_secret"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-BATCH-RESOURCE-005",
+            "finding": "Per-object processes and dense line rescans amplified resource use; batched object reads, incremental lines, and bounded finding retention now constrain the path.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::dense_provider_matches_are_bounded"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-COMPILER-DISCLOSURE-006",
+            "finding": "Compiler failures could reproduce credential-bearing source text before scanning; hook bootstrap now suppresses compiler streams and emits one generic diagnostic.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::hook_configuration_requires_exact_content_and_executable_index_mode"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-HISTORY-REF-007",
+            "finding": "Canonical history omitted existing ref names and non-tag custom object roots; all refs now contribute redacted names and non-commit object closure.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::secret_scan::tests::history_scans_ref_names_and_non_commit_roots"
+          },
+          {
+            "finding_id": "WP-FF-016-FINDING-PROOF-BOUNDARY-008",
+            "finding": "The first FF-BUILD-099 fixture mislabeled an in-memory matcher as snapshot integration; the replacement executes isolated production Git boundaries.",
+            "status": "REMEDIATED",
+            "proof_id": "FF-GATE-ARCH-001::credential-snapshot-boundary"
+          }
+        ],
+        "RESIDUAL_UNCERTAINTY": [
+          "Client-side Git hooks and their worktree-built scanner remain locally bypassable or mutable by a hostile operator; independent GitHub push protection is the remote provider-pattern backstop, while unknown, split, compressed, or unstructured credential formats remain outside the explicit corpus ceiling."
+        ],
+        "MANUAL_REVIEW": {
+          "artifact": "product/MODEL_MANUAL.md",
+          "reviewer": "primary Codex adversarial reviewer after three independent security and resource review lanes",
+          "method": "Directly inspected purpose, locked Cargo commands, safety constraints, common failure recovery, transport limitations, and runtime-proof boundaries.",
+          "verdict": "PASS",
+          "evidence": [
+            "The built-in manual provides locked Cargo commands for compatibility, transport, architecture, deep, runtime, and pull-request validation.",
+            "Its recovery sections cover secret rejection, report failures, lifecycle effects, transport policy failures, and clean rerun paths.",
+            "The manual states that FF-GATE-RUNTIME-001 must execute the exact staged production artifact before any shipped runtime claim."
+          ]
+        }
+      },
       "complete_post_change_verification": [
         "Fresh GitHub mirror scan reports zero Google-key matches across every reachable commit.",
         "Focused staged, history, binary, placeholder, and diagnostic-suppression tests pass.",

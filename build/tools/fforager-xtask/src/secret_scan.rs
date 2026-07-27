@@ -13,6 +13,7 @@ const MAX_SCAN_COMMITS: usize = 100_000;
 const MAX_PRE_PUSH_UPDATES: usize = 10_000;
 const MAX_PRE_PUSH_INPUT_BYTES: u64 = 1024 * 1024;
 const MAX_GIT_OUTPUT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_REPORTED_FINDINGS: usize = 100;
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const GIT_BATCH_TIMEOUT: Duration = Duration::from_mins(5);
 const MAX_TAG_DEPTH: usize = 16;
@@ -284,8 +285,9 @@ fn require_hook_index_modes(root: &Path) -> Result<(), String> {
         let relative = format!("{HOOKS_PATH}/{hook}");
         let row = git_text(root, &["ls-files", "--stage", "--", &relative])?;
         if !row.starts_with("100755 ") {
+            let observed_mode = row.split_whitespace().next().unwrap_or("<missing>");
             return Err(format!(
-                "FF-SECRET-E-HOOK-MODE: expected executable index mode 100755 for {relative}"
+                "FF-SECRET-E-HOOK-MODE: expected executable index mode 100755 for {relative}; observed {observed_mode}"
             ));
         }
     }
@@ -308,18 +310,20 @@ fn require_hook_index_contents(root: &Path) -> Result<(), String> {
 fn require_hook_files(root: &Path) -> Result<(), String> {
     for (hook, expected) in [("pre-commit", PRE_COMMIT_HOOK), ("pre-push", PRE_PUSH_HOOK)] {
         let path = root.join(HOOKS_PATH).join(hook);
+        let display = slash(&path);
         if !path.is_file() {
             return Err(format!(
                 "FF-SECRET-E-HOOK-MISSING: required hook is absent: {}",
-                slash(&path)
+                safe_source(&display)
             ));
         }
-        let actual = fs::read(&path)
-            .map_err(|error| format!("FF-SECRET-E-HOOK-READ: {}: {error}", slash(&path)))?;
+        let actual = fs::read(&path).map_err(|error| {
+            format!("FF-SECRET-E-HOOK-READ: {}: {error}", safe_source(&display))
+        })?;
         if actual != expected {
             return Err(format!(
                 "FF-SECRET-E-HOOK-CONTENT: required hook content differs: {}",
-                slash(&path)
+                safe_source(&display)
             ));
         }
     }
@@ -363,20 +367,26 @@ fn scan_staged(root: &Path) -> Result<Vec<Finding>, String> {
 fn scan_history(root: &Path) -> Result<Vec<Finding>, String> {
     let commits = lines(&git_text(root, &["rev-list", "--all"])?);
     let mut findings = scan_commits(root, &commits)?;
-    let tag_rows = lines(&git_text(
+    let ref_rows = lines(&git_text(
         root,
-        &["for-each-ref", "--format=%(objectname)", "refs/tags"],
+        &["for-each-ref", "--format=%(refname) %(objectname)"],
     )?);
     let mut budget = ScanBudget::default();
-    for object_id in tag_rows {
-        validate_object_id(&object_id)?;
-        scan_git_object_chain(
-            root,
-            &object_id,
-            &format!("tag-object:{object_id}"),
-            &mut findings,
-            &mut budget,
-        )?;
+    for row in ref_rows {
+        let (ref_name, object_id) = row
+            .split_once(' ')
+            .ok_or("FF-SECRET-E-REF: malformed for-each-ref output")?;
+        findings.extend(scan_bytes("history-ref:<ref>", ref_name.as_bytes()));
+        validate_object_id(object_id)?;
+        if git_text(root, &["cat-file", "-t", object_id])?.trim() != "commit" {
+            scan_git_object_chain(
+                root,
+                object_id,
+                &format!("history-object:{object_id}"),
+                &mut findings,
+                &mut budget,
+            )?;
+        }
     }
     Ok(findings)
 }
@@ -831,17 +841,23 @@ fn scan_bytes(source: &str, bytes: &[u8]) -> Vec<Finding> {
         if bytes.len() < pattern.prefix.len() + pattern.minimum_tail {
             continue;
         }
+        let mut line = 1;
         for start in 0..=bytes.len() - pattern.prefix.len() {
+            if start > 0 && bytes[start - 1] == b'\n' {
+                line += 1;
+            }
             if bytes[start..].starts_with(pattern.prefix)
                 && tail_length(bytes, start + pattern.prefix.len(), pattern.class)
                     >= pattern.minimum_tail
             {
-                let line = bytes[..start].split(|byte| *byte == b'\n').count();
                 findings.insert(Finding {
                     pattern_id: pattern.id,
                     source: source.to_owned(),
                     line,
                 });
+                if findings.len() >= MAX_REPORTED_FINDINGS {
+                    return findings.into_iter().collect();
+                }
             }
         }
         for little_endian in [true, false] {
@@ -849,7 +865,11 @@ fn scan_bytes(source: &str, bytes: &[u8]) -> Vec<Finding> {
             if bytes.len() < encoded_prefix_bytes + pattern.minimum_tail * 2 {
                 continue;
             }
+            let mut line = 1;
             for start in 0..=bytes.len() - encoded_prefix_bytes {
+                if start > 0 && bytes[start - 1] == b'\n' {
+                    line += 1;
+                }
                 if encoded_prefix_matches(bytes, start, pattern.prefix, little_endian)
                     && encoded_tail_length(
                         bytes,
@@ -858,12 +878,14 @@ fn scan_bytes(source: &str, bytes: &[u8]) -> Vec<Finding> {
                         little_endian,
                     ) >= pattern.minimum_tail
                 {
-                    let line = bytes[..start].split(|byte| *byte == b'\n').count();
                     findings.insert(Finding {
                         pattern_id: pattern.id,
                         source: source.to_owned(),
                         line,
                     });
+                    if findings.len() >= MAX_REPORTED_FINDINGS {
+                        return findings.into_iter().collect();
+                    }
                 }
             }
         }
@@ -959,6 +981,82 @@ fn format_findings(findings: &[Finding]) -> String {
         "FF-SECRET-E-DETECTED: {} potential API key(s); matched values suppressed; {diagnostics}",
         findings.len()
     )
+}
+
+pub(crate) fn credential_snapshot_counterfactual_diagnostic(root: &Path) -> Result<(), String> {
+    git_status(root, &["init", "--quiet"])?;
+    git_status(root, &["config", "core.autocrlf", "false"])?;
+    fs::create_dir_all(root.join(HOOKS_PATH))
+        .map_err(|error| format!("FF-SECRET-E-COUNTERFACTUAL: create hooks: {error}"))?;
+    fs::write(root.join(HOOKS_PATH).join("pre-commit"), PRE_COMMIT_HOOK)
+        .map_err(|error| format!("FF-SECRET-E-COUNTERFACTUAL: write pre-commit: {error}"))?;
+    fs::write(root.join(HOOKS_PATH).join("pre-push"), PRE_PUSH_HOOK)
+        .map_err(|error| format!("FF-SECRET-E-COUNTERFACTUAL: write pre-push: {error}"))?;
+    git_status(root, &["add", "build/git-hooks/pre-commit"])?;
+    git_status(root, &["add", "build/git-hooks/pre-push"])?;
+    git_status(root, &["config", "--local", "core.hooksPath", HOOKS_PATH])?;
+
+    let key = format!("{}{}", ["AI", "za"].concat(), "Z".repeat(35));
+    fs::write(root.join("credential.txt"), &key)
+        .map_err(|error| format!("FF-SECRET-E-COUNTERFACTUAL: write staged input: {error}"))?;
+    git_status(root, &["add", "credential.txt"])?;
+    force_counterfactual_hook_mode(root, "build/git-hooks/pre-commit")?;
+    force_counterfactual_hook_mode(root, "build/git-hooks/pre-push")?;
+    let staged = scan_staged(root)?;
+    if staged.len() != 1 {
+        return Err(format!(
+            "FF-SECRET-E-COUNTERFACTUAL: staged boundary expected one finding, observed {}",
+            staged.len()
+        ));
+    }
+
+    let secret_tree = git_text(root, &["write-tree"])?;
+    let zero = "0000000000000000000000000000000000000000";
+    let tree_findings = scan_pre_push(
+        root,
+        "origin",
+        &format!(
+            "refs/tags/credential-tree {} refs/tags/credential-tree {zero}\n",
+            secret_tree.trim()
+        ),
+    )?;
+    if tree_findings.is_empty() {
+        return Err(
+            "FF-SECRET-E-COUNTERFACTUAL: outgoing tree boundary accepted a secret blob".to_owned(),
+        );
+    }
+
+    git_status(root, &["rm", "--cached", "--quiet", "credential.txt"])?;
+    fs::write(root.join("clean.txt"), b"clean")
+        .map_err(|error| format!("FF-SECRET-E-COUNTERFACTUAL: write clean input: {error}"))?;
+    git_status(root, &["add", "clean.txt"])?;
+    let clean_tree = git_text(root, &["write-tree"])?;
+    let ref_findings = scan_pre_push(
+        root,
+        "origin",
+        &format!(
+            "refs/heads/{key} {} refs/heads/credential-ref {zero}\n",
+            clean_tree.trim()
+        ),
+    )?;
+    if ref_findings.is_empty() {
+        return Err(
+            "FF-SECRET-E-COUNTERFACTUAL: outgoing ref boundary accepted a secret name".to_owned(),
+        );
+    }
+
+    let mut findings = staged;
+    findings.extend(tree_findings);
+    findings.extend(ref_findings);
+    let diagnostic = format_findings(&findings);
+    if diagnostic.contains(&key) {
+        return Err("FF-SECRET-E-COUNTERFACTUAL: diagnostic leaked matched value".to_owned());
+    }
+    Err(diagnostic)
+}
+
+fn force_counterfactual_hook_mode(root: &Path, relative: &str) -> Result<(), String> {
+    git_status(root, &["add", "--chmod=+x", "--", relative])
 }
 
 fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {
@@ -1152,6 +1250,28 @@ mod tests {
         let findings = scan_bytes("fixture.bin", secret.as_bytes());
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].pattern_id, "github-token-ghp");
+    }
+
+    #[test]
+    fn dense_provider_matches_are_bounded() {
+        let secret = format!("{}{}", ["AI", "za"].concat(), "Q".repeat(35));
+        let input = format!("{secret}\n").repeat(MAX_REPORTED_FINDINGS * 10);
+        let findings = scan_bytes("dense-fixture.txt", input.as_bytes());
+        assert_eq!(findings.len(), MAX_REPORTED_FINDINGS);
+        assert!(!format_findings(&findings).contains(&secret));
+    }
+
+    #[test]
+    fn credential_snapshot_counterfactual_executes_git_boundaries() {
+        let root = temp_repo("credential-boundary");
+        let diagnostic = credential_snapshot_counterfactual_diagnostic(&root)
+            .expect_err("isolated Git credential boundaries must reject");
+        assert!(
+            diagnostic.starts_with("FF-SECRET-E-DETECTED:"),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("matched values suppressed"));
+        fs::remove_dir_all(&root).expect("remove fixture repository");
     }
 
     #[test]
@@ -1482,6 +1602,48 @@ mod tests {
                 .any(|finding| finding.source == "pre-push-local-ref:<ref>")
         );
         assert!(!format_findings(&ref_findings).contains(&ref_secret));
+        fs::remove_dir_all(&root).expect("remove fixture repository");
+    }
+
+    #[test]
+    fn history_scans_ref_names_and_non_commit_roots() {
+        let root = temp_repo("history-ref");
+        git_ok(&root, &["init", "--quiet"]);
+        git_ok(&root, &["config", "user.name", "Ferric Test"]);
+        git_ok(&root, &["config", "user.email", "ferric@example.invalid"]);
+        fs::write(root.join("clean.txt"), b"clean").expect("write clean fixture");
+        git_ok(&root, &["add", "clean.txt"]);
+        git_ok(&root, &["commit", "--quiet", "--no-verify", "-m", "clean"]);
+        let head = git_text(&root, &["rev-parse", "HEAD"]).expect("resolve head");
+        let ref_secret = format!("{}{}", ["AI", "za"].concat(), "R".repeat(35));
+        git_ok(
+            &root,
+            &[
+                "update-ref",
+                &format!("refs/heads/{ref_secret}"),
+                head.trim(),
+            ],
+        );
+
+        fs::write(
+            root.join("tree-secret.txt"),
+            format!("{}{}", ["AI", "za"].concat(), "S".repeat(35)),
+        )
+        .expect("write tree secret fixture");
+        git_ok(&root, &["add", "tree-secret.txt"]);
+        let tree = git_text(&root, &["write-tree"]).expect("write tree");
+        git_ok(&root, &["update-ref", "refs/tags/direct-tree", tree.trim()]);
+
+        let findings = scan_history(&root).expect("scan all ref names and object roots");
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.source == "history-ref:<ref>")
+        );
+        assert!(findings.iter().any(|finding| {
+            finding.source.starts_with("history-object:") && finding.pattern_id == "google-api-key"
+        }));
+        assert!(!format_findings(&findings).contains(&ref_secret));
         fs::remove_dir_all(&root).expect("remove fixture repository");
     }
 

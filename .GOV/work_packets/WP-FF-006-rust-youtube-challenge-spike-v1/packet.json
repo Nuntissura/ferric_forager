@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove or reject the bounded Rust-only YouTube challenge path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-27T02:29:49Z"
+    "updated_at_utc": "2026-07-27T02:44:14Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -41,16 +41,16 @@
     "work_branch": "codex/rust-youtube-challenge-spike",
     "worktree_policy": "NONE",
     "worktree_id": null,
-    "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
+    "remote_backup": {"required_for_handoff": true, "branch": "origin/codex/rust-youtube-challenge-spike", "head_sha": "a010b13c749a642dc62b0b4e825a3c5e2aec6e43", "verified_at_utc": "2026-07-27T02:44:14Z"},
     "closure_commit": "99139e04d12ec9f099f2092c624336702143e9fd",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "4cf69072ffd47e80204f79d78214271c0a9bb7f6"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the replacement MERGE_PENDING evidence, push codex/rust-youtube-challenge-spike, merge closure 99139e04d12ec9f099f2092c624336702143e9fd into main, and mechanically prove containment before VALIDATED.",
+    "next_action": "Await Operator selection before activating any later work-packet stub.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -195,11 +195,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-27T02:29:49Z",
-      "branch": "codex/rust-youtube-challenge-spike",
+      "recorded_at_utc": "2026-07-27T02:44:14Z",
+      "branch": "main",
       "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
-      "head_sha": "99139e04d12ec9f099f2092c624336702143e9fd",
+      "head_sha": "4cf69072ffd47e80204f79d78214271c0a9bb7f6",
       "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
         ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json"
       ],
       "checks_run": [
@@ -229,10 +230,16 @@
         "Replacement closure PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785118599008827700-100660.json.",
         "Replacement closure PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785118964286530400-41276.json.",
         "Replacement closure PASS FF-GATE-PR-001: build/reports/verify-pr-1785119381714859300-98448.json.",
-        "Replacement MERGE_PENDING evidence PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785119508903991000-82500.json."
+        "Replacement MERGE_PENDING evidence PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785119508903991000-82500.json.",
+        "Remote backup origin/codex/rust-youtube-challenge-spike verified at a010b13c749a642dc62b0b4e825a3c5e2aec6e43.",
+        "Replacement closure 99139e04d12ec9f099f2092c624336702143e9fd and evidence a010b13c749a642dc62b0b4e825a3c5e2aec6e43 are ancestors of main merge 4cf69072ffd47e80204f79d78214271c0a9bb7f6.",
+        "Post-merge pinned-byte regression passed 5/5 corpus-runner tests and the optimized corpus recorded 7/7 mandatory cases, 20/20 probes, and rejecting counterfactual.",
+        "Post-merge PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785120244586756900-103168.json.",
+        "Validated-state PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785120407329309300-99372.json.",
+        "Validated-state runtime-truth invocation returned expected closed-state error FF-RUNTIME-E-NO-ACTIVE-PACKET after active_wp_id was cleared."
       ],
       "blockers": [],
-      "next_action": "Commit the replacement MERGE_PENDING evidence, push codex/rust-youtube-challenge-spike, merge closure 99139e04d12ec9f099f2092c624336702143e9fd into main, and mechanically prove containment before VALIDATED."
+      "next_action": "Await Operator selection before activating any later work-packet stub."
     }
   },
   "validation": {
@@ -260,6 +267,12 @@
       "PASS: replacement closure FF-GATE-DEEP-001; build/reports/verify-deep-1785118964286530400-41276.json",
       "PASS: replacement closure FF-GATE-PR-001; build/reports/verify-pr-1785119381714859300-98448.json",
       "PASS: replacement MERGE_PENDING evidence FF-GATE-ARCH-001; build/reports/architecture-check-1785119508903991000-82500.json",
+      "PASS: remote backup origin/codex/rust-youtube-challenge-spike verified at a010b13c749a642dc62b0b4e825a3c5e2aec6e43",
+      "PASS: replacement closure 99139e04d12ec9f099f2092c624336702143e9fd and evidence a010b13c749a642dc62b0b4e825a3c5e2aec6e43 are ancestors of main merge 4cf69072ffd47e80204f79d78214271c0a9bb7f6",
+      "PASS: post-merge checked-in player byte regression and optimized corpus; 7/7 mandatory cases, 20/20 probes, rejecting counterfactual",
+      "PASS: post-merge FF-GATE-ARCH-001; build/reports/architecture-check-1785120244586756900-103168.json",
+      "PASS: validated-state FF-GATE-ARCH-001; build/reports/architecture-check-1785120407329309300-99372.json",
+      "POST-MERGE EXPECTED CLOSED-STATE REJECTION: FF-RUNTIME-E-NO-ACTIVE-PACKET after taskboard active_wp_id was cleared",
       "PASS: exactly two independent adversarial implementation reviews completed and all confirmed findings remediated"
     ],
     "not_proven": [

@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: WP-FF-016 is active to remove exposed API keys from reachable GitHub history and enforce no-key commit and push gates before WP-FF-007 remediation resumes on sanitized lineage.
-  active_wp_id: WP-FF-016-no-api-key-guard-v1
+  statement: WP-FF-016 is validated and contained in main; WP-FF-015 remains the Operator-approved continuation in its repository-local worktree and will become the main focus when its branch is synchronized.
+  active_wp_id: null
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

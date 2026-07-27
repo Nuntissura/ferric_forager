@@ -42,7 +42,12 @@
     "work_branch": "codex/transport-fingerprint-spike",
     "worktree_policy": "NONE",
     "worktree_id": null,
-    "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": "origin/codex/transport-fingerprint-spike",
+      "head_sha": "807c16fb97cf72fef8f76d52e74bf176b87d88f0",
+      "verified_at_utc": "2026-07-27T06:49:50Z"
+    },
     "closure_commit": "7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb",
     "main_containment_status": "PENDING",
     "merged_main_commit": null

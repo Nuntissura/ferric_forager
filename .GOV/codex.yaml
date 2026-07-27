@@ -32,10 +32,12 @@ rules:
     statement: Treat each .GOV/work_packets/<WP_ID>/packet.json as authoritative for that work packet's scope, lifecycle, acceptance, and evidence.
   - id: FF-CODEX-007
     category: product_direction
-    statement: Build Ferric Forager product code fully in Rust.
+    statement: Build Ferric Forager as an independent Rust-native replacement for yt-dlp with the added capabilities in the current technical design; Ferric owns every shipped implementation path.
+    revision: 2
   - id: FF-CODEX-008
     category: product_direction
-    statement: Do not add a production Python runtime, Python fallback, or production yt-dlp invocation.
+    statement: Do not add Python, yt-dlp, or a yt-dlp companion package, executable, library, solver asset, fallback, sidecar, plugin, service, or delegated-work path to Ferric product, build, test, canonical verification, package, release, or runtime requirements.
+    revision: 2
   - id: FF-CODEX-009
     category: product_direction
     statement: Use FFmpeg and ffprobe as required supervised external-process dependencies.
@@ -44,7 +46,8 @@ rules:
     statement: Do not add another production runtime or native dependency outside Rust and FFmpeg without explicit Operator approval supported by current research and measured evidence.
   - id: FF-CODEX-011
     category: product_direction
-    statement: Use yt-dlp as the pinned behavioral oracle and compatibility research foundation while implementing native Ferric behavior.
+    statement: Use Ferric-owned specifications and committed corpora as the implementation and proof foundation; a pinned yt-dlp release may be observed only by explicitly invoked, non-canonical, non-shipped comparison tooling and Ferric MUST remain fully buildable, testable, verifiable, runnable, packageable, and releasable when yt-dlp is absent.
+    revision: 2
   - id: FF-CODEX-012
     category: product_direction
     statement: Optimize for speed only among designs that first prove equivalent work, correctness, compatibility, bounded resources, recoverability, and security.
@@ -99,7 +102,8 @@ rules:
     revision: 2
   - id: FF-CODEX-027
     category: research_and_validation
-    statement: For yt-dlp compatibility claims, use a pinned upstream version, generated inventory, representative corpus, and executable oracle comparison.
+    statement: For yt-dlp compatibility claims, use a pinned external comparison version plus a Ferric-owned generated inventory and representative committed corpus; external comparison execution is optional evidence and MUST NOT be a prerequisite of canonical proof.
+    revision: 2
   - id: FF-CODEX-028
     category: research_and_validation
     statement: For performance claims, compare equivalent work and process topology using a versioned benchmark manifest, distributions, and confidence bounds.
@@ -216,7 +220,8 @@ rules:
 
   - id: FF-CODEX-062
     category: product_direction
-    statement: "Ferric Forager MUST implement media discovery, extraction, selection, download, post-processing orchestration, and compatibility behavior natively in shipped Rust code; no product crate, shipped binary, package, installer, runtime subprocess plan, fallback, sidecar, plugin, service, or runtime network dependency may import, invoke, bundle, install, download, or delegate work to yt-dlp or a Python runtime. A version-pinned yt-dlp executable may be used only by non-shipped build or research tooling to generate or compare provenance-bound oracle observations, and Ferric execution MUST remain independent of it."
+    statement: "Ferric Forager MUST implement media discovery, extraction, selection, download, post-processing orchestration, challenge solving, and compatibility behavior through Ferric-owned Rust implementation paths; no product crate, shipped binary, build, test, canonical gate, package, installer, runtime subprocess plan, fallback, sidecar, plugin, service, required fixture, or delegated-work path may import, invoke, bundle, install, download, execute, or require yt-dlp, Python, or any yt-dlp companion package or executable asset. Explicitly invoked non-canonical research tooling may observe an Operator-supplied version-pinned external executable, but its output becomes inert provenance-bound comparison data and Ferric MUST remain fully independent of that executable and its code."
+    revision: 2
   - id: FF-CODEX-063
     category: proof_integrity
     statement: "A command, report, acceptance row, or review may use behavioral terms such as replay, oracle comparison, parity, equivalence, compatible, durable, integrated, or PASS only when it executes and observes the named semantics; schema validation, file existence, digest matching, inventory agreement, fixture loading, or expected-label echoing MUST be reported as structural evidence only and MUST NOT satisfy behavioral proof."

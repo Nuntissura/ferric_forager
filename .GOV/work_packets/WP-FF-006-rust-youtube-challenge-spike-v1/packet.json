@@ -8,12 +8,12 @@
     "version": "1",
     "title": "Prove or reject the bounded Rust-only YouTube challenge path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-18T21:12:21Z"
+    "updated_at_utc": "2026-07-27T01:44:12Z"
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator authorized creation of a detailed no-context STUB for this future work. This authorization does not permit product implementation while lifecycle.status is STUB and does not authorize any external JavaScript runtime.",
-    "recorded_at_utc": "2026-07-18T21:12:21Z"
+    "reference": "Operator explicitly corrected the product direction: Ferric Forager is an independent Rust replacement for yt-dlp with added features and must never depend on yt-dlp. This invalidates executing yt-dlp-ejs or any other yt-dlp companion code as the Ferric challenge implementation while preserving external comparison observations as optional research evidence only.",
+    "recorded_at_utc": "2026-07-26T00:00:00Z"
   },
   "authority": {
     "bootstrap": "START_HERE.yaml",
@@ -37,34 +37,31 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
     "work_branch": "codex/rust-youtube-challenge-spike",
     "worktree_policy": "NONE",
     "worktree_id": null,
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
-    "closure_commit": null,
+    "closure_commit": "7d9ef032f7bb719da8dbb426575af3fc3285d0e3",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
-    "blockers": [
-      "STUB status forbids implementation until the Operator promotes and activates this packet.",
-      "WP-FF-003-executable-gate-bootstrap-v1 must be VALIDATED before the prototype package is added.",
-      "The pinned yt-dlp EJS/YouTube challenge corpus from WP-FF-004 and versioned JavaScript worker IPC/limits from WP-FF-005 must exist or be explicitly co-developed under activated packet scope.",
-      "Deno, Node.js, Bun, external QuickJS, Wasmtime, or any other external runtime is not authorized as implementation or fallback."
-    ],
-    "next_action": "After prerequisites and explicit activation, research current pure-Rust engine candidates and pinned yt-dlp EJS implementation evidence, finalize the deterministic challenge corpus and resource/security thresholds, then promote to READY_FOR_DEV without adding an unauthorized runtime.",
+    "blockers": [],
+    "next_action": "Commit this MERGE_PENDING evidence, push codex/rust-youtube-challenge-spike, merge through the canonical main worktree, and mechanically prove closure commit 7d9ef032f7bb719da8dbb426575af3fc3285d0e3 is an ancestor of main before VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
   "scope": {
     "summary": "Build a prototype-only, policy-marked non-shipped Ferric-owned Rust worker around a maintained pure-Rust JavaScript engine candidate and produce measured corpus evidence for correctness, isolation, termination, memory, recycling, and performance.",
+    "product_impact": "PREREQUISITE",
+    "zero_progress_declaration": "Zero product progress. Zero capability progress. Zero phase progress. Zero runtime completion. Zero packaging or release progress. The Boa worker, raw-player corpus, supervisor, and machine verdict exist only under build/ as Phase 0 supporting evidence and are excluded from application delivery. The first YouTube consumer must re-prove the accepted mechanism through FF-GATE-RUNTIME-001 using its exact staged artifact.",
     "in_scope": [
       "Current primary-source evaluation and minimal selection of maintained pure-Rust JavaScript engine candidates compatible with the authorized dependency boundary.",
       "A non-shipped Rust worker prototype with fresh capability-free per-job contexts and bounded length-prefixed versioned IPC.",
-      "Pinned yt-dlp EJS/YouTube challenge corpus execution with exact pass/fail classification and engine/version/script provenance.",
+      "Ferric-owned player-function discovery and challenge-solving execution against a committed YouTube challenge corpus with exact pass/fail classification and engine/version/script provenance.",
       "Deterministic host inputs, script hashes, deadlines, recursion/depth, memory, input/output, environment, filesystem, network, process, and worker-lifetime limits.",
       "Worker cancellation acknowledgement, crash/timeout/protocol-fault handling, recycling, quarantine, cache-key correctness, and no cross-job heap state.",
       "Machine-readable operator-ready evidence that either selects the Rust-only path or reports exact failures and residual uncertainty without bypassing the dependency boundary.",
@@ -72,20 +69,30 @@
     ],
     "non_goals": [
       "Broad YouTube extractor implementation or full YouTube parity.",
-      "Adding any external JavaScript runtime, Python bridge, production yt-dlp invocation, Wasm runtime, or native dependency.",
+      "Adding any external JavaScript runtime, Python bridge, yt-dlp or yt-dlp companion implementation dependency, executable solver asset, Wasm runtime, or native dependency.",
+      "Executing copied or bundled yt-dlp-family solver code as a Ferric implementation shortcut.",
       "Treating ECMAScript standards conformance as sufficient challenge compatibility proof.",
       "Allowing JavaScript worker access to arbitrary network, filesystem, inherited secrets, or product control.",
       "Shipping the prototype package before a later active packet explicitly promotes an accepted path."
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+      ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/id-registry.yaml",
+      "START_HERE.yaml",
+      ".GOV/codex.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/topology.yaml",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md",
       "build/Cargo.toml",
       "build/Cargo.lock",
       "build/architecture-policy.toml",
+      "build/deny.toml",
       "build/tooling-policy.toml",
       "build/rule-to-proof.toml",
       "product/crates/fforager-contracts/",
-      "product/crates/fforager-javascript/",
+      "build/crates/fforager-javascript/",
       "build/crates/fforager-testkit/",
       "build/tools/fforager-xtask/",
       "build/fixtures/",
@@ -98,7 +105,7 @@
     ],
     "dependencies": [
       "WP-FF-003-executable-gate-bootstrap-v1 VALIDATED",
-      "WP-FF-004 pinned EJS/YouTube challenge corpus and oracle provenance",
+      "WP-FF-004 Ferric-owned compatibility corpus conventions and optional external comparison provenance",
       "WP-FF-005 JavaScript worker IPC, event/error/cancellation contracts and limits",
       "Explicit Operator approval before any dependency outside Rust plus FFmpeg/ffprobe",
       "FF-GATE-ARCH-001, FF-GATE-PR-001, and risk-triggered FF-GATE-DEEP-001"
@@ -107,84 +114,370 @@
   "acceptance_matrix": [
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001",
-      "requirement": "Research compares maintained pure-Rust engine candidates using current primary source, release, security, implementation, test, and maintenance evidence; the selected minimal candidate and rejected alternatives are recorded without authorizing an external runtime.",
-      "status": "PENDING",
-      "evidence": []
+      "requirement": "Research compares maintained pure-Rust engine candidates and Ferric-owned player-function discovery and challenge-solving approaches using current primary source, release, security, implementation, test, and maintenance evidence; selected minimal candidates and rejected alternatives are recorded without authorizing an external runtime or yt-dlp-family implementation dependency.",
+      "proof_class": "structural",
+      "status": "PASS",
+      "evidence": [
+        "Research checkpoint 8aa0364c2303a855ef7123ca6217c5b4cfd82707 records current primary-source inspection of Boa 0.21.1, sysinfo 0.39.6, NewPipeExtractor, YouTube.js, and inert yt-dlp-ejs observations before implementation.",
+        "refinement.json records source identities, inspected implementation patterns, selected Boa/parser and parent-RSS approach, rejected external/native/runtime and regex-only alternatives, risks, mitigations, and the validation plan.",
+        "Cargo.lock pins the selected pure-Rust dependency graph; no external runtime or yt-dlp-family implementation was authorized."
+      ]
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
-      "requirement": "The non-shipped worker executes every mandatory pinned EJS/challenge corpus case and reports stable case ID, engine/version, script hash, deterministic inputs, result/error, duration, peak resource observations, and exact mismatch; the passing threshold is 100 percent of mandatory deterministic cases or an Operator-resolved evidence outcome.",
-      "status": "PENDING",
-      "evidence": []
+      "requirement": "The non-shipped worker executes Ferric-owned player discovery and challenge solving for every mandatory committed case without executing yt-dlp-family solver code, and reports stable case ID, engine/version, script hash, deterministic inputs, result/error, duration, peak resource observations, and exact mismatch; the passing threshold is 100 percent of mandatory deterministic cases or an Operator-resolved evidence outcome.",
+      "proof_class": "integration",
+      "status": "PASS",
+      "evidence": [
+        "build/reports/wp-ff-006-youtube-challenge-report.json records PASS_RUST_ONLY_PATH with mandatory_passed=7 and mandatory_total=7 across three raw player generations.",
+        "Every case row records stable case ID, raw player SHA-256, deterministic input, expected and observed result, boa_engine@0.21.1, ferric-player-ast-v1, extractor version, fresh-context flag, duration, worker PID, and peak RSS; all seven matched exactly.",
+        "The same aggregate behavioral_acceptance path accepts the original evidence and rejects the mutated expected output."
+      ]
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003",
       "requirement": "Tests prove fresh per-job contexts, no arbitrary network/filesystem/process capability, no inherited secrets, bounded framed IPC, bounded input/output/depth/time/memory, cache keys including every behavior-affecting input, and no durable cross-job worker heap state.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "integration",
+      "status": "PASS",
+      "evidence": [
+        "fforager-javascript 15/15 unit tests pass across library, corpus, and worker targets, including bounded frames/cache, fresh context, capability denial, AST decoys, CRLF spans, manifest policy, response correlation, sequence overflow, destructive-probe authorization, and path confinement.",
+        "The machine report records passing capability, fresh-context, cache-key, frame, protocol numeric-limit, hash, and path-confinement probes.",
+        "The worker uses a new Boa Context per job, registers no host functions, receives an empty inherited environment plus only a per-worker probe grant, and keeps only host-owned prepared-program cache entries."
+      ]
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004",
       "requirement": "Cancellation, timeout, memory limit, worker crash, partial/oversized/malformed frame, protocol mismatch, sandbox violation, stale cache, and recycle/quarantine thresholds produce bounded typed outcomes with no orphan worker and reproducible evidence.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "integration",
+      "status": "PASS",
+      "evidence": [
+        "The final report records 20/20 passing probes, including exact fatal categories for zero/oversized/partial/malformed frames and protocol version/reference/unknown-field/numeric-limit rejection.",
+        "Timeout, acknowledged cancellation generation 1, RSS memory limit, deliberate crash, two-strike provenance-keyed quarantine, and 64-job recycling all record bounded outcomes with reaped=true and process_absent_after_reap=true.",
+        "Supervisor response validation binds request ID, job ID, sequence, schema/version, producer, compatibility, provenance, and capability grant; RAII Drop cleanup terminates/reaps and joins the reader on error paths."
+      ]
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-005",
-      "requirement": "Source, dependency, process, and runtime scans prove no Python, yt-dlp production execution, Deno, Node.js, Bun, external QuickJS, Wasm runtime, build-time download, prebuilt binary, unapproved FFI, or native link was introduced.",
-      "status": "PENDING",
-      "evidence": []
+      "requirement": "Source, dependency, process, asset, and runtime scans prove no Python, yt-dlp, yt-dlp companion package or executable solver asset, Deno, Node.js, Bun, external QuickJS, Wasm runtime, build-time download, prebuilt binary, unapproved FFI, or native link is required or executed by product, build, test, canonical verification, package, release, or runtime paths.",
+      "proof_class": "structural",
+      "status": "PASS",
+      "evidence": [
+        "FF-GATE-ARCH-001 passed at build/reports/architecture-check-1785114808827769300-115396.json after the hardened source, locked dependency graph, deny policy, and canonical finding-proof bindings were present.",
+        "build/architecture-policy.toml declares the non-shipped crate and direct/transitive dependency decisions; Cargo metadata, workspace check/test/doc/Clippy, and source/asset policy scans require no forbidden runtime, native link, build-time download, prebuilt binary, or yt-dlp-family solver asset.",
+        "cargo-deny 0.20.2 advisories, bans, licenses, and sources pass after pinning the local contracts dependency and recording the exact reasoned RUSTSEC-2024-0436 unmaintained-paste exception; the exception is bounded to this non-shipped prerequisite and is forbidden from automatic promotion.",
+        "The final machine verdict reports skipped_semantic_dependencies for the forbidden external paths and zero_product_progress=true."
+      ]
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-006",
       "requirement": "Canonical architecture, PR, and triggered deep gates pass and a machine-readable verdict is PASS_RUST_ONLY_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION; neither verdict claims full YouTube parity.",
-      "status": "PENDING",
-      "evidence": []
+      "proof_class": "integration",
+      "status": "PASS",
+      "evidence": [
+        "PASS_RUST_ONLY_PATH: build/reports/wp-ff-006-youtube-challenge-report.json records 7/7 mandatory cases, 20/20 probes, a rejecting aggregate counterfactual, and zero_product_progress=true.",
+        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785114808827769300-115396.json.",
+        "FF-GATE-RUNTIME-001 prerequisite ceiling exited 0: build/reports/runtime-truth-check-1785114203232961100-102424.json.",
+        "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785115216398408400-102448.json with 35 contracts, 45 core, 14 diagnostics, 15 JavaScript, 11 testkit, and 79 xtask tests plus doctests.",
+        "PASS FF-GATE-PR-001: build/reports/verify-pr-1785114607079587300-102404.json with dependency advisories/bans/licenses/sources, formatting, check, tests, docs, Clippy, evidence, and architecture policy passing."
+      ]
     },
     {
       "id": "WP-FF-006-rust-youtube-challenge-spike-v1-AC-007",
-      "requirement": "The no-context model manual documents corpus execution, limits, reports, failure reproduction, worker cleanup/recovery, security constraints, and the prohibition on unauthorized fallback runtimes.",
-      "status": "PENDING",
-      "evidence": []
+      "requirement": "The no-context model manual documents Ferric's replacement identity, dependency independence, corpus execution, limits, reports, failure reproduction, worker cleanup/recovery, security constraints, and the prohibition on unauthorized implementation or fallback runtimes.",
+      "proof_class": "structural",
+      "status": "PASS",
+      "evidence": [
+        "product/MODEL_MANUAL.md topic phase-0-javascript-challenge-spike version 4 documents Ferric's independent replacement identity, exact commands, artifact navigation, inputs/outputs, limits, authorization/correlation, reports, and prohibited substitutes.",
+        "The manual documents exact report inspection, acknowledged cancellation, quarantine threshold/operator clear, cleanup/reaping, stale-cache and mismatch diagnosis, disk recovery, and the non-product prerequisite ceiling.",
+        "Direct manual review against the worker, corpus runner, manifest, report schema, packet, and design contract is recorded in extensions.change_evidence.adversarial_review.MANUAL_REVIEW."
+      ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:12:21Z",
+      "recorded_at_utc": "2026-07-27T01:44:12Z",
       "branch": "codex/rust-youtube-challenge-spike",
-      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "dirty_paths": [],
-      "checks_run": [],
-      "blockers": ["Planning-only STUB; no implementation checkpoint exists."],
-      "next_action": "Wait for prerequisites and explicit activation, then perform source-level candidate research and finalize the bounded corpus contract."
+      "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
+      "head_sha": "7d9ef032f7bb719da8dbb426575af3fc3285d0e3",
+      "dirty_paths": [
+        ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json"
+      ],
+      "checks_run": [
+        "Verified the worktree is clean before activation on codex/rust-youtube-challenge-spike at 6f1b1e51b40dab7c1401418bf3d7514420b93059 with merge-base main 405c054005102417a6ce992795a2752bc26c40dc.",
+        "Re-read START_HERE.yaml, byte-identical AGENTS.md and CLAUDE.md, .GOV/codex.yaml, taskboard, active packet, refinement, topology, build rules, cited design/readiness anchors, WP-005 status, and WP-005 framing/protocol source.",
+        "Verified crates.io boa_engine 0.21.1 remains current; inspected tag v0.21.1 commit bc36c3fac0969ea21ea0570b62e7846f97389b73, runtime limits, instruction budget, parser, context, and absence of an exact heap cap.",
+        "Inspected current NewPipeExtractor commit 4b70576661aadf663a935df5b904a43147d9fc50 and YouTube.js commit 14825d7712e32b208830895701973a5a934a3522 player-discovery implementations as independent field evidence.",
+        "Inspected yt-dlp-ejs 0.8.0 tag 4fb477f4af56880cfd324c48bd4294a2d2294e50 only for inert player IDs and expected n/signature observations; no external solver code or executable was run or adopted.",
+        "Verified the committed raw YouTube player_ias base.js inputs for player IDs 74edf1a3, 901741ab, and e7573094 against direct youtube.com responses; all three returned HTTP 200 with byte counts and SHA-256 identities exactly matching the committed files.",
+        "Verified sysinfo 0.39.6 system-only feature is current, pure Rust at the Cargo boundary, Rust 1.95 compatible, and supplies cross-platform process RSS observation without an external runtime or Cargo links dependency.",
+        "PASS_RUST_ONLY_PATH: build/reports/wp-ff-006-youtube-challenge-report.json records 7/7 mandatory cases, 20/20 probes, a rejecting behavioral counterfactual, exact terminal/reap evidence, and zero_product_progress=true.",
+        "PASS: fforager-javascript 15/15 tests, complete workspace all-target/all-feature tests, all-feature doctests, formatting, check, and warnings-denied Clippy.",
+        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785112455778310700-86884.json.",
+        "Completed exactly two Operator-requested adversarial implementation reviews through correctness/proof-integrity and security/resource-isolation lenses; all confirmed findings were remediated and rerun.",
+        "FF-GATE-RUNTIME-001 prerequisite ceiling exited 0: build/reports/runtime-truth-check-1785114203232961100-102424.json.",
+        "PASS FF-GATE-PR-001: build/reports/verify-pr-1785114607079587300-102404.json.",
+        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785114808827769300-115396.json.",
+        "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785115216398408400-102448.json.",
+        "Clean closure source PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785115795156166700-103740.json.",
+        "Clean closure source FF-GATE-RUNTIME-001 prerequisite ceiling exited 0: build/reports/runtime-truth-check-1785115805934789400-96328.json.",
+        "Clean closure source PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785116172633196200-105924.json.",
+        "Clean closure source PASS FF-GATE-PR-001: build/reports/verify-pr-1785116604179772200-115056.json.",
+        "MERGE_PENDING evidence PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785116843567652400-94324.json."
+      ],
+      "blockers": [],
+      "next_action": "Commit this MERGE_PENDING evidence, push codex/rust-youtube-challenge-spike, merge through the canonical main worktree, and mechanically prove closure commit 7d9ef032f7bb719da8dbb426575af3fc3285d0e3 is an ancestor of main before VALIDATED."
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "PASS: optimized corpus build and execution; build/reports/wp-ff-006-youtube-challenge-report.json records PASS_RUST_ONLY_PATH, 7/7 mandatory cases, 20/20 probes, and a rejecting counterfactual",
+      "PASS: fforager-javascript 15/15 all-target tests",
+      "PASS: cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+      "PASS: cargo check --manifest-path build/Cargo.toml --workspace --all-targets --locked",
+      "PASS: cargo test --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked --no-fail-fast",
+      "PASS: cargo test --manifest-path build/Cargo.toml --workspace --doc --all-features --locked",
+      "PASS: cargo clippy --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked -- -D warnings",
+      "PASS: FF-GATE-ARCH-001; build/reports/architecture-check-1785112455778310700-86884.json",
+      "FF-GATE-RUNTIME-001 prerequisite ceiling exit 0; build/reports/runtime-truth-check-1785114203232961100-102424.json",
+      "PASS: FF-GATE-PR-001; build/reports/verify-pr-1785114607079587300-102404.json",
+      "PASS: FF-GATE-ARCH-001 final hardened source; build/reports/architecture-check-1785114808827769300-115396.json",
+      "PASS: FF-GATE-DEEP-001 final hardened source; build/reports/verify-deep-1785115216398408400-102448.json",
+      "PASS: clean closure source FF-GATE-ARCH-001; build/reports/architecture-check-1785115795156166700-103740.json",
+      "FF-GATE-RUNTIME-001 clean closure prerequisite ceiling exit 0; build/reports/runtime-truth-check-1785115805934789400-96328.json",
+      "PASS: clean closure source FF-GATE-DEEP-001; build/reports/verify-deep-1785116172633196200-105924.json",
+      "PASS: clean closure source FF-GATE-PR-001; build/reports/verify-pr-1785116604179772200-115056.json",
+      "PASS: MERGE_PENDING evidence FF-GATE-ARCH-001; build/reports/architecture-check-1785116843567652400-94324.json",
+      "PASS: exactly two independent adversarial implementation reviews completed and all confirmed findings remediated"
+    ],
     "not_proven": [
-      "Any pure-Rust engine suitability",
-      "Any YouTube challenge case",
-      "Sandbox, termination, memory, recycling, or cancellation behavior",
-      "Dependency-boundary compliance of a future implementation",
-      "Full YouTube support or parity",
-      "Implementation authorization"
+      "Full YouTube support, extractor behavior, download behavior, or replacement parity",
+      "No JavaScript adapter or production runtime composition is proven",
+      "Compatibility beyond the three committed raw player generations and seven mandatory observations",
+      "An exact in-engine heap ceiling; parent RSS sampling can observe transient overshoot before termination",
+      "Cross-platform runtime behavior outside this Windows proof run",
+      "Protection against a hostile local actor replacing a canonicalized player path after confinement validation",
+      "Any product, capability, runtime, packaging, release, or phase progress"
     ]
   },
   "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#prerequisite-0c--dependency-and-risk-spikes",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped YouTube challenge slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged production artifact"
+    },
+    "change_evidence": {
+      "applicable_rule_ids": [
+        "FF-BUILD-011", "FF-BUILD-012", "FF-BUILD-013", "FF-BUILD-014", "FF-BUILD-017", "FF-BUILD-018", "FF-BUILD-019", "FF-BUILD-021", "FF-BUILD-023", "FF-BUILD-024", "FF-BUILD-029", "FF-BUILD-030", "FF-BUILD-031", "FF-BUILD-032", "FF-BUILD-033", "FF-BUILD-034", "FF-BUILD-035", "FF-BUILD-036", "FF-BUILD-037", "FF-BUILD-038", "FF-BUILD-039", "FF-BUILD-040", "FF-BUILD-041", "FF-BUILD-042", "FF-BUILD-043", "FF-BUILD-044", "FF-BUILD-045", "FF-BUILD-046", "FF-BUILD-047", "FF-BUILD-048", "FF-BUILD-050", "FF-BUILD-052", "FF-BUILD-054", "FF-BUILD-055", "FF-BUILD-057", "FF-BUILD-058", "FF-BUILD-059", "FF-BUILD-060", "FF-BUILD-061", "FF-BUILD-062", "FF-BUILD-063", "FF-BUILD-064", "FF-BUILD-065", "FF-BUILD-066", "FF-BUILD-067", "FF-BUILD-077", "FF-BUILD-078", "FF-BUILD-079", "FF-BUILD-080", "FF-BUILD-081", "FF-BUILD-082", "FF-BUILD-083", "FF-BUILD-084", "FF-BUILD-085", "FF-BUILD-086", "FF-BUILD-087", "FF-BUILD-088", "FF-BUILD-089", "FF-BUILD-090", "FF-BUILD-091", "FF-BUILD-092", "FF-BUILD-093", "FF-BUILD-094", "FF-BUILD-095", "FF-BUILD-096", "FF-BUILD-097", "FF-BUILD-098"
+      ],
+      "acceptance_or_authority_ids": [
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-001",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-002",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-003",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-005",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-006",
+        "WP-FF-006-rust-youtube-challenge-spike-v1-AC-007"
+      ],
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Ferric-owned player discovery and challenge solving execute in a Rust-only isolated worker with exact results and provenance.",
+          "Frame, input, output, execution, memory-observation, lifecycle, context, cache, and worker bounds fail closed with typed outcomes.",
+          "No external runtime, yt-dlp-family/Python implementation path, build download, prebuilt binary, unapproved FFI, or native link is introduced or required by canonical commands.",
+          "The result is machine-readable prerequisite evidence with an exact zero-product-progress ceiling."
+        ],
+        "risk_cases": [
+          "Fixture echo, handwritten substitute, or report declarations impersonate actual challenge execution.",
+          "A hostile script escapes capabilities, leaks state or secrets, allocates or loops without bound, or survives cancellation as an orphan.",
+          "Malformed or mismatched frames bypass recursive limits or produce an uncorrelated success.",
+          "A transitive dependency or build script introduces an external runtime, native mechanism, download, or packaging escape.",
+          "A prerequisite verdict is misreported as a downloader, product capability, replacement parity, or phase progress."
+        ]
+      },
+      "reuse_candidates_in_order_with_result": [
+        {"candidate": "no mechanism beyond the accepted outcome", "result": "Rejected because executing site-supplied challenge JavaScript is an explicit accepted requirement."},
+        {"candidate": "reuse current Ferric code", "result": "Selected for WP-005 framing/envelopes, state IDs, architecture gates, reports, and negative-fixture machinery."},
+        {"candidate": "Rust core/std", "result": "Selected for process supervision, bounded pipes, clocks, deterministic collections, and filesystem isolation."},
+        {"candidate": "approved platform capability", "result": "Selected for OS process termination/reaping and RSS observation without adding an external runtime."},
+        {"candidate": "already-approved dependency", "result": "Existing serde, serde_json, and sha2 cover contracts, reports, hashing, and corpus identity."},
+        {"candidate": "smallest complete clear implementation", "result": "Selected: Boa 0.21.1 with default features disabled, Boa-parser AST-structural player discovery, a side-effect-reduced retained declaration/assignment program, and sysinfo 0.39.6 system-only parent RSS observation. No external solver or runtime is executed or required."}
+      ],
+      "artifact_specific_justification": {
+        "javascript_worker": "A separate executable is required by the accepted process-isolation, timeout, cancellation, crash, quarantine, and no-cross-job-heap contract.",
+        "pinned_corpus": "Checked-in raw site-player inputs and inert expected observations eliminate build-time network access while keeping the Ferric implementation independent of external solver code.",
+        "supervisor_and_runner": "The parent owns frames, deadlines, cancellation, termination/reap, churn, reports, and the aggregate decision independently of worker declarations.",
+        "policy_and_negative_fixtures": "Architecture proof must detect forbidden runtime/dependency escapes and false behavioral evidence.",
+        "model_manual": "A no-context model needs exact commands, limits, reports, recovery, security constraints, and the prerequisite ceiling."
+      },
+      "pre_simplification_verdict": "PASS: the invalid external solver path was absent; current source-level research selected a Ferric-owned Boa/parser worker path and rejected regex-only, full-player, duplicate-parser, and external-solver approaches before code creation.",
+      "simplification_changes": ["Removed the untracked yt-dlp-ejs-based worker, solver assets, generated player corpus, runner, and associated proof fixtures.", "Selected one pure-Rust parser/engine stack rather than adding a second JavaScript parser or external runtime.", "Selected a reduced player program so browser initialization code and ambient capabilities are not evaluated.", "Replaced formatter-text candidate nomination with Boa AST assignment/variable target extraction and structural marker inspection.", "Kept destructive fault injection behind one fresh per-worker host grant rather than exposing additional worker modes or binaries."],
+      "post_simplification_verdict": "PASS: the final corpus executes the simplified Ferric-owned path with 7/7 exact challenge results, 20/20 bounded probes, a rejecting aggregate counterfactual, and no forbidden implementation dependency; this remains non-shipped prerequisite evidence with zero product progress.",
+      "complete_post_change_verification": [
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+        "cargo check --manifest-path build/Cargo.toml --workspace --all-targets --locked",
+        "cargo test --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked --no-fail-fast",
+        "cargo test --manifest-path build/Cargo.toml --workspace --doc --all-features --locked",
+        "cargo clippy --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked -- -D warnings",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard"
+      ],
+      "adversarial_review": {
+        "DIFF_ATTACK_SURFACES": [
+          "Contract and serialization attack: declaration-only case labels, incomplete response tuples, repeated request IDs, permissive manifests, or generic nonzero exits could counterfeit a passing report.",
+          "State and resource attack: non-cooperative JavaScript could survive cancellation, exceed RSS between polls, leak cached heap state, avoid recycling/quarantine, or leave an unreaped process or reader thread.",
+          "Integration attack: formatter text or the first unrelated IIFE could nominate the wrong function, while a changed extractor version could still reuse a stale prepared-program cache entry.",
+          "Gate attack: a report could claim counterfactual rejection without calling the same aggregate acceptance oracle, or pass path/protocol probes on an always-failing worker."
+        ],
+        "INDEPENDENT_CHECKS_RUN": [
+          "Correctness/proof-integrity reviewer Hypatia independently inspected the diff, corpus oracle, AST discovery, cache evidence, report fields, manifest validation, response correlation, and cancellation path.",
+          "Security/resource-isolation reviewer Kant independently forged producer/grant tuples, invoked destructive modes, inspected protocol exits, process cleanup, cancellation, quarantine, and error-path ownership.",
+          "The primary reran the release corpus after every remediation and directly inspected all seven case rows, all twenty probe rows, counterfactual fields, typed fatal diagnostics, and process-absence receipts.",
+          "The complete workspace all-target/all-feature tests, doctests, formatting, check, warnings-denied Clippy, and FF-GATE-ARCH-001 passed after hardening."
+        ],
+        "COUNTERFACTUAL_CHECKS": [
+          "The corpus clones the actual case evidence, mutates one required expected value, recalculates its match state, and proves the same behavioral_acceptance function rejects the complete mutated evidence set.",
+          "A harmless prelude IIFE containing alr, yes, and an unrelated function no longer wins discovery over the later real challenge-shaped assignment.",
+          "Unrelated marker literals plus a function without those markers in its own subtree produce NoChallengeCandidate instead of a false candidate.",
+          "Forged response producer, request, job, sequence, compatibility, provenance, or grant fields are rejected by full_response_correlation_rejects_forged_tuple_fields.",
+          "A forged destructive-probe grant returns typed InvalidInput and the same worker remains reusable for a subsequent authorized capability request."
+        ],
+        "BOUNDARY_PROBES": [
+          "Spawned-worker cache proof observes initial miss, identical-key hit, and changed-extractor-version miss through the real framed process boundary.",
+          "Every response is correlated across schema/version, request, job, producer, strict sequence, compatibility range, provenance, and capability grant; request IDs include a worker-PID restart namespace.",
+          "Cancellation crosses the public framed control boundary and must return the same correlated generation before the parent accepts AcknowledgedCancelled and verifies process absence.",
+          "Path traversal crosses the raw framed protocol boundary and must emit the exact protocol_reference fatal category before exit and reap.",
+          "Quarantine is keyed by provenance: two terminal failures block that key without spawning another worker, an independent key remains admitted, and explicit operator clear restores admission."
+        ],
+        "NEGATIVE_PATH_CHECKS": [
+          "Zero, oversized, partial-header, partial-payload, malformed-JSON, incompatible-version, unknown-field, over-memory, and traversal frames require exact fatal categories, non-success exit, reap, and process absence.",
+          "Infinite loop, cancellation, allocation bomb, deliberate crash, and worker-quota exhaustion each require their distinct terminal observation rather than any generic worker exit.",
+          "Hash mismatch and unauthorized destructive probes return typed InvalidInput responses; they cannot be counted as successful challenge results.",
+          "Manifest validation rejects executable/non-mandatory oracle policy, malformed source commit/player/hash/version identities, empty or oversized deterministic inputs, and mismatched player filenames.",
+          "Architecture and Cargo policy reject forbidden external runtimes, native links, build-time downloads, prebuilt binaries, indirect yt-dlp wrappers, and companion solver assets."
+        ],
+        "INDEPENDENT_FINDINGS": [
+          {
+            "finding_id": "WP-FF-006-FINDING-COUNTERFACTUAL-001",
+            "finding": "The original counterfactual checked a declaration-level mismatch rather than executing the same aggregate acceptance oracle over mutated real evidence.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_js_corpus::tests::oracle_counterfactual_rejects_mutated_expected_output"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-CANCEL-ACK-002",
+            "finding": "The initial parent termination path labeled cancellation without receiving a correlated worker acknowledgement or distinguishing forced termination.",
+            "status": "REMEDIATED",
+            "proof_id": "WP-FF-006-PROBE-CANCELLATION"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-AST-DISCOVERY-003",
+            "finding": "Initial discovery selected the first IIFE and parsed formatter text, allowing decoy marker text or a harmless prelude to nominate the wrong function.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_javascript::tests::structural_discovery_skips_prelude_iife_and_unrelated_markers"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-CACHE-EVIDENCE-004",
+            "finding": "The first cache probe did not change extractor_version through a spawned worker, so it did not prove the complete behavior-affecting key.",
+            "status": "REMEDIATED",
+            "proof_id": "WP-FF-006-PROBE-CACHE-KEY"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-REPORT-MANIFEST-005",
+            "finding": "Case reports omitted deterministic inputs and manifest provenance validation was too weak for an independently inspectable behavioral receipt.",
+            "status": "REMEDIATED",
+            "proof_id": "build/reports/wp-ff-006-youtube-challenge-report.json"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-CORRELATION-006",
+            "finding": "Response validation did not bind the complete envelope tuple and request IDs could repeat after worker restart.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_js_corpus::tests::full_response_correlation_rejects_forged_tuple_fields"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-PROBE-AUTHORITY-007",
+            "finding": "Destructive crash and resource probe modes trusted forgeable wire declarations instead of a fresh host-issued per-worker capability grant.",
+            "status": "REMEDIATED",
+            "proof_id": "WP-FF-006-PROBE-PROBE-AUTHORITY"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-FATAL-TYPING-008",
+            "finding": "Raw protocol probes accepted any nonzero worker exit and therefore could falsely pass against an always-failing binary.",
+            "status": "REMEDIATED",
+            "proof_id": "WP-FF-006-PROBE-PATH-CONFINEMENT"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-QUARANTINE-009",
+            "finding": "The initial supervisor had no provenance-keyed failure threshold, independent-key isolation, or explicit operator-clear recovery path.",
+            "status": "REMEDIATED",
+            "proof_id": "WP-FF-006-PROBE-QUARANTINE"
+          },
+          {
+            "finding_id": "WP-FF-006-FINDING-RAII-REAP-010",
+            "finding": "Supervisor error paths lacked an idempotent RAII cleanup owner for stdin closure, termination, reap, and reader-thread joining.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_js_corpus::Supervisor::drop"
+          }
+        ],
+        "RESIDUAL_UNCERTAINTY": [
+          "Compatibility evidence covers three committed raw player generations and seven mandatory observations; it does not prove full YouTube support, live-site stability, extractor behavior, download behavior, or replacement parity.",
+          "Boa exposes no exact heap cap; parent RSS polling and process termination can observe transient allocation overshoot before enforcement.",
+          "Canonicalization confines the opened corpus path under the player root, but hostile local junction or symlink replacement races are not proven absent across all platforms.",
+          "The capability probe checks named ambient globals and no host functions are registered, but this spike does not constitute a complete security audit of every Boa intrinsic.",
+          "Boa 0.21.1 transitively requires archived paste 1.0.15 with no safe upgrade under RUSTSEC-2024-0436; the reasoned cargo-deny exception is bounded to this prerequisite and must be removed or explicitly re-authorized before a later product consumer.",
+          "This proof ran on Windows; cross-platform supervisor, RSS, process-tree, and path behavior remains to be re-proven by any later shipped consumer."
+        ],
+        "MANUAL_REVIEW": {
+          "artifact": "product/MODEL_MANUAL.md",
+          "reviewer": "Primary consolidation of Hypatia correctness review and Kant security review",
+          "method": "Direct source comparison against the active packet, refinement, worker/corpus source, committed manifest, final machine report, and no-product prerequisite contract after remediation.",
+          "verdict": "PASS",
+          "evidence": [
+            "The WP-006 topic names the exact worker, corpus, manifest, raw-player, report, engine, and solver paths and supplies locked Cargo release build/run commands.",
+            "The limits and safety sections match source constants and document fresh contexts, empty environment, secret probe grant, full response correlation, exact bounds, prohibited runtimes, and zero product progress.",
+            "Failure recovery covers mismatch, cache, timeout, cancellation acknowledgement, memory, crash, quarantine threshold/operator clear, recycle, process reap/absence, safe generated-target cleanup, and future FF-GATE-RUNTIME-001 proof."
+          ]
+        }
+      },
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-006-rust-youtube-challenge-spike-v1-CEILING-001",
+        "current_ceiling": "Evidence is limited to a non-shipped Ferric-owned Boa worker, raw-player corpus, supervisor, and PASS_RUST_ONLY_PATH prerequisite verdict. No video download or extractor exists. Zero product capability. Zero runtime completion. Zero packaging or release progress. Zero replacement-parity or phase progress.",
+        "replacement_trigger": "A later active RUNTIME packet consumes the accepted mechanism in a shipped YouTube slice and supplies exact production-artifact proof through FF-GATE-RUNTIME-001.",
+        "likely_upgrade_path": "Promote the accepted boundary into the shipped composition only under a later active RUNTIME packet, then stage and execute it through FF-GATE-RUNTIME-001.",
+        "trigger_detection_method": "Taskboard activation, packet impact classification, workspace member classification, package inspection, and FF-GATE-RUNTIME-001 identify and enforce the later trigger.",
+        "linked_evidence": [
+          ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+          ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/refinement.json",
+          "build/tools/fforager-xtask/src/main.rs",
+          "build/fixtures/architecture/bundled-companion-solver-asset/case.toml",
+          "build/rule-to-proof.toml",
+          "build/crates/fforager-javascript/",
+          "build/fixtures/youtube-challenge-v1/",
+          "build/reports/wp-ff-006-youtube-challenge-report.json",
+          "product/MODEL_MANUAL.md"
+        ]
+      }
+    },
     "repository_layout": {
       "governance_root": ".GOV/",
       "product_root": "product/",
-      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "product_owns": ["application execution code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
       "build_root": "build/",
       "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
       "toolchain_selector": "rust-toolchain.toml",
       "canonical_manifest": "build/Cargo.toml",
       "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
-      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+      "runtime_boundary": "Application execution must require neither .GOV/ nor build/."
     },
     "stub_implementation_brief": {
-      "base_scope": "Resolve the highest-risk Rust-only YouTube challenge dependency question through a bounded non-shipped worker and executable pinned corpus, returning proof or exact failure evidence.",
+      "base_scope": "Resolve the highest-risk independent Rust-only YouTube challenge question through a bounded non-shipped worker and Ferric-owned executable corpus, returning proof or exact failure evidence.",
       "readiness_matrix_links": {
         "path": ".GOV/reviews/peer-review-v0.2.0/implementation-readiness-matrix.json",
         "phase": "Phase 0",
@@ -199,14 +492,14 @@
       },
       "promotion_requirements": [
         "Verify current pure-Rust JavaScript engine candidates through official source, docs, releases, issue trackers, security records, benchmarks, and implementation tests; do not rely on model memory.",
-        "Inspect the pinned yt-dlp 2026.07.04 EJS/challenge implementation and WP-004 corpus provenance to ensure the spike tests actual required behavior.",
+        "Inspect current site-player behavior and multiple external implementations only as research references; select a Ferric-owned Rust discovery and challenge-solving implementation without executing or importing yt-dlp-family code.",
         "Inspect WP-005 worker IPC/limits and reuse them; if unavailable, activate an explicit co-development dependency rather than inventing an incompatible protocol.",
         "Define mandatory cases, 100-percent pass rule, resource ceilings, OS containment assumptions, timing methodology, and failed-spike operator evidence before implementation."
       ],
       "planned_outputs": [
         "Current engine-candidate evidence matrix",
         "Policy-marked non-shipped Rust worker prototype",
-        "Pinned EJS/YouTube challenge corpus runner",
+        "Ferric-owned YouTube player/challenge corpus runner",
         "Security/resource/cancellation/recycling negative tests",
         "Machine-readable per-case and aggregate verdict reports",
         "Operator-ready failed-spike evidence when any mandatory gate cannot pass",
@@ -244,7 +537,7 @@
       ],
       "existing_systems_to_reuse": [
         "WP-003 architecture/dependency policy, xtask reports, and negative-fixture system",
-        "WP-004 pinned EJS corpus, case IDs, oracle provenance, and deterministic normalization",
+        "WP-004 stable corpus IDs, optional external comparison provenance, and deterministic normalization",
         "WP-005 JavaScript worker IPC, errors, cancellation, limits, and transition traces",
         "Design-authorized Rust executable worker and pure-Rust engine boundary"
       ],
@@ -257,9 +550,9 @@
       "risk_scenarios": [
         {
           "risk": "Standards conformance is mistaken for challenge compatibility.",
-          "failure_scenario": "The engine passes generic JavaScript tests but fails yt-dlp EJS transformations or current player challenge cases.",
+          "failure_scenario": "The engine passes generic JavaScript tests but Ferric-owned discovery or solving fails current player challenge cases.",
           "mitigation_and_hardening": "Make the pinned mandatory challenge corpus the selection gate and treat generic conformance only as supporting evidence.",
-          "verification_needed": "All mandatory deterministic EJS/challenge cases pass exactly or the aggregate verdict is failed-spike evidence."
+          "verification_needed": "All mandatory deterministic Ferric-owned challenge cases pass exactly or the aggregate verdict is failed-spike evidence."
         },
         {
           "risk": "In-process or persistent state leaks capabilities or data across jobs.",
@@ -287,7 +580,7 @@
         }
       ],
       "verification_needs": [
-        "Pinned mandatory EJS/YouTube challenge corpus with per-case diagnostics",
+        "Pinned mandatory Ferric-owned YouTube challenge corpus with per-case diagnostics",
         "Capability denial, secret isolation, cache poisoning, and cross-job leakage probes",
         "Infinite-loop, allocation, recursion/depth, oversized-output, malformed-frame, timeout, cancellation, crash, and orphan-process probes",
         "Cargo graph/source/build-script/artifact/runtime dependency inspection",

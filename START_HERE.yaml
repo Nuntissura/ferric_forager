@@ -4,8 +4,8 @@ updated_at: "2026-07-18"
 project:
   id: FF-PROJ-001
   name: Ferric Forager
-  mission: Native Rust media acquisition, recording, extraction, metadata, archive, and protocol engine.
-  compatibility_foundation: yt-dlp is a pinned behavioral oracle and research source, not a production runtime dependency.
+  mission: Independent Rust-native replacement for yt-dlp covering media discovery, acquisition, recording, extraction, metadata, archive, and protocols, with expanded capabilities from the technical design.
+  compatibility_foundation: Ferric-owned specifications and committed corpora are canonical; pinned yt-dlp releases may be observed only as optional external comparison sources and are never required to build, test, verify, run, package, or release Ferric Forager.
   required_external_processes: [ffmpeg, ffprobe]
   optimization_policy: Speed first after equivalent-work correctness, compatibility, bounded-resource, recoverability, and security gates pass.
   expanded_design_scope_preserved: true
@@ -114,9 +114,9 @@ workflow:
     warning: A worktree is isolation, not backup; durable recovery requires commits and remote backup.
 critical_boundaries:
   - id: FF-START-BOUNDARY-001
-    statement: Do not add Python, production yt-dlp execution, another JS runtime, Wasmtime, BoringSSL-backed transports, SQLite native bindings, or another runtime/native dependency without explicit Operator approval.
+    statement: Do not add Python, yt-dlp, any yt-dlp companion package or executable asset, another JS runtime, Wasmtime, BoringSSL-backed transports, SQLite native bindings, or another runtime/native dependency to any Ferric implementation, build, test, verification, package, release, fallback, or delegated-work path without explicit Operator approval; optional isolated comparison tooling may only observe an Operator-supplied external reference.
   - id: FF-START-BOUNDARY-002
-    statement: Do not claim yt-dlp replacement parity without the pinned generated compatibility corpus.
+    statement: Do not claim yt-dlp replacement parity without a Ferric-owned pinned compatibility corpus that canonical gates can execute with yt-dlp absent.
   - id: FF-START-BOUNDARY-003
     statement: Do not claim a performance win from unequal process topology, outputs, metadata work, post-processing, cache state, or network state.
   - id: FF-START-BOUNDARY-004

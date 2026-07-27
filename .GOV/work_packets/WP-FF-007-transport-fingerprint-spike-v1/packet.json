@@ -220,7 +220,9 @@
       "PASS: FF-GATE-PR-001 on clean commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb; build/reports/verify-pr-1785134637217474200-89412.json",
       "PASS: oracle-integrity reviewer Anscombe, transport-security reviewer Halley, and resource-architecture reviewer Poincare each returned final PASS after remediation",
       "PASS: remote backup origin/codex/transport-fingerprint-spike was verified at 807c16fb97cf72fef8f76d52e74bf176b87d88f0",
-      "PASS: closure commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb and remote backup commit 807c16fb97cf72fef8f76d52e74bf176b87d88f0 are ancestors of main merge d8abdf0ce30d6317f8d04d909ea284ba51735dd7"
+      "PASS: closure commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb and remote backup commit 807c16fb97cf72fef8f76d52e74bf176b87d88f0 are ancestors of main merge d8abdf0ce30d6317f8d04d909ea284ba51735dd7",
+      "POST-MERGE OBSERVATION: one initial parallel library run observed WSAECONNRESET in range-loopback-wire; the standalone 54-case strict corpus passed immediately afterward and 20 consecutive full parallel library reruns passed 22/22 each (440 test executions), so no code remediation or root-cause claim is recorded",
+      "PASS: post-merge FF-GATE-ARCH-001; build/reports/architecture-check-1785135270424252300-96652.json"
     ],
     "not_proven": [
       "Browser TLS fingerprint parity or HTTP/2 fingerprint parity",
@@ -231,6 +233,7 @@
       "Dependency-boundary compliance of any future implementation beyond this non-shipped spike",
       "Full network compatibility or replacement parity",
       "Cross-platform behavior beyond this Windows proof run",
+      "Absence of a rare Windows loopback reset under arbitrary concurrent host load; one post-merge run observed WSAECONNRESET and the failure did not reproduce across the standalone corpus plus 20 consecutive full parallel library reruns",
       "Any product, capability, runtime, packaging, release, or phase progress"
     ]
   },

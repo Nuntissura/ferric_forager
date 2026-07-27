@@ -338,8 +338,8 @@
         ],
         "RESIDUAL_UNCERTAINTY": [
           "The candidate does not prove browser TLS or HTTP/2 fingerprint parity, HTTP/2 transport, authoritative public-suffix cookie handling, proxy peer-address evidence, resolver provenance and complete special-use registry enforcement, integrated redirects, compression/decompression bounds, real pool execution context, or an integrated retry executor.",
-          "The deterministic corpus uses bounded local HTTP/1.1 sockets and does not prove live-site compatibility, cross-platform behavior beyond this Windows run, full network replacement parity, or any shipped product capability.",
-          "A later product consumer must select an Operator-authorized dependency path and re-prove the exact staged production artifact through FF-GATE-RUNTIME-001."
+          "The deterministic corpus uses bounded local HTTP/1.1 sockets and does not establish live-site compatibility, cross-platform behavior beyond this Windows run, network replacement parity, or Ferric application behavior.",
+          "A later application consumer must select an Operator-authorized dependency path and re-prove the exact staged artifact through FF-GATE-RUNTIME-001."
         ],
         "MANUAL_REVIEW": {
           "artifact": "product/MODEL_MANUAL.md",
@@ -349,7 +349,7 @@
           "evidence": [
             "The WP-007 manual topic states the exact non-shipped command, unique report behavior, 54-case scope, supported capability subset, typed blockers, and FAILED_SPIKE_REQUIRES_OPERATOR_DECISION meaning.",
             "The manual documents transcript sanitization, local-server bounds, cancellation recovery, no-context diagnostics, prohibited dependencies, and zero product progress.",
-            "The manual requires a later Operator dependency decision and staged production-artifact runtime proof instead of treating the spike as shipped transport."
+            "The manual requires a later Operator dependency decision and staged-artifact proof through FF-GATE-RUNTIME-001; the spike remains prerequisite evidence."
           ]
         }
       },

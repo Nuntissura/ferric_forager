@@ -261,7 +261,7 @@
         "Kept the spike under build/ and outside the runtime source tree.",
         "Selected existing dependencies and Rust std before any new client/TLS stack."
       ],
-      "post_simplification_verdict": "PENDING implementation and complete verification.",
+      "post_simplification_verdict": "PASS: the simplified non-shipped corpus completed 54/54 mandatory cases and emitted FAILED_SPIKE_REQUIRES_OPERATOR_DECISION with exact typed capability blockers, a pinned semantic oracle, and no forbidden dependency; this validates the fail-closed spike outcome and does not claim pure-Rust transport suitability.",
       "complete_post_change_verification": [
         "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
         "cargo check --manifest-path build/Cargo.toml --workspace --all-targets --locked",
@@ -273,6 +273,86 @@
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard"
       ],
+      "adversarial_review": {
+        "DIFF_ATTACK_SURFACES": [
+          "Contract and serialization attack: case declarations, producer-calculated digests, capability labels, or normalized transcripts could counterfeit complete evidence without crossing the claimed behavior boundary.",
+          "State and resource attack: streaming credits, cancellation, body and metadata ceilings, socket workers, or pooling identities could leak state, over-allocate, deadlock, or survive a rejected operation.",
+          "Integration attack: internal redirect, cookie, DNS, SSRF, retry, proxy, compression, HTTP/2, or fingerprint helpers could be mistaken for a composed public transport capability.",
+          "Gate attack: a self-consistent fabricated report, stale fixed report path, incomplete source digest, or undeclared executed proof class could pass a producer-aligned validator."
+        ],
+        "INDEPENDENT_CHECKS_RUN": [
+          "Oracle-integrity reviewer Anscombe independently inspected manifest completeness, semantic projection, producer/consumer separation, counterfactual discrimination, and report fabrication paths; the final verdict was PASS.",
+          "Transport-security reviewer Halley independently inspected capability visibility, SSRF and redirect behavior, cookie scope, fingerprint downgrade, empty-capability execution, and blocked-capability honesty; the final verdict was PASS.",
+          "Resource-architecture reviewer Poincare independently inspected byte credits, allocation preflight, cancellation acknowledgement, worker reaping, timing and limit evidence, report identity, and canonical gate integration; the final verdict was PASS.",
+          "The primary reran the 22-test transport suite, mutation-sensitive report consumer, warnings-denied workspace Clippy, two fresh 54-case corpus runs, architecture gate, runtime-truth gate, and complete deep gate after all reviewer findings were remediated."
+        ],
+        "COUNTERFACTUAL_CHECKS": [
+          "The strict consumer independently reconstructs the semantic projection, mutates one accepted semantic fact, and proves the same comparison rejects that altered report.",
+          "A self-consistent fabricated report with a recomputed producer digest is rejected against the independently pinned canonical semantic projection digest.",
+          "A blocked mandatory capability forces FAILED_SPIKE_REQUIRES_OPERATOR_DECISION even when every case observation exactly matches its declared blocked outcome.",
+          "The deep-gate report contract now declares the counterfactual proof class executed by architecture fixtures, with a focused regression assertion preventing declaration drift."
+        ],
+        "BOUNDARY_PROBES": [
+          "HTTP/1.1 range and streaming evidence crosses a real authenticated loopback socket with frozen normalized request and response hashes.",
+          "Streaming uses synchronized fragment receipt and acknowledgement so four exact byte-credit operations are observed rather than inferred from a final buffer.",
+          "Huge Content-Length is rejected before allocation and records the exact maximum and observed values; metadata, body, and byte-credit boundaries likewise record concrete limit evidence.",
+          "Cancellation shuts down a partial real socket operation, joins the client worker, and reaps the bounded local server worker before evidence is accepted."
+        ],
+        "NEGATIVE_PATH_CHECKS": [
+          "Manifest validation rejects unknown fields, duplicate case IDs, missing canonical cases, omitted semantic capabilities, and supported families without positive, boundary, and negative coverage.",
+          "The adapter rejects an empty requested-capability set, forbidden redirect destinations, special-use DNS answers, rebinding, cross-origin IP cookies, and byte-credit overrun.",
+          "Fingerprint, HTTP/2, proxy address evidence, compression, decompression bounds, redirect integration, cookie PSL, DNS provenance, SSRF registry, pool execution context, and retry execution remain exact typed blockers and never execute as weaker HTTP.",
+          "Secret query, header, and Location canaries are sanitized from reports, while forged blocked-capability state and behavior mutations are rejected by executable tests."
+        ],
+        "INDEPENDENT_FINDINGS": [
+          {
+            "finding_id": "WP-FF-007-FINDING-ORACLE-PIN-001",
+            "finding": "The initial strict consumer could accept a self-consistent fabricated report after an attacker recomputed the producer-owned semantic digest.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::transport_semantic_projection_is_mutation_sensitive"
+          },
+          {
+            "finding_id": "WP-FF-007-FINDING-PUBLIC-BOUNDARY-002",
+            "finding": "Incomplete policy helpers and a generic candidate execution surface could be mistaken for publicly supported transport capabilities.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::policy::tests::adapter_rejects_empty_capabilities_and_redirect_special_use"
+          },
+          {
+            "finding_id": "WP-FF-007-FINDING-RESOURCE-EVIDENCE-003",
+            "finding": "Initial resource receipts did not bind all ceiling decisions to concrete maximum and observed values at the allocation and credit boundaries.",
+            "status": "REMEDIATED",
+            "proof_id": "fforager_transport::local_server::tests::declared_huge_body_is_rejected_before_allocation"
+          },
+          {
+            "finding_id": "WP-FF-007-FINDING-REPORT-PATH-004",
+            "finding": "Canonical gate artifacts initially named a stale fixed transport-report path instead of the exact unique report produced by that execution.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::transport_semantic_projection_is_mutation_sensitive"
+          },
+          {
+            "finding_id": "WP-FF-007-FINDING-DEEP-DECLARATION-005",
+            "finding": "Deep verification executed architecture counterfactual fixtures without declaring counterfactual as a supported proof class in its report.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution"
+          }
+        ],
+        "RESIDUAL_UNCERTAINTY": [
+          "The candidate does not prove browser TLS or HTTP/2 fingerprint parity, HTTP/2 transport, authoritative public-suffix cookie handling, proxy peer-address evidence, resolver provenance and complete special-use registry enforcement, integrated redirects, compression/decompression bounds, real pool execution context, or an integrated retry executor.",
+          "The deterministic corpus uses bounded local HTTP/1.1 sockets and does not prove live-site compatibility, cross-platform behavior beyond this Windows run, full network replacement parity, or any shipped product capability.",
+          "A later product consumer must select an Operator-authorized dependency path and re-prove the exact staged production artifact through FF-GATE-RUNTIME-001."
+        ],
+        "MANUAL_REVIEW": {
+          "artifact": "product/MODEL_MANUAL.md",
+          "reviewer": "Primary consolidation of Anscombe oracle review, Halley transport-security review, and Poincare resource-architecture review",
+          "method": "Direct comparison against the active packet, refinement research, 54-case manifest, candidate source, strict consumer, two fresh reports, final reviewer verdicts, and canonical gate outputs after remediation.",
+          "verdict": "PASS",
+          "evidence": [
+            "The WP-007 manual topic states the exact non-shipped command, unique report behavior, 54-case scope, supported capability subset, typed blockers, and FAILED_SPIKE_REQUIRES_OPERATOR_DECISION meaning.",
+            "The manual documents transcript sanitization, local-server bounds, cancellation recovery, no-context diagnostics, prohibited dependencies, and zero product progress.",
+            "The manual requires a later Operator dependency decision and staged production-artifact runtime proof instead of treating the spike as shipped transport."
+          ]
+        }
+      },
       "ceilings_exceptions_and_evidence": {
         "ceiling_id": "WP-FF-007-transport-fingerprint-spike-v1-CEILING-001",
         "current_ceiling": "Research evidence boundary; see the predeclared zero-progress fields.",

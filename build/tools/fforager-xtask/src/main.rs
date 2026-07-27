@@ -8195,6 +8195,18 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-006-FINDING-FATAL-TYPING-008" => Some("WP-FF-006-PROBE-PATH-CONFINEMENT"),
         "WP-FF-006-FINDING-QUARANTINE-009" => Some("WP-FF-006-PROBE-QUARANTINE"),
         "WP-FF-006-FINDING-RAII-REAP-010" => Some("fforager_js_corpus::Supervisor::drop"),
+        "WP-FF-007-FINDING-ORACLE-PIN-001" | "WP-FF-007-FINDING-REPORT-PATH-004" => {
+            Some("xtask::tests::transport_semantic_projection_is_mutation_sensitive")
+        }
+        "WP-FF-007-FINDING-PUBLIC-BOUNDARY-002" => Some(
+            "fforager_transport::policy::tests::adapter_rejects_empty_capabilities_and_redirect_special_use",
+        ),
+        "WP-FF-007-FINDING-RESOURCE-EVIDENCE-003" => Some(
+            "fforager_transport::local_server::tests::declared_huge_body_is_rejected_before_allocation",
+        ),
+        "WP-FF-007-FINDING-DEEP-DECLARATION-005" => Some(
+            "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution",
+        ),
         "WP-FF-013-FINDING-SEMANTIC-REPLAY-001" => Some(
             "xtask::compatibility::tests::native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes",
         ),

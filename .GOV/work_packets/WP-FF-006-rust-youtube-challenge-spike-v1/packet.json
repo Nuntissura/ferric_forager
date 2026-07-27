@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove or reject the bounded Rust-only YouTube challenge path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-27T01:44:12Z"
+    "updated_at_utc": "2026-07-27T02:06:10Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -42,15 +42,15 @@
     "worktree_policy": "NONE",
     "worktree_id": null,
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
-    "closure_commit": "7d9ef032f7bb719da8dbb426575af3fc3285d0e3",
+    "closure_commit": null,
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit this MERGE_PENDING evidence, push codex/rust-youtube-challenge-spike, merge through the canonical main worktree, and mechanically prove closure commit 7d9ef032f7bb719da8dbb426575af3fc3285d0e3 is an ancestor of main before VALIDATED.",
+    "next_action": "Re-prove the hardened fresh-checkout corpus and canonical gates, create a replacement closure commit, record MERGE_PENDING, and merge the replacement closure into main.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -200,7 +200,9 @@
       "base_sha": "405c054005102417a6ce992795a2752bc26c40dc",
       "head_sha": "7d9ef032f7bb719da8dbb426575af3fc3285d0e3",
       "dirty_paths": [
-        ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json"
+        ".GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json",
+        ".gitattributes",
+        "build/crates/fforager-javascript/src/bin/fforager-js-corpus.rs"
       ],
       "checks_run": [
         "Verified the worktree is clean before activation on codex/rust-youtube-challenge-spike at 6f1b1e51b40dab7c1401418bf3d7514420b93059 with merge-base main 405c054005102417a6ce992795a2752bc26c40dc.",
@@ -222,10 +224,12 @@
         "Clean closure source FF-GATE-RUNTIME-001 prerequisite ceiling exited 0: build/reports/runtime-truth-check-1785115805934789400-96328.json.",
         "Clean closure source PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785116172633196200-105924.json.",
         "Clean closure source PASS FF-GATE-PR-001: build/reports/verify-pr-1785116604179772200-115056.json.",
-        "MERGE_PENDING evidence PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785116843567652400-94324.json."
+        "MERGE_PENDING evidence PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785116843567652400-94324.json.",
+        "RED after first main merge: a fresh checkout converted the three raw-player fixtures from LF to CRLF, all seven cases returned typed ScriptHashMismatch, and the aggregate exited nonzero before the cache probe.",
+        "GREEN hardening: scoped .gitattributes -text preservation, the checked_in_player_bytes_match_manifest_hashes regression, and richer case diagnostics restore exact manifest hashes; the optimized corpus again records 7/7 mandatory cases, 20/20 probes, and rejecting counterfactual in build/reports/wp-ff-006-youtube-challenge-report.json."
       ],
       "blockers": [],
-      "next_action": "Commit this MERGE_PENDING evidence, push codex/rust-youtube-challenge-spike, merge through the canonical main worktree, and mechanically prove closure commit 7d9ef032f7bb719da8dbb426575af3fc3285d0e3 is an ancestor of main before VALIDATED."
+      "next_action": "Re-prove the hardened fresh-checkout corpus and canonical gates, create a replacement closure commit, record MERGE_PENDING, and merge the replacement closure into main."
     }
   },
   "validation": {
@@ -247,6 +251,7 @@
       "PASS: clean closure source FF-GATE-DEEP-001; build/reports/verify-deep-1785116172633196200-105924.json",
       "PASS: clean closure source FF-GATE-PR-001; build/reports/verify-pr-1785116604179772200-115056.json",
       "PASS: MERGE_PENDING evidence FF-GATE-ARCH-001; build/reports/architecture-check-1785116843567652400-94324.json",
+      "PASS: RED/GREEN fresh-checkout portability proof; CRLF checkout produced exact ScriptHashMismatch failures before scoped -text preservation and checked_in_player_bytes_match_manifest_hashes restored all three pinned hashes",
       "PASS: exactly two independent adversarial implementation reviews completed and all confirmed findings remediated"
     ],
     "not_proven": [

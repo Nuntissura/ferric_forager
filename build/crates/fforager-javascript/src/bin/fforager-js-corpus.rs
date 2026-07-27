@@ -1316,7 +1316,10 @@ fn cache_behavior_probe(
         .iter()
         .find(|case| case.matched && case.challenge == ChallengeKind::N)
         .ok_or_else(|| {
-            SolverError::InvalidResult("cache probe requires matched n case".to_owned())
+            SolverError::InvalidResult(format!(
+                "cache probe requires matched n case; case_diagnostics=[{}]",
+                case_failure_diagnostics(cases)
+            ))
         })?;
     let mut supervisor = Supervisor::spawn(worker_path, player_root)?;
     let request = |version: &str| WorkerInput {
@@ -1397,6 +1400,24 @@ fn cache_behavior_probe(
         reaped: false,
         process_absent_after_reap: false,
     })
+}
+
+fn case_failure_diagnostics(cases: &[CaseReport]) -> String {
+    cases
+        .iter()
+        .map(|case| {
+            format!(
+                "{}:matched={}:observed={:?}:error={:?}:duration_ms={}:peak_rss={}",
+                case.case_id,
+                case.matched,
+                case.observed,
+                case.error,
+                case.duration_millis,
+                case.peak_rss_bytes
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn quarantine_probe(worker_path: &Path, player_root: &Path) -> Result<ProbeReport, SolverError> {
@@ -1769,6 +1790,33 @@ fn configure_quiet_process(_command: &mut Command) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_in_player_bytes_match_manifest_hashes() {
+        let fixture_root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/youtube-challenge-v1");
+        let manifest_bytes =
+            fs::read(fixture_root.join("manifest.json")).expect("checked-in manifest must exist");
+        let manifest: CorpusManifest =
+            serde_json::from_slice(&manifest_bytes).expect("checked-in manifest must decode");
+        validate_manifest(&manifest).expect("checked-in manifest must validate");
+
+        for case in manifest.cases {
+            let player_path = fixture_root.join("players").join(&case.program_reference);
+            let player_bytes = fs::read(&player_path).unwrap_or_else(|error| {
+                panic!(
+                    "checked-in player {} must exist: {error}",
+                    player_path.display()
+                )
+            });
+            assert_eq!(
+                sha256_hex(&player_bytes),
+                case.program_sha256,
+                "checked-in player {} must retain its manifest-pinned bytes",
+                player_path.display()
+            );
+        }
+    }
 
     #[test]
     fn oracle_counterfactual_rejects_mutated_expected_output() {

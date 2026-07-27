@@ -14,6 +14,7 @@ const MAX_PRE_PUSH_UPDATES: usize = 10_000;
 const MAX_PRE_PUSH_INPUT_BYTES: u64 = 1024 * 1024;
 const MAX_GIT_OUTPUT_BYTES: u64 = 64 * 1024 * 1024;
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
+const GIT_BATCH_TIMEOUT: Duration = Duration::from_mins(5);
 const MAX_TAG_DEPTH: usize = 16;
 const HOOKS_PATH: &str = "build/git-hooks";
 const PRE_COMMIT_HOOK: &[u8] = b"#!/bin/sh\nset -eu\nrepo_root=$(git rev-parse --show-toplevel)\ncd \"$repo_root\"\nhook_target=.fforager-artifacts/cargo-target\nif ! CARGO_TARGET_DIR=\"$hook_target\" cargo build --quiet --manifest-path build/Cargo.toml --locked -p fforager-xtask >/dev/null 2>&1; then\n  echo \"FF-SECRET-E-BOOTSTRAP: scanner build failed; compiler output suppressed\" >&2\n  exit 1\nfi\nscanner=\"$hook_target/debug/fforager-xtask\"\nif [ -x \"$scanner.exe\" ]; then scanner=\"$scanner.exe\"; fi\nexec \"$scanner\" secret-scan --staged\n";
@@ -460,12 +461,20 @@ fn scan_worktree(root: &Path) -> Result<Vec<Finding>, String> {
     for relative in paths {
         findings.extend(scan_bytes("worktree-path:<path>", relative.as_bytes()));
         let path = root.join(&relative);
-        let metadata = fs::symlink_metadata(&path).map_err(|error| {
-            format!(
-                "FF-SECRET-E-WORKTREE: inspect {}: {error}",
-                safe_source(&relative)
-            )
-        })?;
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                // The exact index is scanned separately. A tracked path that is
+                // deleted from the worktree has no additional bytes to inspect.
+                continue;
+            }
+            Err(error) => {
+                return Err(format!(
+                    "FF-SECRET-E-WORKTREE: inspect {}: {error}",
+                    safe_source(&relative)
+                ));
+            }
+        };
         if metadata.file_type().is_symlink() {
             let target = fs::read_link(&path).map_err(|error| {
                 format!(
@@ -494,12 +503,27 @@ fn scan_worktree(root: &Path) -> Result<Vec<Finding>, String> {
             ));
         }
         budget.admit(&format!("worktree:{relative}"), metadata.len())?;
-        let bytes = fs::read(&path).map_err(|error| {
+        let file = fs::File::open(&path).map_err(|error| {
             format!(
                 "FF-SECRET-E-WORKTREE: read {}: {error}",
                 safe_source(&relative)
             )
         })?;
+        let mut bytes = Vec::new();
+        file.take(MAX_BLOB_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| {
+                format!(
+                    "FF-SECRET-E-WORKTREE: read {}: {error}",
+                    safe_source(&relative)
+                )
+            })?;
+        if bytes.len() as u64 > MAX_BLOB_BYTES {
+            return Err(format!(
+                "FF-SECRET-E-BLOB-LIMIT: worktree:{} exceeded {MAX_BLOB_BYTES} bytes while reading",
+                safe_source(&relative)
+            ));
+        }
         findings.extend(scan_bytes(&format!("worktree:{relative}"), &bytes));
     }
     Ok(findings)
@@ -604,7 +628,7 @@ fn scan_objects_batch(
     let initial_budget = *budget;
     let reader =
         thread::spawn(move || read_batch_objects(stdout, objects, expected_type, initial_budget));
-    let status = super::wait_for_child(&mut child, "git", &["cat-file"], GIT_COMMAND_TIMEOUT);
+    let status = super::wait_for_child(&mut child, "git", &["cat-file"], GIT_BATCH_TIMEOUT);
     let read_result = reader
         .join()
         .map_err(|_| "FF-SECRET-E-GIT: Git batch reader panicked".to_owned())?;
@@ -616,7 +640,7 @@ fn scan_objects_batch(
     let status = status.map_err(|_| {
         format!(
             "FF-SECRET-E-GIT-TIMEOUT: git cat-file exceeded {} seconds",
-            GIT_COMMAND_TIMEOUT.as_secs()
+            GIT_BATCH_TIMEOUT.as_secs()
         )
     })?;
     if !status.success() {
@@ -1216,6 +1240,33 @@ mod tests {
                 .iter()
                 .any(|finding| finding.source == "staged-path:<path>")
         );
+        assert!(!format_findings(&findings).contains(&secret));
+        fs::remove_dir_all(&root).expect("remove fixture repository");
+    }
+
+    #[test]
+    fn worktree_scan_allows_deleted_tracked_files_and_rejects_untracked_keys() {
+        let root = temp_repo("worktree-delete");
+        git_ok(&root, &["init", "--quiet"]);
+        git_ok(&root, &["config", "user.name", "Ferric Test"]);
+        git_ok(&root, &["config", "user.email", "ferric@example.invalid"]);
+        fs::write(root.join("tracked.txt"), b"clean").expect("write tracked fixture");
+        git_ok(&root, &["add", "tracked.txt"]);
+        git_ok(
+            &root,
+            &["commit", "--quiet", "--no-verify", "-m", "tracked fixture"],
+        );
+        fs::remove_file(root.join("tracked.txt")).expect("delete tracked fixture");
+        assert!(
+            scan_worktree(&root)
+                .expect("scan tracked deletion")
+                .is_empty()
+        );
+
+        let secret = format!("{}{}", ["AI", "za"].concat(), "Q".repeat(35));
+        fs::write(root.join("untracked.txt"), &secret).expect("write untracked key");
+        let findings = scan_worktree(&root).expect("scan untracked key");
+        assert_eq!(findings.len(), 1);
         assert!(!format_findings(&findings).contains(&secret));
         fs::remove_dir_all(&root).expect("remove fixture repository");
     }

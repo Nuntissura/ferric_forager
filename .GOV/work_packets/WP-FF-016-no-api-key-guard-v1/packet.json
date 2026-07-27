@@ -8,7 +8,7 @@
     "version": "1",
     "title": "No API key commit and push guard",
     "created_at_utc": "2026-07-27T15:17:09Z",
-    "updated_at_utc": "2026-07-27T15:17:09Z"
+    "updated_at_utc": "2026-07-27T19:15:00Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -30,9 +30,9 @@
   "source_control": {
     "canonical_branch": "main",
     "base_sha": "de8b50d780224dc54a62ad2be914e9047f4b7bfd",
-    "work_branch": "codex/no-api-key-guard",
-    "worktree_policy": "NONE",
-    "worktree_id": null,
+    "work_branch": "codex/sanitized-main-integration",
+    "worktree_policy": "REPO_LOCAL_LINKED",
+    "worktree_id": "sanitized-main-integration",
     "remote_backup": {
       "required_for_handoff": true,
       "branch": null,
@@ -50,7 +50,7 @@
       "GitHub cached commit views can only be garbage-collected by GitHub Support even after all branch references are clean.",
       "Google-side key rotation or revocation is outside repository access and remains Operator-owned."
     ],
-    "next_action": "Run staged and pre-push counterfactuals, complete adversarial subagent review, remediate findings, and run canonical gates before committing and pushing.",
+    "next_action": "Checkpoint the hardened scanner, migrate remaining tainted local refs and stashes to sanitized lineage, then run history, architecture, and verify-pr gates before merging and pushing.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -114,8 +114,11 @@
       "id": "WP-FF-016-no-api-key-guard-v1-AC-003",
       "requirement": "Pre-push consumes Git's update rows and scans every complete outgoing commit tree, including all ancestry for a new branch, while deletions remain legal.",
       "proof_class": "counterfactual",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The 15-test secret_scan suite passed new-branch ancestry, deletion, tree-root, ref-name, replace-ref, binary, UTF-16, staged-index, history, hook-integrity, and value-suppression counterfactuals.",
+        "A live pre-push update from the sanitized integration head to origin/main reported findings=0."
+      ]
     },
     {
       "id": "WP-FF-016-no-api-key-guard-v1-AC-004",
@@ -130,8 +133,10 @@
       "id": "WP-FF-016-no-api-key-guard-v1-AC-005",
       "requirement": "Project authority carries stable no-key rule and gate IDs; START_HERE requires hook installation; verify-pr scans reachable history, exact index, and tracked or non-ignored worktree files.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "FF-CODEX-076, FF-BUILD-099, FF-GATE-SECRET-001, and FF-START-BOUNDARY-009 bind hook installation, staged/outgoing scanning, canonical state scanning, suppressed values, and remote push protection."
+      ]
     },
     {
       "id": "WP-FF-016-no-api-key-guard-v1-AC-006",
@@ -153,43 +158,36 @@
       "id": "WP-FF-016-no-api-key-guard-v1-AC-008",
       "requirement": "No new external executable, package, native dependency, or product runtime behavior is added; the packet claims zero product progress.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The guard adds only existing-xtask Rust source and Git hook scripts; build/Cargo.toml, build/Cargo.lock, product code, runtime dependencies, and shipped behavior are unchanged."
+      ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-27T15:17:09Z",
-      "branch": "codex/no-api-key-guard",
+      "recorded_at_utc": "2026-07-27T19:15:00Z",
+      "branch": "codex/sanitized-main-integration",
       "base_sha": "de8b50d780224dc54a62ad2be914e9047f4b7bfd",
-      "head_sha": "de8b50d780224dc54a62ad2be914e9047f4b7bfd",
+      "head_sha": "0bc018b3961d43c72bfaa3fd76751a73da440674",
       "dirty_paths": [
-        ".gitattributes",
-        "START_HERE.yaml",
-        ".GOV/codex.yaml",
-        ".GOV/id-registry.yaml",
-        ".GOV/rules/build-rules.yaml",
         ".GOV/taskboard/taskboard.yaml",
-        ".GOV/topology.yaml",
         ".GOV/work_packets/WP-FF-016-no-api-key-guard-v1/packet.json",
-        ".GOV/work_packets/WP-FF-016-no-api-key-guard-v1/refinement.json",
-        "build/git-hooks/pre-commit",
-        "build/git-hooks/pre-push",
-        "build/tools/fforager-xtask/src/main.rs",
         "build/tools/fforager-xtask/src/secret_scan.rs"
       ],
       "checks_run": [
         "Fresh remote mirror scan: 120 commits, zero Google-key matches, git fsck exit 0.",
-        "Focused secret_scan tests: 5 passed.",
-        "Warnings-denied xtask Clippy: PASS.",
-        "Real reachable-history scan: findings=0.",
-        "Hook install and verification: PASS."
+        "Focused secret_scan tests: 15 passed.",
+        "Live exact-index scan: findings=0.",
+        "Live outgoing-commit scan: findings=0.",
+        "Hook install and verification: PASS.",
+        "Local all-ref history scan correctly rejected six Google-key occurrences reachable only through stale pre-rewrite refs."
       ],
       "blockers": [
         "GitHub Support is required for server-side garbage collection of cached old commit views.",
         "Google-side credential rotation or revocation is unavailable from repository access."
       ],
-      "next_action": "Run exact staged and simulated outgoing-push counterfactuals, then independent adversarial reviews."
+      "next_action": "Commit this hardening through the installed pre-commit gate, migrate stale local refs without losing WP-015 work, and rerun the all-ref history gate."
     }
   },
   "validation": {

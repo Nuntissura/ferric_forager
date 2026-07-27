@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Adjudicate the operator-approved wreq transport exception",
     "created_at_utc": "2026-07-27T11:16:32Z",
-    "updated_at_utc": "2026-07-27T23:51:22Z"
+    "updated_at_utc": "2026-07-27T23:55:28Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -43,9 +43,9 @@
     "worktree_id": "wreq-sanitized-rebuild",
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/wreq-sanitized-rebuild",
+      "head_sha": "2328a1c0b51b5f198e3531935d76342f90ae340a",
+      "verified_at_utc": "2026-07-27T23:55:28Z"
     },
     "closure_commit": "569182c22d888a76f56744b211ec46add1b6f6c5",
     "main_containment_status": "PENDING",

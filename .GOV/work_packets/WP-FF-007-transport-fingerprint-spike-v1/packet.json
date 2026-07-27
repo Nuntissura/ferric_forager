@@ -43,15 +43,15 @@
     "worktree_policy": "NONE",
     "worktree_id": null,
     "remote_backup": {"required_for_handoff": true, "branch": null, "head_sha": null, "verified_at_utc": null},
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb",
+    "main_containment_status": "PENDING",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Implement the WP-007-owned mandatory transport corpus and non-shipped pure-Rust candidate adapter, emit behavior-sensitive failed-or-pass evidence without silent downgrade, then run canonical gates and distinct-lens adversarial implementation reviews.",
+    "next_action": "Back up the accepted closure branch remotely, merge it into main, mechanically prove closure-commit containment, then synchronize packet and taskboard state to VALIDATED.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -111,57 +111,73 @@
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-001",
       "requirement": "Current research compares pure-Rust candidates using official source, releases, issues, security evidence, features, wire-control implementation, tests, and dependency graphs; the selected minimal candidate and rejected options are recorded without authorizing an exception.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/refinement.json records official docs, repositories, releases, issues, implementation evidence, rejected candidates, selected std-first spike path, risks, mitigations, and validation plan."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-002",
       "requirement": "Every mandatory deterministic transport/fingerprint corpus case emits requested/satisfied/blocked capabilities, connection and wire identity, stable case ID, normalized transcript, result/error, and exact mismatch; all mandatory cases pass or the verdict requires Operator decision.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/wp-ff-007-transport-report-89412-1785134395225828700.json records 54/54 mandatory cases, stable IDs, requested/satisfied/blocked capabilities, connection and wire identities, sanitized normalized transcripts, exact expected/observed results, null mismatches, and FAILED_SPIKE_REQUIRES_OPERATOR_DECISION."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-003",
       "requirement": "Redirect, cookie/credential, proxy, DNS/SSRF/rebinding, pool partition, retry, range, decompression, metadata/body bounds, streaming byte credits, cancellation acknowledgement, and pool reuse/discard invariants pass positive, boundary, and negative probes.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/fixtures/transport-v1/manifest.json declares 54 canonical mandatory positive, boundary, negative, and typed-block cases across all named families; the strict report consumer independently validates exact family/scenario/capability coverage and concrete resource evidence."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-004",
       "requirement": "No required capability silently downgrades; unavailable address-level SSRF evidence in proxy mode and unavailable fingerprint/wire behavior produce typed blocked-capability outcomes before unsafe execution.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/wp-ff-007-transport-report-89412-1785134395225828700.json records 31 mandatory blocked cases and exact blocker codes; build/crates/fforager-transport/src/lib.rs exports only the proven report/corpus surface and Capability while incomplete mechanisms remain private."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-005",
       "requirement": "Cargo graph, source/build-script, clean-artifact, and linkage/provenance checks prove no BoringSSL, curl/curl-impersonate/curl_cffi, arbitrary external downloader, unapproved FFI/native link, build download, or prebuilt binary was introduced.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/verify-pr-1785134637217474200-89412.json records PASS for locked workspace tests, warnings-denied docs, cargo-deny advisories/bans/licenses/sources, architecture dependency policy, and source provenance with no added forbidden transport dependency."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-006",
       "requirement": "Canonical architecture, PR, and triggered deep gates pass and the aggregate machine-readable verdict is PASS_PURE_RUST_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION; neither verdict claims full network or replacement parity.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/reports/architecture-check-1785133337417317600-80136.json records FF-GATE-ARCH-001 PASS; build/reports/verify-deep-1785133849901780900-91492.json records FF-GATE-DEEP-001 PASS; build/reports/verify-pr-1785134637217474200-89412.json records FF-GATE-PR-001 PASS and re-executes the deep checks on clean commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb; the exact aggregate corpus verdict is FAILED_SPIKE_REQUIRES_OPERATOR_DECISION."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-007",
       "requirement": "The no-context model manual documents deterministic/local and opt-in live cases, report fields, transcript sanitization, security boundaries, failure reproduction, cancellation recovery, and the dependency-exception boundary.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "product/MODEL_MANUAL.md documents the locked command, unique reports, local deterministic scope, fields, sanitization, limits, security boundaries, typed blockers, recovery, later dependency decision, FF-GATE-RUNTIME-001 requirement, and zero-progress ceiling; structured MANUAL_REVIEW records PASS."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-008",
       "requirement": "WP-007 owns a versioned mandatory corpus covering fingerprint, wire, SSRF/rebinding, redirects, cookie/credential scope, pooling identity, replay, bounds, byte credits, and cancellation; it reuses WP-004 stable-ID and transcript-normalization conventions without claiming WP-004 supplied those transport semantics.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "build/fixtures/transport-v1/manifest.json is the WP-007-owned 54-case corpus; build/crates/fforager-transport/src/corpus.rs and the strict xtask consumer enforce exact declaration and semantic digests while reusing stable IDs and transcript normalization without attributing transport semantics to WP-004."
+      ]
     }
   ],
   "recovery": {
@@ -187,14 +203,28 @@
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "PASS: fforager-transport 22/22 library tests",
+      "PASS: two fresh 54/54 transport corpus executions produced the same pinned semantic projection and candidate digest",
+      "PASS: strict independent consumer rejected behavior mutation and a self-consistent fabricated producer digest",
+      "PASS: cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+      "PASS: cargo clippy --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked -- -D warnings",
+      "PASS: FF-GATE-ARCH-001; build/reports/architecture-check-1785133337417317600-80136.json",
+      "PASS: FF-GATE-RUNTIME-001 prerequisite ceiling; build/reports/runtime-truth-check-1785133209907899900-34008.json",
+      "PASS: FF-GATE-DEEP-001; build/reports/verify-deep-1785133849901780900-91492.json",
+      "PASS: FF-GATE-PR-001 on clean commit 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb; build/reports/verify-pr-1785134637217474200-89412.json",
+      "PASS: oracle-integrity reviewer Anscombe, transport-security reviewer Halley, and resource-architecture reviewer Poincare each returned final PASS after remediation"
+    ],
     "not_proven": [
-      "Any pure-Rust fingerprint-capable transport suitability",
-      "Any transport/fingerprint corpus case",
-      "SSRF, redirect, cookie, pooling, streaming, replay, or cancellation safety",
-      "Dependency-boundary compliance of a future implementation",
+      "Browser TLS fingerprint parity or HTTP/2 fingerprint parity",
+      "HTTP/2 transport, proxy peer-address evidence, integrated compression, or decompression bounds",
+      "Authoritative public-suffix cookie enforcement, integrated redirect execution, resolver provenance, or complete special-use registry enforcement",
+      "Real pool execution context or an integrated retry executor",
+      "Suitability of any pure-Rust transport candidate for a later application consumer",
+      "Dependency-boundary compliance of any future implementation beyond this non-shipped spike",
       "Full network compatibility or replacement parity",
-      "A PASS_PURE_RUST_PATH verdict; implementation is authorized but unproven"
+      "Cross-platform behavior beyond this Windows proof run",
+      "Any product, capability, runtime, packaging, release, or phase progress"
     ]
   },
   "extensions": {

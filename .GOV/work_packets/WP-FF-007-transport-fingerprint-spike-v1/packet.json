@@ -284,7 +284,7 @@
           "Oracle-integrity reviewer Anscombe independently inspected manifest completeness, semantic projection, producer/consumer separation, counterfactual discrimination, and report fabrication paths; the final verdict was PASS.",
           "Transport-security reviewer Halley independently inspected capability visibility, SSRF and redirect behavior, cookie scope, fingerprint downgrade, empty-capability execution, and blocked-capability honesty; the final verdict was PASS.",
           "Resource-architecture reviewer Poincare independently inspected byte credits, allocation preflight, cancellation acknowledgement, worker reaping, timing and limit evidence, report identity, and canonical gate integration; the final verdict was PASS.",
-          "The primary reran the 22-test transport suite, mutation-sensitive report consumer, warnings-denied workspace Clippy, two fresh 54-case corpus runs, architecture gate, runtime-truth gate, and complete deep gate after all reviewer findings were remediated."
+          "The primary reran the 22-test transport suite, mutation-sensitive report consumer, warnings-denied workspace Clippy, two fresh 54-case corpus runs, architecture gate, runtime-truth gate, and deep gate after all reviewer findings were remediated."
         ],
         "COUNTERFACTUAL_CHECKS": [
           "The strict consumer independently reconstructs the semantic projection, mutates one accepted semantic fact, and proves the same comparison rejects that altered report.",

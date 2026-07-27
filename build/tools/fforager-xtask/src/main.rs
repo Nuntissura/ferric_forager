@@ -20,6 +20,10 @@ const ARCH_GATE: &str = "FF-GATE-ARCH-001";
 const PR_GATE: &str = "FF-GATE-PR-001";
 const RUNTIME_GATE: &str = "FF-GATE-RUNTIME-001";
 const DEEP_GATE: &str = "FF-GATE-DEEP-001";
+const TRANSPORT_MANIFEST_DECLARATION_SHA256: &str =
+    "31f52c2b188fdf68252cf4294adfb5d93f6080ac5fb6b565e2f3ba46f42ecf02";
+const TRANSPORT_SEMANTIC_PROJECTION_SHA256: &str =
+    "35bfe562e409375b3a0811456e2eb7820485dc2c71427b891767c90c2af8bfbc";
 const FAILURE_PROOF_CLASS: &str = "structural";
 static COMMAND_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
@@ -499,6 +503,7 @@ fn run() -> Result<(), String> {
         [command, rest @ ..] if command == "compatibility-live-canaries" => {
             compatibility::run_live_canaries(&root, &args, rest)
         }
+        [command] if command == "transport-corpus" => run_transport_corpus(&root),
         [gate, evidence] if gate == "verify-pr" && evidence == "--evidence-from-taskboard" => {
             run_verify_pr(&root, &args)
         }
@@ -515,7 +520,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|transport-corpus|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -590,7 +595,8 @@ fn run_verify_deep(root: &Path, gate_args: &[String]) -> Result<(), String> {
 
 fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
-    let architecture = run_verify_deep_checks(root, &mut checks)?;
+    let mut transport_report = String::new();
+    let architecture = run_verify_deep_checks(root, &mut checks, &mut transport_report)?;
     let executed_proof_classes = executed_proof_classes(&checks, &architecture.fixtures);
     let aggregate_executed_proof_class = aggregate_executed_proof_class(&executed_proof_classes);
     let report = GateReport {
@@ -607,6 +613,7 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
         rules: architecture.rules.clone(),
         fixtures: architecture.fixtures,
         declared_supported_proof_classes: vec![
+            "counterfactual".to_owned(),
             "graph".to_owned(),
             "negative_fixture".to_owned(),
             "public_boundary".to_owned(),
@@ -624,6 +631,7 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
         artifacts: vec![
             "build/fixtures/contracts/inventory.json".to_owned(),
             "build/reports".to_owned(),
+            transport_report,
             "build/target".to_owned(),
         ],
     };
@@ -635,11 +643,13 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
 fn run_verify_deep_checks(
     root: &Path,
     checks: &mut Vec<Check>,
+    transport_report: &mut String,
 ) -> Result<ArchitectureResult, String> {
     verify_tool_identities(root, checks)?;
     run_rust_verification(root, checks)?;
     execute_public_boundary_counterexample_test(root, checks)?;
     execute_compatibility_replay_boundaries(root, checks)?;
+    execute_transport_corpus(root, checks)?.clone_into(transport_report);
     run_doctests(root, checks)?;
     validate_contract_inventory(root, checks)?;
     validate_contract_manual(root, checks)?;
@@ -648,9 +658,770 @@ fn run_verify_deep_checks(
     checks.append(&mut architecture.checks);
     checks.push(pass(
         "deep-proof-surface",
-        "locked workspace, contract inventory, model manual, data-only scan, public-boundary counterexamples, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
+        "locked workspace, contract inventory, model manual, data-only scan, public-boundary counterexamples, transport corpus, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
     ));
     Ok(architecture)
+}
+
+fn run_transport_corpus(root: &Path) -> Result<(), String> {
+    let mut checks = Vec::new();
+    let report = execute_transport_corpus(root, &mut checks)?;
+    println!("COMPLETE WP-FF-007 transport corpus; report={report}");
+    Ok(())
+}
+
+fn execute_transport_corpus(root: &Path, checks: &mut Vec<Check>) -> Result<String, String> {
+    let source_before = source_state(root)?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("transport report clock: {error}"))?
+        .as_nanos();
+    let report_relative = format!(
+        "build/reports/wp-ff-007-transport-report-{}-{nonce}.json",
+        std::process::id()
+    );
+    let report_path = root.join(&report_relative);
+    if report_path.exists() {
+        return Err(format!(
+            "transport report path unexpectedly exists: {report_relative}"
+        ));
+    }
+    let args = [
+        "run".to_owned(),
+        "--manifest-path".to_owned(),
+        "build/Cargo.toml".to_owned(),
+        "--locked".to_owned(),
+        "-p".to_owned(),
+        "fforager-transport".to_owned(),
+        "--bin".to_owned(),
+        "fforager-transport-corpus".to_owned(),
+        "--".to_owned(),
+        "--manifest".to_owned(),
+        "build/fixtures/transport-v1/manifest.json".to_owned(),
+        "--report".to_owned(),
+        report_relative.clone(),
+    ];
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = cargo_proof_output(root, "cargo", &arg_refs)?;
+    if !output.contains("FAILED_SPIKE_REQUIRES_OPERATOR_DECISION")
+        && !output.contains("PASS_PURE_RUST_PATH")
+    {
+        return Err("transport corpus output omitted aggregate verdict".to_owned());
+    }
+    let report_verdict = validate_transport_report(root, &report_path)?;
+    let opposite_verdict = if report_verdict == "PASS_PURE_RUST_PATH" {
+        "FAILED_SPIKE_REQUIRES_OPERATOR_DECISION"
+    } else {
+        "PASS_PURE_RUST_PATH"
+    };
+    if !output.contains(&report_verdict) || output.contains(opposite_verdict) {
+        return Err("transport corpus stdout/report verdict mismatch".to_owned());
+    }
+    let source_after = source_state(root)?;
+    if source_before.git_commit != source_after.git_commit
+        || source_before.dirty != source_after.dirty
+        || source_before.dirty_paths != source_after.dirty_paths
+        || source_before.content_fingerprint != source_after.content_fingerprint
+    {
+        return Err("source changed while transport corpus executed".to_owned());
+    }
+    checks.push(pass_with_class(
+        "wp-ff-007-transport-corpus",
+        "semantic",
+        "non-shipped local transport corpus and strict report consumer",
+        &format!("fresh strict report validated at {report_relative}; source remained stable"),
+    ));
+    Ok(report_relative)
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_transport_report(root: &Path, path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("read transport report {}: {error}", path.display()))?;
+    let report: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("parse transport report {}: {error}", path.display()))?;
+    let object = report
+        .as_object()
+        .ok_or("transport report root is not an object")?;
+    let expected_top = BTreeSet::from([
+        "schema_id",
+        "corpus_id",
+        "normalization_version",
+        "candidate_identity",
+        "manifest_declaration_sha256",
+        "candidate_implementation_sha256",
+        "semantic_projection_sha256",
+        "zero_product_progress",
+        "cases",
+        "summary",
+        "counterfactual",
+        "residual_uncertainties",
+        "verdict",
+    ]);
+    let observed_top = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if observed_top != expected_top {
+        return Err(format!(
+            "transport report top-level schema drift: {observed_top:?}"
+        ));
+    }
+    if object.get("schema_id").and_then(Value::as_str)
+        != Some("fforager.transport-corpus-report.v1")
+        || object.get("corpus_id").and_then(Value::as_str) != Some("WP-FF-007-transport-corpus-v1")
+        || object.get("zero_product_progress").and_then(Value::as_bool) != Some(true)
+        || object
+            .get("manifest_declaration_sha256")
+            .and_then(Value::as_str)
+            != Some(TRANSPORT_MANIFEST_DECLARATION_SHA256)
+    {
+        return Err("transport report authority or zero-progress binding mismatch".to_owned());
+    }
+    let candidate_digest = transport_candidate_source_sha256(root)?;
+    if object
+        .get("candidate_implementation_sha256")
+        .and_then(Value::as_str)
+        != Some(candidate_digest.as_str())
+        || object
+            .get("semantic_projection_sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|value| value.len() != 64)
+    {
+        return Err("transport report implementation or semantic digest invalid".to_owned());
+    }
+    let verdict = object
+        .get("verdict")
+        .and_then(Value::as_str)
+        .ok_or("transport report verdict missing")?;
+    if !matches!(
+        verdict,
+        "PASS_PURE_RUST_PATH" | "FAILED_SPIKE_REQUIRES_OPERATOR_DECISION"
+    ) {
+        return Err(format!("transport report verdict invalid: {verdict}"));
+    }
+    let cases = object
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("transport report cases missing")?;
+    if cases.is_empty() {
+        return Err("transport report cases empty".to_owned());
+    }
+    let manifest_bytes = fs::read(root.join("build/fixtures/transport-v1/manifest.json"))
+        .map_err(|error| format!("read canonical transport manifest: {error}"))?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("parse canonical transport manifest: {error}"))?;
+    let manifest_object = manifest
+        .as_object()
+        .ok_or("canonical transport manifest root is not an object")?;
+    if manifest_object.get("schema_id").and_then(Value::as_str)
+        != Some("fforager.transport-corpus-manifest.v1")
+        || manifest_object.get("corpus_id").and_then(Value::as_str)
+            != Some("WP-FF-007-transport-corpus-v1")
+        || manifest_object
+            .get("normalization_version")
+            .and_then(Value::as_str)
+            != object.get("normalization_version").and_then(Value::as_str)
+        || manifest_object
+            .get("candidate_identity")
+            .and_then(Value::as_str)
+            != object.get("candidate_identity").and_then(Value::as_str)
+    {
+        return Err("canonical transport manifest/report authority mismatch".to_owned());
+    }
+    let declarations = manifest_object
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("canonical transport manifest cases missing")?;
+    if declarations.len() != cases.len() {
+        return Err(format!(
+            "transport report case cardinality mismatch: expected {}, observed {}",
+            declarations.len(),
+            cases.len()
+        ));
+    }
+    let mut blocked_case_count = 0_u64;
+    let mut blocked_codes = BTreeSet::new();
+    for (index, case) in cases.iter().enumerate() {
+        let case = case
+            .as_object()
+            .ok_or("transport report case is not an object")?;
+        let declaration = declarations[index]
+            .as_object()
+            .ok_or("canonical transport declaration is not an object")?;
+        let expected_case_fields = BTreeSet::from([
+            "id",
+            "mandatory",
+            "proof_class",
+            "family",
+            "scenario_class",
+            "concrete_input",
+            "executed_boundary",
+            "requested_capabilities",
+            "satisfied_capabilities",
+            "blocked_capabilities",
+            "connection_identity",
+            "wire_identity",
+            "pool_identity",
+            "selected_address",
+            "proxy_identity",
+            "alpn_identity",
+            "protocol_identity",
+            "limits",
+            "timing_phases_micros",
+            "transcript",
+            "expected_outcome",
+            "observed_outcome",
+            "status",
+            "exact_mismatch",
+            "skipped_semantic_dependencies",
+            "duration_micros",
+        ]);
+        let observed_case_fields = case.keys().map(String::as_str).collect::<BTreeSet<_>>();
+        if observed_case_fields != expected_case_fields {
+            return Err(format!(
+                "transport report case schema drift: {observed_case_fields:?}"
+            ));
+        }
+        for field in [
+            "id",
+            "family",
+            "scenario_class",
+            "executed_boundary",
+            "connection_identity",
+            "wire_identity",
+            "pool_identity",
+            "selected_address",
+            "proxy_identity",
+            "alpn_identity",
+            "protocol_identity",
+        ] {
+            if case
+                .get(field)
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            {
+                return Err(format!("transport report case omits {field}"));
+            }
+        }
+        if !case.get("transcript").is_some_and(Value::is_object)
+            || !case
+                .get("timing_phases_micros")
+                .and_then(Value::as_object)
+                .is_some_and(|phases| phases.contains_key("total"))
+            || case.get("status").and_then(Value::as_str) != Some("PASS")
+        {
+            return Err("transport report case evidence shape is invalid".to_owned());
+        }
+        let case_id = case.get("id").and_then(Value::as_str).unwrap_or_default();
+        let limits = case
+            .get("limits")
+            .and_then(Value::as_object)
+            .filter(|limits| !limits.is_empty())
+            .ok_or_else(|| format!("transport report case omits limits: {case_id}"))?;
+        validate_transport_limits(case_id, limits)?;
+        let declaration_id = declaration
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("canonical transport declaration id missing")?;
+        let kind = declaration
+            .get("kind")
+            .and_then(Value::as_str)
+            .ok_or("canonical transport declaration kind missing")?;
+        let (expected_family, expected_scenario) = transport_kind_contract(kind)?;
+        if case_id != declaration_id
+            || case.get("mandatory").and_then(Value::as_bool) != Some(true)
+            || declaration.get("mandatory").and_then(Value::as_bool) != Some(true)
+            || case.get("proof_class") != declaration.get("proof_class")
+            || case.get("expected_outcome") != declaration.get("expected_outcome")
+            || case.get("observed_outcome") != declaration.get("expected_outcome")
+            || case.get("exact_mismatch") != Some(&Value::Null)
+            || case.get("family").and_then(Value::as_str) != Some(expected_family)
+            || case.get("scenario_class").and_then(Value::as_str) != Some(expected_scenario)
+        {
+            return Err(format!(
+                "transport report declaration/outcome drift: {declaration_id}"
+            ));
+        }
+        validate_transport_transcript(case, declaration_id, expected_family, expected_scenario)?;
+        let requested = json_string_set(case.get("requested_capabilities"), "requested")?;
+        let declared_requested = json_string_set(
+            declaration.get("requested_capabilities"),
+            "manifest requested",
+        )?;
+        if requested != declared_requested {
+            return Err(format!(
+                "transport report requested capability drift: {declaration_id}"
+            ));
+        }
+        let satisfied = json_string_set(case.get("satisfied_capabilities"), "satisfied")?;
+        let blocked = case
+            .get("blocked_capabilities")
+            .and_then(Value::as_array)
+            .ok_or("transport report blocked capabilities missing")?;
+        let blocked_set = blocked
+            .iter()
+            .map(|item| {
+                item.as_object()
+                    .and_then(|object| object.get("capability"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .ok_or("transport report blocked capability malformed")
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let expected_satisfied = requested
+            .iter()
+            .filter(|capability| transport_supported_capability(capability))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let expected_blocked = requested
+            .iter()
+            .filter(|capability| !transport_supported_capability(capability))
+            .map(|capability| transport_blocked_diagnostic(capability))
+            .collect::<Result<Vec<_>, _>>()?;
+        if satisfied != expected_satisfied || blocked.len() != expected_blocked.len() {
+            return Err(format!(
+                "transport report candidate decision drift: {declaration_id}"
+            ));
+        }
+        for (actual, expected) in blocked.iter().zip(expected_blocked.iter()) {
+            if actual != expected {
+                return Err(format!(
+                    "transport report blocked diagnostic drift: {declaration_id}"
+                ));
+            }
+            blocked_codes.insert(
+                expected
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
+        }
+        if !satisfied.is_disjoint(&blocked_set)
+            || satisfied
+                .union(&blocked_set)
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                != requested
+        {
+            return Err("transport report capability partition is contradictory".to_owned());
+        }
+        if !blocked_set.is_empty() {
+            blocked_case_count = blocked_case_count.saturating_add(1);
+        }
+    }
+    let summary = object
+        .get("summary")
+        .and_then(Value::as_object)
+        .ok_or("transport report summary missing")?;
+    let count = u64::try_from(cases.len()).map_err(|error| error.to_string())?;
+    if summary.get("total").and_then(Value::as_u64) != Some(count)
+        || summary.get("passed").and_then(Value::as_u64) != Some(count)
+        || summary.get("failed").and_then(Value::as_u64) != Some(0)
+        || summary.get("mandatory_total").and_then(Value::as_u64) != Some(count)
+        || summary.get("mandatory_passed").and_then(Value::as_u64) != Some(count)
+        || summary.get("mandatory_blocked").and_then(Value::as_u64) != Some(blocked_case_count)
+    {
+        return Err("transport report summary does not match case evidence".to_owned());
+    }
+    let expected_blocked_codes = blocked_codes
+        .into_iter()
+        .map(Value::String)
+        .collect::<Vec<_>>();
+    if summary
+        .get("blocked_capability_codes")
+        .and_then(Value::as_array)
+        != Some(&expected_blocked_codes)
+    {
+        return Err("transport report blocked-code summary mismatch".to_owned());
+    }
+    let expected_verdict = if blocked_case_count == 0 {
+        "PASS_PURE_RUST_PATH"
+    } else {
+        "FAILED_SPIKE_REQUIRES_OPERATOR_DECISION"
+    };
+    if verdict != expected_verdict {
+        return Err("transport report verdict contradicts blocked evidence".to_owned());
+    }
+    validate_transport_semantic_digest(
+        cases,
+        object
+            .get("semantic_projection_sha256")
+            .and_then(Value::as_str)
+            .ok_or("transport report semantic projection digest missing")?,
+    )?;
+    if object
+        .get("counterfactual")
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("rejected_by_same_oracle"))
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return Err("transport report counterfactual was not rejected".to_owned());
+    }
+    let counterfactual = object
+        .get("counterfactual")
+        .and_then(Value::as_object)
+        .ok_or("transport report counterfactual missing")?;
+    if counterfactual.get("mutation").and_then(Value::as_str)
+        != Some(
+            "remove one supported adapter capability; separately clear blocked evidence while preserving declarations",
+        )
+        || counterfactual
+            .get("rejection")
+            .and_then(Value::as_str)
+            .is_none_or(|value| {
+                !value.contains("behavior=")
+                    || !value.contains("evidence=")
+                    || value.contains("accepted")
+            })
+    {
+        return Err("transport report counterfactual detail invalid".to_owned());
+    }
+    validate_transport_counterfactual(cases)?;
+    Ok(verdict.to_owned())
+}
+
+fn validate_transport_counterfactual(cases: &[Value]) -> Result<(), String> {
+    let supported_case = cases
+        .iter()
+        .filter_map(Value::as_object)
+        .find(|case| {
+            case.get("blocked_capabilities")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
+        })
+        .ok_or("transport consumer counterfactual has no supported case")?;
+    let requested = json_string_set(
+        supported_case.get("requested_capabilities"),
+        "counterfactual requested",
+    )?;
+    let removed = requested
+        .iter()
+        .find(|capability| transport_supported_capability(capability))
+        .ok_or("transport consumer counterfactual has no removable capability")?;
+    let observed_satisfied = json_string_set(
+        supported_case.get("satisfied_capabilities"),
+        "counterfactual satisfied",
+    )?;
+    if !observed_satisfied.contains(removed) {
+        return Err("transport consumer behavior counterfactual is not discriminating".to_owned());
+    }
+
+    let blocked_case = cases
+        .iter()
+        .filter_map(Value::as_object)
+        .find(|case| {
+            case.get("blocked_capabilities")
+                .and_then(Value::as_array)
+                .is_some_and(|blocked| !blocked.is_empty())
+        })
+        .ok_or("transport consumer counterfactual has no blocked case")?;
+    let blocked_requested = json_string_set(
+        blocked_case.get("requested_capabilities"),
+        "counterfactual blocked requested",
+    )?;
+    let blocked_satisfied = json_string_set(
+        blocked_case.get("satisfied_capabilities"),
+        "counterfactual blocked satisfied",
+    )?;
+    if blocked_requested == blocked_satisfied {
+        return Err("transport consumer evidence counterfactual is not discriminating".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_transport_semantic_digest(cases: &[Value], claimed: &str) -> Result<(), String> {
+    let semantic_projection = cases
+        .iter()
+        .map(transport_semantic_projection)
+        .collect::<Result<Vec<_>, _>>()?;
+    let semantic_bytes = serde_json::to_vec(&semantic_projection)
+        .map_err(|error| format!("serialize transport semantic projection: {error}"))?;
+    let recomputed = encode_sha256(&semantic_bytes);
+    if claimed != recomputed || recomputed != TRANSPORT_SEMANTIC_PROJECTION_SHA256 {
+        return Err("transport report semantic projection digest mismatch".to_owned());
+    }
+    Ok(())
+}
+
+fn transport_supported_capability(capability: &str) -> bool {
+    matches!(
+        capability,
+        "http11"
+            | "range"
+            | "streaming"
+            | "replay"
+            | "cancellation"
+            | "metadata_bounds"
+            | "body_bounds"
+    )
+}
+
+fn transport_blocked_diagnostic(capability: &str) -> Result<Value, String> {
+    let (code, reason) = match capability {
+        "tls_fingerprint" => (
+            "FF-TRANSPORT-E-TLS-FINGERPRINT-BLOCKED",
+            "the authorized std-first candidate has no browser ClientHello parity mechanism",
+        ),
+        "http2_fingerprint" => (
+            "FF-TRANSPORT-E-H2-FINGERPRINT-BLOCKED",
+            "the authorized std-first candidate has no browser HTTP/2 wire parity mechanism",
+        ),
+        "http2" => (
+            "FF-TRANSPORT-E-HTTP2-BLOCKED",
+            "the bounded std-first candidate implements only HTTP/1.1 local evidence",
+        ),
+        "proxy" => (
+            "FF-TRANSPORT-E-PROXY-EVIDENCE-BLOCKED",
+            "no trusted proxy destination-evidence contract is available",
+        ),
+        "compression" => (
+            "FF-TRANSPORT-E-COMPRESSION-BLOCKED",
+            "no authorized decompressor implementation is present in the candidate",
+        ),
+        "decompression_bounds" => (
+            "FF-TRANSPORT-E-DECOMPRESSION-BOUNDS-BLOCKED",
+            "no authorized decompressor exists through which decompressed-byte admission can be enforced",
+        ),
+        "redirect_policy" => (
+            "FF-TRANSPORT-E-REDIRECT-INTEGRATION-BLOCKED",
+            "redirect targets are not integrated with authoritative DNS and peer-address SSRF validation",
+        ),
+        "cookie_scope" => (
+            "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED",
+            "no versioned authoritative public-suffix snapshot with wildcard and exception semantics is present",
+        ),
+        "dns_provenance" => (
+            "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED",
+            "the candidate has no resolver-bound DNS provenance implementation",
+        ),
+        "ssrf_policy" => (
+            "FF-TRANSPORT-E-SSRF-REGISTRY-BLOCKED",
+            "the candidate has no generated complete current special-purpose address registry",
+        ),
+        "pool_partition" => (
+            "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED",
+            "pool identity is not derived from immutable candidate execution context",
+        ),
+        "retry_bounds" => (
+            "FF-TRANSPORT-E-RETRY-EXECUTOR-BLOCKED",
+            "retry policy is not integrated with request attempts, deadlines, cancellation, and partial-body state",
+        ),
+        other => {
+            return Err(format!(
+                "transport manifest contains unknown blocked capability: {other}"
+            ));
+        }
+    };
+    Ok(serde_json::json!({
+        "capability": capability,
+        "code": code,
+        "reason": reason
+    }))
+}
+
+#[allow(clippy::too_many_lines)]
+fn transport_kind_contract(kind: &str) -> Result<(&'static str, &'static str), String> {
+    let contract = match kind {
+        "tls_fingerprint_blocked" => ("tls_fingerprint", "blocked"),
+        "http2_fingerprint_blocked" => ("http2_fingerprint", "blocked"),
+        "http2_blocked" => ("http2", "blocked"),
+        "proxy_blocked" => ("proxy", "blocked"),
+        "compression_blocked" => ("compression", "blocked"),
+        "standard_capability" => ("capability_contract", "positive"),
+        "http11_local" => ("http11", "positive"),
+        "http11_header_boundary" => ("http11", "boundary"),
+        "http11_huge_length" => ("http11", "negative"),
+        "range_local" => ("range", "positive"),
+        "range_boundary" => ("range", "boundary"),
+        "range_invalid" => ("range", "negative"),
+        "streaming_positive" => ("streaming", "positive"),
+        "streaming_local" => ("streaming", "boundary"),
+        "byte_credit" => ("streaming", "negative"),
+        "redirect_cross_origin" => ("redirect", "positive"),
+        "redirect_limit" => ("redirect", "boundary"),
+        "redirect_downgrade" | "redirect_special_use" => ("redirect", "negative"),
+        "cookie_scope" => ("cookie", "positive"),
+        "cookie_count_boundary" => ("cookie", "boundary"),
+        "cookie_public_suffix" | "cookie_ip_domain" | "cookie_syntax" => ("cookie", "negative"),
+        "dns_positive" => ("dns_ssrf", "positive"),
+        "dns_provenance_mismatch"
+        | "ssrf_mixed_answers"
+        | "ssrf_registry_boundary"
+        | "dns_selection"
+        | "dns_rebind" => ("dns_ssrf", "negative"),
+        "proxy_evidence_positive" => ("proxy", "positive"),
+        "proxy_evidence" => ("proxy", "negative"),
+        "pool_reuse" | "pool_all_dimensions" => ("pool", "positive"),
+        "pool_bound" => ("pool", "boundary"),
+        "pool_session_partition" | "pool_fingerprint_partition" => ("pool", "negative"),
+        "bounds_positive" => ("bounds", "positive"),
+        "bounds_exact" => ("bounds", "boundary"),
+        "metadata_bound" | "body_bound" => ("bounds", "negative"),
+        "decompression_bound" => ("compression", "negative"),
+        "retry_allowed" => ("retry", "boundary"),
+        "retry_bound" => ("retry", "negative"),
+        "cancellation_positive" | "cancellation_pool" => ("cancellation", "positive"),
+        "cancellation_boundary" => ("cancellation", "boundary"),
+        "cancellation_correlation" => ("cancellation", "negative"),
+        "sanitized_replay" => ("replay", "positive"),
+        "replay_boundary" => ("replay", "boundary"),
+        "replay_negative" => ("replay", "negative"),
+        "url_positive" => ("url", "positive"),
+        "url_boundary" => ("url", "boundary"),
+        "url_bounds" => ("url", "negative"),
+        other => return Err(format!("unknown canonical transport case kind: {other}")),
+    };
+    Ok(contract)
+}
+
+fn validate_transport_transcript(
+    case: &serde_json::Map<String, Value>,
+    id: &str,
+    family: &str,
+    scenario: &str,
+) -> Result<(), String> {
+    let transcript = case
+        .get("transcript")
+        .and_then(Value::as_object)
+        .ok_or("transport transcript is not an object")?;
+    let expected_fields = BTreeSet::from([
+        "normalization_version",
+        "case_id",
+        "family",
+        "scenario_class",
+        "executed_boundary",
+        "result",
+        "exchange",
+    ]);
+    if transcript
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_fields
+        || transcript
+            .get("normalization_version")
+            .and_then(Value::as_str)
+            != Some("WP-FF-004-sanitized-transcript-v1")
+        || transcript.get("case_id").and_then(Value::as_str) != Some(id)
+        || transcript.get("family").and_then(Value::as_str) != Some(family)
+        || transcript.get("scenario_class").and_then(Value::as_str) != Some(scenario)
+        || transcript.get("executed_boundary") != case.get("executed_boundary")
+        || transcript.get("result") != case.get("observed_outcome")
+        || !transcript.contains_key("exchange")
+    {
+        return Err(format!("transport transcript semantic drift: {id}"));
+    }
+    Ok(())
+}
+
+fn validate_transport_limits(
+    case_id: &str,
+    limits: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    let required: &[(&str, u64)] = match case_id {
+        "http11-huge-content-length-rejection" => &[
+            ("maximum_body_bytes", 32),
+            ("observed_content_length", u64::MAX),
+        ],
+        "response-metadata-bound" => &[
+            ("maximum_metadata_bytes", 10),
+            ("observed_metadata_bytes", 11),
+        ],
+        "response-body-bound" => &[("maximum_body_bytes", 20), ("observed_body_bytes", 21)],
+        "byte-credit-overrun" => &[
+            ("maximum_body_bytes", 8),
+            ("granted_byte_credits", 4),
+            ("attempted_body_bytes", 5),
+        ],
+        _ => return Ok(()),
+    };
+    for (field, expected) in required {
+        if limits.get(*field).and_then(Value::as_u64) != Some(*expected) {
+            return Err(format!(
+                "transport report limit evidence mismatch: {case_id}:{field}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn transport_semantic_projection(case: &Value) -> Result<Value, String> {
+    let case = case
+        .as_object()
+        .ok_or("transport semantic case is not an object")?;
+    let get = |field: &str| {
+        case.get(field)
+            .cloned()
+            .ok_or_else(|| format!("transport semantic field missing: {field}"))
+    };
+    Ok(serde_json::json!({
+        "id": get("id")?,
+        "family": get("family")?,
+        "scenario_class": get("scenario_class")?,
+        "requested": get("requested_capabilities")?,
+        "satisfied": get("satisfied_capabilities")?,
+        "blocked": get("blocked_capabilities")?,
+        "connection_identity": get("connection_identity")?,
+        "wire_identity": get("wire_identity")?,
+        "pool_identity": get("pool_identity")?,
+        "selected_address": get("selected_address")?,
+        "proxy_identity": get("proxy_identity")?,
+        "alpn_identity": get("alpn_identity")?,
+        "protocol_identity": get("protocol_identity")?,
+        "limits": get("limits")?,
+        "transcript": get("transcript")?,
+        "expected": get("expected_outcome")?,
+        "observed": get("observed_outcome")?,
+        "status": get("status")?
+    }))
+}
+
+fn encode_sha256(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(bytes);
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn json_string_set(value: Option<&Value>, field: &str) -> Result<BTreeSet<String>, String> {
+    value
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("transport report {field} capabilities missing"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("transport report {field} capability malformed"))
+        })
+        .collect()
+}
+
+fn transport_candidate_source_sha256(root: &Path) -> Result<String, String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut digest = Sha256::new();
+    for relative in [
+        "build/crates/fforager-transport/src/lib.rs",
+        "build/crates/fforager-transport/src/policy.rs",
+        "build/crates/fforager-transport/src/local_server.rs",
+        "build/crates/fforager-transport/src/corpus.rs",
+        "build/crates/fforager-transport/src/bin/fforager-transport-corpus.rs",
+    ] {
+        let bytes = fs::read(root.join(relative))
+            .map_err(|error| format!("read transport candidate source {relative}: {error}"))?;
+        digest.update(bytes);
+    }
+    let bytes = digest.finalize();
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
 }
 
 fn execute_compatibility_replay_boundaries(
@@ -6672,7 +7443,8 @@ fn run_verify_pr(root: &Path, gate_args: &[String]) -> Result<(), String> {
 fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
     validate_change_evidence(root, &mut checks)?;
-    let architecture = run_verify_deep_checks(root, &mut checks)?;
+    let mut transport_report = String::new();
+    let architecture = run_verify_deep_checks(root, &mut checks, &mut transport_report)?;
     run_command_with_env(
         root,
         "docs",
@@ -6716,7 +7488,11 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
     declared_supported_proof_classes.dedup();
     let mut proof_limitations = architecture.limitations;
     proof_limitations.extend(runtime.limitations);
-    let mut artifacts = vec!["build/target".to_owned(), "build/reports".to_owned()];
+    let mut artifacts = vec![
+        "build/target".to_owned(),
+        "build/reports".to_owned(),
+        transport_report,
+    ];
     artifacts.extend(runtime.artifacts);
     artifacts.sort();
     artifacts.dedup();
@@ -7359,6 +8135,7 @@ fn validate_finding_dispositions(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> {
     match finding_id {
         "WP-FF-005-FINDING-WIRE-001" => {
@@ -7418,6 +8195,18 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-006-FINDING-FATAL-TYPING-008" => Some("WP-FF-006-PROBE-PATH-CONFINEMENT"),
         "WP-FF-006-FINDING-QUARANTINE-009" => Some("WP-FF-006-PROBE-QUARANTINE"),
         "WP-FF-006-FINDING-RAII-REAP-010" => Some("fforager_js_corpus::Supervisor::drop"),
+        "WP-FF-007-FINDING-ORACLE-PIN-001" | "WP-FF-007-FINDING-REPORT-PATH-004" => {
+            Some("xtask::tests::transport_semantic_projection_is_mutation_sensitive")
+        }
+        "WP-FF-007-FINDING-PUBLIC-BOUNDARY-002" => Some(
+            "fforager_transport::policy::tests::adapter_rejects_empty_capabilities_and_redirect_special_use",
+        ),
+        "WP-FF-007-FINDING-RESOURCE-EVIDENCE-003" => Some(
+            "fforager_transport::local_server::tests::declared_huge_body_is_rejected_before_allocation",
+        ),
+        "WP-FF-007-FINDING-DEEP-DECLARATION-005" => Some(
+            "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution",
+        ),
         "WP-FF-013-FINDING-SEMANTIC-REPLAY-001" => Some(
             "xtask::compatibility::tests::native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes",
         ),
@@ -7732,6 +8521,8 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
     for directory in [
         "build/fixtures/architecture",
         "build/fixtures/contracts",
+        "build/fixtures/transport-v1",
+        "build/crates/fforager-transport",
         "build/crates/fforager-testkit",
         "build/tools/fforager-xtask/src",
         "product/crates",
@@ -8950,6 +9741,70 @@ mod tests {
     }
 
     #[test]
+    fn transport_semantic_projection_is_mutation_sensitive() {
+        let baseline = serde_json::json!({
+            "id": "case-a",
+            "family": "http11",
+            "scenario_class": "positive",
+            "requested_capabilities": ["http11"],
+            "satisfied_capabilities": ["http11"],
+            "blocked_capabilities": [],
+            "connection_identity": "connection",
+            "wire_identity": "wire",
+            "pool_identity": "pool",
+            "selected_address": "address",
+            "proxy_identity": "direct",
+            "alpn_identity": "none",
+            "protocol_identity": "http/1.1",
+            "limits": {"body_bytes": 1},
+            "transcript": {"case_id": "case-a"},
+            "expected_outcome": "ok",
+            "observed_outcome": "ok",
+            "status": "PASS"
+        });
+        let baseline_projection =
+            transport_semantic_projection(&baseline).expect("baseline projection");
+        let baseline_digest =
+            encode_sha256(&serde_json::to_vec(&vec![baseline_projection]).expect("JSON"));
+        assert!(
+            validate_transport_semantic_digest(std::slice::from_ref(&baseline), &baseline_digest)
+                .is_err(),
+            "self-consistent fabricated evidence must fail the independent pinned digest"
+        );
+        for (field, mutation) in [
+            ("id", serde_json::json!("case-b")),
+            ("family", serde_json::json!("range")),
+            ("scenario_class", serde_json::json!("negative")),
+            ("expected_outcome", serde_json::json!("other")),
+            ("observed_outcome", serde_json::json!("other")),
+            ("status", serde_json::json!("FAIL")),
+            ("transcript", serde_json::json!({})),
+            (
+                "blocked_capabilities",
+                serde_json::json!([{
+                    "capability": "http2",
+                    "code": "forged",
+                    "reason": "forged"
+                }]),
+            ),
+        ] {
+            let mut changed = baseline.clone();
+            changed[field] = mutation;
+            let projection = transport_semantic_projection(&changed).expect("changed projection");
+            let digest = encode_sha256(&serde_json::to_vec(&vec![projection]).expect("JSON"));
+            assert_ne!(
+                baseline_digest, digest,
+                "{field} mutation must change digest"
+            );
+        }
+        let empty_digest = encode_sha256(&serde_json::to_vec(&Vec::<Value>::new()).expect("JSON"));
+        assert_ne!(
+            baseline_digest, empty_digest,
+            "case omission must change digest"
+        );
+    }
+
+    #[test]
     fn cycle_detection_distinguishes_cycle_from_chain() {
         assert!(graph_has_cycle(&[("a", "b"), ("b", "a")]));
         assert!(!graph_has_cycle(&[("a", "b"), ("b", "c")]));
@@ -9161,7 +10016,7 @@ mod tests {
             .and_then(|(_, remainder)| remainder.split_once("fn fail_with_report"))
             .map(|(function, _)| function)
             .unwrap();
-        assert!(pr.contains("run_verify_deep_checks(root, &mut checks)?;"));
+        assert!(pr.contains("run_verify_deep_checks(root, &mut checks, &mut transport_report)?;"));
         assert!(!pr.contains("checks.push(pass(\n        \"verify-deep\""));
     }
 
@@ -9175,6 +10030,7 @@ mod tests {
             .expect("deep report implementation");
         assert!(report.contains("rules: architecture.rules.clone()"));
         assert!(!report.contains("WP-FF-005"));
+        assert!(report.contains("\"counterfactual\".to_owned()"));
 
         let checks = source
             .split_once("fn run_verify_deep_checks")

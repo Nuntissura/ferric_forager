@@ -278,6 +278,44 @@ The worker is quiet and bounded. If an interrupted manual run leaves `fforager-j
 
 </topic>
 
+<topic id="phase-0-transport-fingerprint-spike" status="active" version="1" wp="WP-FF-007-transport-fingerprint-spike-v1" ingestable="true" updated_at="2026-07-27">
+
+## Operate the transport capability and security corpus
+
+WP-FF-007 is a non-shipped Prerequisite 0D spike. It owns the mandatory transport corpus that WP-FF-004 did not provide. WP-FF-004 remains the authority for stable transcript normalization and identifiers; WP-FF-007 owns fingerprint, HTTP wire, redirect, cookie, SSRF/DNS, proxy-evidence, pooling, resource-bound, retry, cancellation, and replay cases. Neither packet provides product transport capability or product-phase progress.
+
+Run the exact corpus from the repository root:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- transport-corpus
+```
+
+The command reads `build/fixtures/transport-v1/manifest.json`, executes `build/crates/fforager-transport`, and atomically writes a unique report under `build/reports/`. The manifest is strict, bounded, and pinned by its canonical declaration SHA-256; removing, adding, retyping, or changing a case fails before execution. All 54 cases are mandatory. Every result records the concrete input, executed boundary, negotiated capability partition, explicit executed/not-executed connection/wire/pool/address/proxy/ALPN/protocol identities, nonempty limits, decision/execution/total timing phases, normalized transcript, exact expected and observed outcomes, skipped semantic dependencies, and proof class. The report binds all candidate/corpus source files and a timing-independent semantic projection digest. The independent xtask consumer reloads the canonical manifest, reconstructs every capability decision and blocked diagnostic, validates exact case declarations/outcomes/transcripts/summaries/verdict, and recomputes the semantic digest. Behavior-deficient and forged-capability counterfactuals must both be rejected by the producer oracle.
+
+The current authorized candidate is `ferric-std-first-transport-spike-v1`. It supports only the capabilities its executable evidence proves: bounded loopback HTTP/1.1, range semantics, coordinated fragmented streaming with byte credits, sanitized replay, in-flight socket cancellation with worker reaping, metadata bounds, and body bounds. Request and response wire identities are frozen by normalized SHA-256 expectations. Policy-model probes remain useful regression tests, but they are private implementation details and do not upgrade candidate capability claims.
+
+The v1 corpus has no opt-in live internet cases. Live proxy, TLS, HTTP/2, or target-site probes are deliberately unavailable and cannot be substituted for the deterministic corpus. Adding a live partition requires a later authorized manifest/version change with separate non-canonical output and secret handling.
+
+Read the aggregate result literally:
+
+- `PASS_PURE_RUST_PATH` means every mandatory capability was executed without a blocked capability.
+- `FAILED_SPIKE_REQUIRES_OPERATOR_DECISION` means all declared case oracles may have passed, but one or more mandatory capabilities were blocked before execution. This is a completed fail-closed spike result, not permission to substitute standard HTTP or claim browser parity.
+
+The std-first candidate currently blocks browser-equivalent TLS ClientHello fingerprinting, browser-equivalent HTTP/2 wire fingerprinting, HTTP/2 execution, trusted proxy destination evidence, compression/decompression, redirect integration, cookie scope, DNS provenance, SSRF policy, pool partition, and retry execution. Redirect stays blocked until each hop is bound to authoritative DNS evidence, a complete generated special-purpose registry, and the actual socket peer. Cookie scope stays blocked until a versioned authoritative PSL implements wildcard and exception rules. Pool partition stays blocked until keys derive from immutable execution context. Retry stays blocked until attempts, idempotency, deadlines, cancellation, and partial-body state cross one executor. A request for any blocked capability returns a typed stable diagnostic before network execution; policy fixtures or standard HTTP must never silently stand in for a complete capability.
+
+Safety and recovery:
+
+- Do not add Python, `yt-dlp`, BoringSSL, curl, curl-impersonate, `curl_cffi`, native TLS, or another external runtime/native dependency.
+- Do not connect the local harness grant to a caller-supplied URL or weaken SSRF policy to reach fixtures.
+- Do not share a pool entry across origin, proxy, TLS, HTTP, fingerprint, client-certificate, session, or credential-scope key differences.
+- Do not persist raw authorization, proxy authorization, cookies, API keys, or secret query values. The report rejects its secret canary.
+- The corpus runner executes the exact committed unknown-field and duplicate-ID negative fixtures on every canonical run. A decorative or skipped negative fixture is a gate failure.
+- If a case differs, inspect its `exact_mismatch`, concrete input, and executed boundary; repair the implementation or declared corpus deliberately and rerun the same command.
+- If the aggregate verdict is failed, retain the blocked-capability list and residual uncertainties for Operator selection. Do not auto-promote or add a forbidden fallback.
+- The canonical `verify-deep` and `verify-pr` gates execute this corpus and therefore refresh the same report.
+
+</topic>
+
 <topic id="runtime-proof-contract" status="active" version="1" wp="WP-FF-012-runtime-truth-gates-v1" ingestable="true" updated_at="2026-07-19">
 
 ## Declare production runtime proof

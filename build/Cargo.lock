@@ -455,6 +455,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fforager-transport"
+version = "0.1.0"
+dependencies = [
+ "fforager-contracts",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "fforager-xtask"
 version = "0.1.0"
 dependencies = [

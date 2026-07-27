@@ -58,6 +58,24 @@ unsafe_policy_ref = "FF-BUILD-050"
 exception_policy_ref = "FF-BUILD-052"
 
 [[members]]
+name = "fforager-transport"
+manifest = "build/crates/fforager-transport/Cargo.toml"
+source_root = "build/crates/fforager-transport/src"
+layer = "build_tooling"
+artifact_role = "non_shipped_transport_capability_spike"
+shipped = false
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = [{ package = "fforager-contracts", kinds = ["normal"], optional = false }]
+split_trigger = "WP-FF-007-transport-fingerprint-spike-v1-AC-002"
+feature_owner = "WP-FF-007-transport-fingerprint-spike-v1"
+profile = "phase0_prerequisite_spike"
+removal_condition = "Remove or replace only after WP-007 records a bounded transport verdict and any successor preserves the mandatory corpus and fail-closed capability contract."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
 name = "fforager-contracts"
 manifest = "product/crates/fforager-contracts/Cargo.toml"
 source_root = "product/crates/fforager-contracts/src"
@@ -431,4 +449,49 @@ reason = "Boa has no exact heap quota, so the WP-005 process memory ceiling requ
 removal_trigger = "The selected engine exposes a validated exact memory cap or the operating-system supervisor migrates to an approved equivalent."
 approval_id = "WP-FF-006-rust-youtube-challenge-spike-v1-AC-004"
 features = ["system"]
+default_features = false
+
+[[dependency_decisions]]
+name = "serde"
+version = "1.0.228"
+consumer = "fforager-transport"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Strictly serialize the WP-007 corpus manifest, case evidence, and aggregate verdict."
+native = false
+owner = "WP-FF-007-transport-fingerprint-spike"
+allowed_consumers = ["fforager-transport"]
+reason = "The mandatory corpus requires deny-unknown-fields DTOs and deterministic machine-readable reports."
+removal_trigger = "The non-shipped spike is removed or its retained corpus migrates through an accepted non-Serde format transition."
+approval_id = "WP-FF-007-transport-fingerprint-spike-v1-AC-002"
+features = ["derive"]
+default_features = true
+
+[[dependency_decisions]]
+name = "serde_json"
+version = "1.0.150"
+consumer = "fforager-transport"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Decode the strict transport corpus and encode deterministic behavioral evidence."
+native = false
+owner = "WP-FF-007-transport-fingerprint-spike"
+allowed_consumers = ["fforager-transport"]
+reason = "WP-004 normalization conventions and existing Ferric proof surfaces use bounded JSON."
+removal_trigger = "The retained corpus and report migrate through an accepted non-JSON compatibility transition."
+approval_id = "WP-FF-007-transport-fingerprint-spike-v1-AC-002"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "sha2"
+version = "0.11.0"
+consumer = "fforager-transport"
+runtime_class = "non_shipped_build_tooling"
+purpose = "Bind manifest, transcript, and candidate evidence to deterministic SHA-256 identities."
+native = false
+owner = "WP-FF-007-transport-fingerprint-spike"
+allowed_consumers = ["fforager-transport"]
+reason = "The spike must prove exact corpus and wire-evidence identities using the already-approved repository digest implementation."
+removal_trigger = "Rust supplies a standard SHA-256 implementation or the retained evidence contract migrates through an accepted digest change."
+approval_id = "WP-FF-007-transport-fingerprint-spike-v1-AC-002"
+features = []
 default_features = false

@@ -2,6 +2,7 @@
 members = [
     "tools/fforager-xtask",
     "crates/fforager-javascript",
+    "crates/fforager-transport",
     "../product/crates/fforager-contracts",
     "../product/crates/fforager-diagnostics-contract",
     "../product/crates/fforager-core",
@@ -10,6 +11,7 @@ members = [
 default-members = [
     "tools/fforager-xtask",
     "crates/fforager-javascript",
+    "crates/fforager-transport",
     "../product/crates/fforager-contracts",
     "../product/crates/fforager-diagnostics-contract",
     "../product/crates/fforager-core",

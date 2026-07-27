@@ -1,4 +1,4 @@
-use crate::{ByteCredits, TransportError};
+use crate::policy::{ByteCredits, TransportError};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -27,6 +28,8 @@ pub struct LocalProtocolServer {
 pub struct LocalHarnessTarget {
     address: SocketAddr,
     authorization: String,
+    fragment_rx: Arc<Mutex<Receiver<usize>>>,
+    fragment_ack_tx: Sender<()>,
 }
 
 impl std::fmt::Debug for LocalHarnessTarget {
@@ -35,7 +38,7 @@ impl std::fmt::Debug for LocalHarnessTarget {
             .debug_struct("LocalHarnessTarget")
             .field("address", &self.address)
             .field("authorization", &"<redacted>")
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -44,6 +47,7 @@ impl std::fmt::Debug for LocalHarnessTarget {
 pub struct CapturedRequest {
     pub request_line: String,
     pub headers: BTreeMap<String, String>,
+    pub normalized_wire_sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +87,8 @@ impl LocalProtocolServer {
         let expected_authorization = authorization.clone();
         let (request_tx, request_rx) = mpsc::sync_channel(1);
         let (stop_tx, stop_rx) = mpsc::channel();
+        let (fragment_tx, fragment_rx) = mpsc::sync_channel(1);
+        let (fragment_ack_tx, fragment_ack_rx) = mpsc::channel();
         let worker = thread::spawn(move || {
             let deadline = Instant::now() + IO_TIMEOUT;
             let (mut stream, request) = loop {
@@ -129,7 +135,12 @@ impl LocalProtocolServer {
                 stream
                     .write_all(&chunk)
                     .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-WRITE: {error}"))?;
-                thread::yield_now();
+                fragment_tx
+                    .send(chunk.len())
+                    .map_err(|_| "FF-TRANSPORT-E-HARNESS-FRAGMENT-RECEIPT".to_owned())?;
+                fragment_ack_rx
+                    .recv_timeout(IO_TIMEOUT)
+                    .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-FRAGMENT-ACK: {error}"))?;
             }
             Ok(())
         });
@@ -137,6 +148,8 @@ impl LocalProtocolServer {
             target: LocalHarnessTarget {
                 address,
                 authorization,
+                fragment_rx: Arc::new(Mutex::new(fragment_rx)),
+                fragment_ack_tx,
             },
             request_rx,
             stop_tx,
@@ -227,7 +240,7 @@ pub fn execute_local(
     stream
         .write_all(request.as_bytes())
         .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-HARNESS-WRITE: {error}")))?;
-    read_response(&mut stream, credits, target.address)
+    read_response(&mut stream, credits, target)
 }
 
 /// Cancels a genuinely in-flight partial HTTP response and reaps its worker.
@@ -336,9 +349,20 @@ fn read_request(stream: &mut TcpStream) -> Result<CapturedRequest, String> {
             return Err("FF-TRANSPORT-E-HARNESS-DUPLICATE-HEADER".to_owned());
         }
     }
+    let mut normalized_wire = format!("{request_line}\n");
+    for (name, value) in &headers {
+        let normalized_value = match name.as_str() {
+            "x-ff-harness-authorization" => "{{HARNESS_AUTHORIZATION}}".to_owned(),
+            "host" if value.starts_with("127.0.0.1:") => "127.0.0.1:{{PORT}}".to_owned(),
+            _ => value.clone(),
+        };
+        writeln!(normalized_wire, "{name}:{normalized_value}")
+            .map_err(|error| format!("FF-TRANSPORT-E-HARNESS-WIRE-FORMAT: {error}"))?;
+    }
     Ok(CapturedRequest {
         request_line,
         headers,
+        normalized_wire_sha256: encode_hex(&Sha256::digest(normalized_wire.as_bytes())),
     })
 }
 
@@ -366,6 +390,17 @@ fn response_for(request: &CapturedRequest) -> Result<ResponsePlan, String> {
                 vec![b"2345".to_vec()],
             )
         }
+        "/range-boundary" => {
+            if request.headers.get("range").map(String::as_str) != Some("bytes=9-9") {
+                return Err("FF-TRANSPORT-E-HARNESS-RANGE-EXPECTATION".to_owned());
+            }
+            (
+                206,
+                "Partial Content",
+                vec![("Content-Range", "bytes 9-9/10")],
+                vec![b"9".to_vec()],
+            )
+        }
         "/range-invalid" => (
             416,
             "Range Not Satisfiable",
@@ -383,6 +418,7 @@ fn response_for(request: &CapturedRequest) -> Result<ResponsePlan, String> {
                 b"two".to_vec(),
             ],
         ),
+        "/stream-small" => (200, "OK", Vec::new(), vec![b"stream".to_vec()]),
         "/huge-length" => (
             200,
             "OK",
@@ -413,7 +449,7 @@ fn response_for(request: &CapturedRequest) -> Result<ResponsePlan, String> {
 fn read_response(
     stream: &mut TcpStream,
     credits: &mut ByteCredits,
-    _address: SocketAddr,
+    target: &LocalHarnessTarget,
 ) -> Result<LocalResponse, TransportError> {
     let metadata = read_until_header_end(stream, MAX_RESPONSE_METADATA_BYTES)
         .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-RESPONSE-READ: {error}")))?;
@@ -459,25 +495,38 @@ fn read_response(
     let content_length_u64 = u64::try_from(content_length)
         .map_err(|error| TransportError::Protocol(format!("FF-TRANSPORT-E-SIZE: {error}")))?;
     credits.preflight(content_length_u64)?;
-    let mut body = Vec::with_capacity(content_length.min(64 * 1024));
+    let mut body = Vec::new();
     let mut read_operations = 0_u64;
     while body.len() < content_length {
-        let remaining = content_length - body.len();
-        let mut chunk = [0_u8; 8];
-        let read_limit = remaining.min(chunk.len());
-        let read = stream
-            .read(&mut chunk[..read_limit])
-            .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-BODY-READ: {error}")))?;
-        if read == 0 {
+        let fragment_len = target
+            .fragment_rx
+            .lock()
+            .map_err(|_| {
+                TransportError::Protocol("FF-TRANSPORT-E-HARNESS-FRAGMENT-LOCK".to_owned())
+            })?
+            .recv_timeout(IO_TIMEOUT)
+            .map_err(|error| {
+                TransportError::Protocol(format!(
+                    "FF-TRANSPORT-E-HARNESS-FRAGMENT-RECEIPT: {error}"
+                ))
+            })?;
+        if fragment_len == 0 || body.len().saturating_add(fragment_len) > content_length {
             return Err(TransportError::Protocol(
-                "FF-TRANSPORT-E-BODY-TRUNCATED".to_owned(),
+                "FF-TRANSPORT-E-RESPONSE-FRAGMENT-LENGTH".to_owned(),
             ));
         }
-        let accepted = u64::try_from(read)
+        let accepted = u64::try_from(fragment_len)
             .map_err(|error| TransportError::Protocol(format!("FF-TRANSPORT-E-SIZE: {error}")))?;
         credits.accept(accepted)?;
-        body.extend_from_slice(&chunk[..read]);
+        let mut chunk = vec![0_u8; fragment_len];
+        stream
+            .read_exact(&mut chunk)
+            .map_err(|error| TransportError::Io(format!("FF-TRANSPORT-E-BODY-READ: {error}")))?;
+        body.extend_from_slice(&chunk);
         read_operations = read_operations.saturating_add(1);
+        target.fragment_ack_tx.send(()).map_err(|_| {
+            TransportError::Protocol("FF-TRANSPORT-E-HARNESS-FRAGMENT-ACK".to_owned())
+        })?;
     }
     let mut response_bytes = metadata;
     response_bytes.extend_from_slice(&body);

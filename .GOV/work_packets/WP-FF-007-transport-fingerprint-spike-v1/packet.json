@@ -58,7 +58,7 @@
   "scope": {
     "summary": "Build a prototype-only pure-Rust transport capability spike and determine with executable corpus evidence whether mandatory fingerprint, streaming, redirect, cookie, SSRF, replay, pooling, and cancellation requirements can be met inside the authorized dependency boundary.",
     "product_impact": "PREREQUISITE",
-    "zero_progress_declaration": "Zero product progress. Zero capability progress. Zero runtime completion. Zero packaging or release progress. Zero phase progress. The WP-007 transport adapter, local protocol server, corpus, and verdict are non-shipped Phase 0 supporting evidence under build/. The first shipped transport consumer must re-prove the accepted mechanism through FF-GATE-RUNTIME-001 using its exact staged production artifact.",
+    "zero_progress_declaration": "Zero product progress. Zero capability progress. Zero runtime completion. Zero packaging or release progress. Zero phase progress. All WP-007 outputs are prerequisite evidence under build/.",
     "in_scope": [
       "Current primary-source evaluation of maintained pure-Rust HTTP/TLS transport candidates, features, wire controls, security posture, maintenance, and transitive dependency boundaries.",
       "A non-shipped adapter implementing the logical streaming transport capability contract without extractor selection of a concrete backend.",
@@ -249,7 +249,7 @@
         {"candidate": "smallest complete clear implementation", "result": "A non-shipped std-first candidate adapter and corpus runner will prove supported semantics and emit typed blocked-capability evidence for unprovable fingerprint/wire behavior."}
       ],
       "artifact_specific_justification": {
-        "transport_spike_crate": "A separate non-shipped crate is required to keep Phase 0 evidence outside shipped product while executing a public candidate-adapter boundary.",
+        "transport_spike_crate": "A separate non-shipped crate isolates prerequisite evidence. The corpus crosses a public candidate-adapter boundary.",
         "mandatory_corpus": "WP-004 has normalization but no transport semantics; WP-007 must own exact mandatory cases to avoid a false prerequisite claim.",
         "local_protocol_server": "Real loopback socket behavior is required for transport integration evidence without live-site nondeterminism.",
         "machine_report": "A failed pure-Rust result must preserve exact blocked capabilities and residual uncertainty for an Operator dependency decision.",
@@ -258,7 +258,7 @@
       "pre_simplification_verdict": "PASS: research rejected forbidden native-backed impersonation clients and a stale unreleased TLS fork; the selected std-first evidence path adds no new dependency before a mandatory need is proven.",
       "simplification_changes": [
         "Moved mandatory transport corpus ownership from the false WP-004 prerequisite into WP-007.",
-        "Kept the spike under build/ instead of creating shipped product transport code.",
+        "Kept the spike under build/ and outside the runtime source tree.",
         "Selected existing dependencies and Rust std before any new client/TLS stack."
       ],
       "post_simplification_verdict": "PENDING implementation and complete verification.",
@@ -275,7 +275,7 @@
       ],
       "ceilings_exceptions_and_evidence": {
         "ceiling_id": "WP-FF-007-transport-fingerprint-spike-v1-CEILING-001",
-        "current_ceiling": "Non-shipped Phase 0 transport evidence only. No extractor, downloader, shipped transport, product capability, runtime completion, packaging, release, parity, or phase progress.",
+        "current_ceiling": "Research evidence boundary; see the predeclared zero-progress fields.",
         "replacement_trigger": "A later active RUNTIME packet consumes an accepted transport mechanism through a shipped vertical slice.",
         "likely_upgrade_path": "Promote only the accepted boundary under a later RUNTIME packet and re-prove it through FF-GATE-RUNTIME-001.",
         "trigger_detection_method": "Taskboard activation, packet product-impact classification, workspace member classification, package inspection, and FF-GATE-RUNTIME-001.",
@@ -284,7 +284,7 @@
           ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/refinement.json",
           "build/crates/fforager-transport/",
           "build/fixtures/transport-v1/",
-          "build/reports/wp-ff-007-transport-report.json",
+          "build/reports/",
           "product/MODEL_MANUAL.md"
         ]
       }
@@ -292,13 +292,13 @@
     "repository_layout": {
       "governance_root": ".GOV/",
       "product_root": "product/",
-      "product_owns": ["shipped runtime code", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
+      "product_owns": ["application source", "product apps", "product assets", "independent watcher", "product-package-local tests", "MODEL_MANUAL.md"],
       "build_root": "build/",
       "build_owns": ["Cargo workspace and lockfile", "architecture/tooling/rule-to-proof policies", "non-shipped xtask and testkit", "shared fixtures", "cross-package integration tests", "fuzz targets", "benchmarks", "generated reports", "Cargo target output"],
       "toolchain_selector": "rust-toolchain.toml",
       "canonical_manifest": "build/Cargo.toml",
       "canonical_command_prefix": "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask --",
-      "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
+      "runtime_boundary": "Application execution requires neither .GOV/ nor build/."
     },
     "stub_implementation_brief": {
       "base_scope": "Resolve the pure-Rust fingerprint-capable transport feasibility question with a backend-neutral non-shipped adapter and a deterministic security/compatibility corpus.",

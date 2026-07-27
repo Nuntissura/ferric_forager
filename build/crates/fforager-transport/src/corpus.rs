@@ -22,7 +22,7 @@ const NORMALIZATION_VERSION: &str = "WP-FF-004-sanitized-transcript-v1";
 const MAX_CASES: usize = 128;
 const SECRET_CANARY: &str = "ff-secret-canary-never-record";
 const CANONICAL_MANIFEST_DECLARATION_SHA256: &str =
-    "78e7b3326a0a00942979b8add1975893b213c1d1769dc1ff806defdd5aa6d7c2";
+    "31f52c2b188fdf68252cf4294adfb5d93f6080ac5fb6b565e2f3ba46f42ecf02";
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -56,18 +56,26 @@ pub enum CaseKind {
     ProxyBlocked,
     CompressionBlocked,
     Http11Local,
+    Http11HeaderBoundary,
+    Http11HugeLength,
     RangeLocal,
+    RangeBoundary,
     RangeInvalid,
+    StreamingPositive,
     StreamingLocal,
     RedirectCrossOrigin,
     RedirectDowngrade,
     RedirectLimit,
+    RedirectSpecialUse,
     CookieScope,
     CookiePublicSuffix,
+    CookieIpDomain,
     CookieSyntax,
     CookieCountBoundary,
     DnsPositive,
+    DnsProvenanceMismatch,
     SsrfMixedAnswers,
+    SsrfRegistryBoundary,
     DnsSelection,
     DnsRebind,
     ProxyEvidence,
@@ -77,6 +85,7 @@ pub enum CaseKind {
     PoolFingerprintPartition,
     PoolBound,
     PoolAllDimensions,
+    BoundsPositive,
     BoundsExact,
     MetadataBound,
     BodyBound,
@@ -84,9 +93,15 @@ pub enum CaseKind {
     ByteCredit,
     RetryBound,
     RetryAllowed,
+    CancellationPositive,
+    CancellationBoundary,
     CancellationCorrelation,
     CancellationPool,
+    ReplayBoundary,
+    ReplayNegative,
     SanitizedReplay,
+    UrlPositive,
+    UrlBoundary,
     UrlBounds,
 }
 
@@ -98,27 +113,39 @@ impl CaseKind {
             Self::Http2Blocked => "http2",
             Self::ProxyBlocked | Self::ProxyEvidence | Self::ProxyEvidencePositive => "proxy",
             Self::CompressionBlocked | Self::DecompressionBound => "compression",
-            Self::Http11Local => "http11",
-            Self::RangeLocal | Self::RangeInvalid => "range",
-            Self::StreamingLocal | Self::ByteCredit => "streaming",
-            Self::RedirectCrossOrigin | Self::RedirectDowngrade | Self::RedirectLimit => "redirect",
+            Self::Http11Local | Self::Http11HeaderBoundary | Self::Http11HugeLength => "http11",
+            Self::RangeLocal | Self::RangeBoundary | Self::RangeInvalid => "range",
+            Self::StreamingPositive | Self::StreamingLocal | Self::ByteCredit => "streaming",
+            Self::RedirectCrossOrigin
+            | Self::RedirectDowngrade
+            | Self::RedirectLimit
+            | Self::RedirectSpecialUse => "redirect",
             Self::CookieScope
             | Self::CookiePublicSuffix
+            | Self::CookieIpDomain
             | Self::CookieSyntax
             | Self::CookieCountBoundary => "cookie",
-            Self::DnsPositive | Self::SsrfMixedAnswers | Self::DnsSelection | Self::DnsRebind => {
-                "dns_ssrf"
-            }
+            Self::DnsPositive
+            | Self::DnsProvenanceMismatch
+            | Self::SsrfMixedAnswers
+            | Self::SsrfRegistryBoundary
+            | Self::DnsSelection
+            | Self::DnsRebind => "dns_ssrf",
             Self::PoolReuse
             | Self::PoolSessionPartition
             | Self::PoolFingerprintPartition
             | Self::PoolBound
             | Self::PoolAllDimensions => "pool",
-            Self::BoundsExact | Self::MetadataBound | Self::BodyBound => "bounds",
+            Self::BoundsPositive | Self::BoundsExact | Self::MetadataBound | Self::BodyBound => {
+                "bounds"
+            }
             Self::RetryBound | Self::RetryAllowed => "retry",
-            Self::CancellationCorrelation | Self::CancellationPool => "cancellation",
-            Self::SanitizedReplay => "replay",
-            Self::UrlBounds => "url",
+            Self::CancellationPositive
+            | Self::CancellationBoundary
+            | Self::CancellationCorrelation
+            | Self::CancellationPool => "cancellation",
+            Self::ReplayBoundary | Self::ReplayNegative | Self::SanitizedReplay => "replay",
+            Self::UrlPositive | Self::UrlBoundary | Self::UrlBounds => "url",
             Self::StandardCapability => "capability_contract",
         }
     }
@@ -128,20 +155,29 @@ impl CaseKind {
             Self::StandardCapability
             | Self::Http11Local
             | Self::RangeLocal
-            | Self::StreamingLocal
+            | Self::StreamingPositive
             | Self::RedirectCrossOrigin
             | Self::CookieScope
             | Self::DnsPositive
             | Self::ProxyEvidencePositive
             | Self::PoolReuse
             | Self::PoolAllDimensions
+            | Self::CancellationPositive
             | Self::CancellationPool
-            | Self::SanitizedReplay => "positive",
+            | Self::SanitizedReplay
+            | Self::BoundsPositive
+            | Self::UrlPositive => "positive",
             Self::RedirectLimit
             | Self::CookieCountBoundary
             | Self::PoolBound
             | Self::BoundsExact
-            | Self::RetryAllowed => "boundary",
+            | Self::RetryAllowed
+            | Self::Http11HeaderBoundary
+            | Self::RangeBoundary
+            | Self::StreamingLocal
+            | Self::CancellationBoundary
+            | Self::ReplayBoundary
+            | Self::UrlBoundary => "boundary",
             Self::TlsFingerprintBlocked
             | Self::Http2FingerprintBlocked
             | Self::Http2Blocked
@@ -149,6 +185,69 @@ impl CaseKind {
             | Self::CompressionBlocked => "blocked",
             _ => "negative",
         }
+    }
+
+    fn required_capabilities(self) -> BTreeSet<Capability> {
+        use Capability::{
+            BodyBounds, Cancellation, Compression, CookieScope, DecompressionBounds, DnsProvenance,
+            Http2, Http2Fingerprint, Http11, MetadataBounds, PoolPartition, Proxy, Range,
+            RedirectPolicy, Replay, RetryBounds, SsrfPolicy, Streaming, TlsFingerprint,
+        };
+        let capabilities: &[Capability] = match self {
+            Self::StandardCapability => &[
+                Http11,
+                Range,
+                Streaming,
+                Replay,
+                Cancellation,
+                MetadataBounds,
+                BodyBounds,
+            ],
+            Self::TlsFingerprintBlocked => &[TlsFingerprint],
+            Self::Http2FingerprintBlocked => &[Http2Fingerprint],
+            Self::Http2Blocked => &[Http2],
+            Self::ProxyBlocked => &[Proxy],
+            Self::CompressionBlocked => &[Compression],
+            Self::Http11Local | Self::Http11HeaderBoundary | Self::Http11HugeLength => &[Http11],
+            Self::RangeLocal | Self::RangeBoundary | Self::RangeInvalid => &[Http11, Range],
+            Self::StreamingPositive | Self::StreamingLocal => &[Http11, Streaming, BodyBounds],
+            Self::ByteCredit => &[Streaming, BodyBounds],
+            Self::RedirectCrossOrigin | Self::RedirectDowngrade | Self::RedirectSpecialUse => {
+                &[RedirectPolicy]
+            }
+            Self::RedirectLimit => &[RedirectPolicy, RetryBounds],
+            Self::CookieScope
+            | Self::CookiePublicSuffix
+            | Self::CookieIpDomain
+            | Self::CookieSyntax
+            | Self::CookieCountBoundary => &[CookieScope],
+            Self::DnsPositive
+            | Self::DnsProvenanceMismatch
+            | Self::SsrfMixedAnswers
+            | Self::SsrfRegistryBoundary
+            | Self::DnsSelection
+            | Self::DnsRebind
+            | Self::ProxyEvidence
+            | Self::ProxyEvidencePositive => &[DnsProvenance, SsrfPolicy],
+            Self::PoolReuse
+            | Self::PoolSessionPartition
+            | Self::PoolFingerprintPartition
+            | Self::PoolBound
+            | Self::PoolAllDimensions => &[PoolPartition],
+            Self::BoundsPositive | Self::BoundsExact => &[MetadataBounds, BodyBounds],
+            Self::MetadataBound | Self::UrlPositive | Self::UrlBoundary | Self::UrlBounds => {
+                &[MetadataBounds]
+            }
+            Self::BodyBound => &[BodyBounds],
+            Self::DecompressionBound => &[DecompressionBounds],
+            Self::RetryBound | Self::RetryAllowed => &[RetryBounds],
+            Self::CancellationPositive
+            | Self::CancellationBoundary
+            | Self::CancellationCorrelation => &[Cancellation],
+            Self::CancellationPool => &[Cancellation, PoolPartition],
+            Self::ReplayBoundary | Self::ReplayNegative | Self::SanitizedReplay => &[Replay],
+        };
+        capabilities.iter().copied().collect()
     }
 }
 
@@ -309,8 +408,10 @@ pub fn run_corpus(manifest: &CorpusManifest) -> Result<CorpusReport, String> {
                 .to_owned(),
             "The local protocol harness proves bounded HTTP/1.1 semantics, not internet interoperability."
                 .to_owned(),
-            "The embedded public-suffix and special-use fixtures are proof samples, not production data sources."
-                .to_owned(),
+            "Cookie scope remains blocked until a versioned authoritative PSL with wildcard and exception behavior is bound to execution.".to_owned(),
+            "Redirect, DNS provenance, and SSRF remain blocked until a complete generated special-purpose registry, resolver evidence, and actual socket peer address are bound at every hop.".to_owned(),
+            "Pool partition remains blocked until keys are derived from immutable execution context rather than caller fields.".to_owned(),
+            "Retry remains blocked until attempts, idempotency, deadlines, cancellation, and partial-body state cross one executor.".to_owned(),
         ],
         verdict,
     };
@@ -492,6 +593,7 @@ fn validate_manifest(manifest: &CorpusManifest) -> Result<(), String> {
         if !case.mandatory
             || case.requested_capabilities.is_empty()
             || case.expected_outcome.is_empty()
+            || case.requested_capabilities != case.kind.required_capabilities()
         {
             return Err(format!("FF-TRANSPORT-E-CASE-DECLARATION: {}", case.id));
         }
@@ -545,14 +647,37 @@ fn validate_coverage(manifest: &CorpusManifest) -> Result<(), String> {
             return Err(format!("FF-TRANSPORT-E-COVERAGE-FAMILY: {required}"));
         }
     }
-    let classes = manifest
-        .cases
-        .iter()
-        .map(|case| case.kind.scenario_class())
-        .collect::<BTreeSet<_>>();
-    for required in ["positive", "boundary", "negative", "blocked"] {
-        if !classes.contains(required) {
-            return Err(format!("FF-TRANSPORT-E-COVERAGE-CLASS: {required}"));
+    let candidate = CandidateAdapter::std_first();
+    for family in families {
+        if matches!(
+            family,
+            "tls_fingerprint" | "http2_fingerprint" | "http2" | "capability_contract"
+        ) {
+            continue;
+        }
+        let family_cases = manifest
+            .cases
+            .iter()
+            .filter(|case| case.kind.family() == family)
+            .collect::<Vec<_>>();
+        let family_blocked = family_cases.iter().all(|case| {
+            !candidate
+                .negotiate(case.requested_capabilities.iter().copied())
+                .execution_allowed
+        });
+        if family_blocked {
+            continue;
+        }
+        let classes = family_cases
+            .iter()
+            .map(|case| case.kind.scenario_class())
+            .collect::<BTreeSet<_>>();
+        for required in ["positive", "boundary", "negative"] {
+            if !classes.contains(required) {
+                return Err(format!(
+                    "FF-TRANSPORT-E-COVERAGE-CLASS: {family}:{required}"
+                ));
+            }
         }
     }
     Ok(())
@@ -566,8 +691,11 @@ fn manifest_declaration_sha256(manifest: &CorpusManifest) -> Result<String, Stri
 
 fn candidate_implementation_sha256() -> String {
     let mut digest = Sha256::new();
+    digest.update(include_bytes!("lib.rs"));
     digest.update(include_bytes!("policy.rs"));
     digest.update(include_bytes!("local_server.rs"));
+    digest.update(include_bytes!("corpus.rs"));
+    digest.update(include_bytes!("bin/fforager-transport-corpus.rs"));
     encode_hex(&digest.finalize())
 }
 
@@ -615,7 +743,9 @@ fn encode_hex(bytes: &[u8]) -> String {
 #[allow(clippy::too_many_lines)]
 fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
     let started = Instant::now();
+    let decision_started = Instant::now();
     let decision = candidate.negotiate(case.requested_capabilities.iter().copied());
+    let decision_micros = decision_started.elapsed().as_micros();
     let blocked_capabilities = decision
         .blocked
         .iter()
@@ -646,7 +776,7 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
             proxy_identity: "not_executed".to_owned(),
             alpn_identity: "not_negotiated".to_owned(),
             protocol_identity: "not_executed".to_owned(),
-            limits: BTreeMap::new(),
+            limits: BTreeMap::from([("execution_allowed".to_owned(), 0)]),
             transcript: None,
             skipped_semantic_dependencies: decision
                 .blocked
@@ -666,7 +796,7 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         proxy_identity: "not_executed".to_owned(),
         alpn_identity: "not_negotiated".to_owned(),
         protocol_identity: "execution-error".to_owned(),
-        limits: BTreeMap::new(),
+        limits: BTreeMap::from([("execution_attempted".to_owned(), 1)]),
         transcript: None,
         skipped_semantic_dependencies: Vec::new(),
     });
@@ -677,6 +807,7 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         )
     });
     let duration_micros = started.elapsed().as_micros();
+    let execution_micros = duration_micros.saturating_sub(decision_micros);
     let transcript = serde_json::json!({
         "normalization_version": NORMALIZATION_VERSION,
         "case_id": case.id,
@@ -705,7 +836,11 @@ fn run_case(case: &CorpusCase, candidate: &CandidateAdapter) -> CaseReport {
         alpn_identity: evidence.alpn_identity,
         protocol_identity: evidence.protocol_identity,
         limits: evidence.limits,
-        timing_phases_micros: BTreeMap::from([("total".to_owned(), duration_micros)]),
+        timing_phases_micros: BTreeMap::from([
+            ("decision".to_owned(), decision_micros),
+            ("execution".to_owned(), execution_micros),
+            ("total".to_owned(), duration_micros),
+        ]),
         transcript,
         expected_outcome: case.expected_outcome.clone(),
         observed_outcome: evidence.observed_outcome,
@@ -750,7 +885,7 @@ impl CaseEvidence {
             proxy_identity: "direct-policy-model".to_owned(),
             alpn_identity: "not_negotiated".to_owned(),
             protocol_identity: "policy-model-v1".to_owned(),
-            limits: BTreeMap::new(),
+            limits: BTreeMap::from([("model_operation_limit".to_owned(), 1)]),
             transcript: None,
             skipped_semantic_dependencies: Vec::new(),
         }
@@ -771,23 +906,43 @@ fn execute_case(
             "standard-capabilities-supported",
         )),
         CaseKind::Http11Local => local_case("/ok", None, 16, "http11-body-ok"),
+        CaseKind::Http11HeaderBoundary => {
+            local_case("/ok", None, 16, "http11-wire-exact-boundary-accepted")
+        }
+        CaseKind::Http11HugeLength => http11_huge_length(),
         CaseKind::RangeLocal => local_case("/range", Some("bytes=2-5"), 4, "range-206-2-5"),
+        CaseKind::RangeBoundary => local_case(
+            "/range-boundary",
+            Some("bytes=9-9"),
+            1,
+            "range-last-byte-accepted",
+        ),
         CaseKind::RangeInvalid => local_case(
             "/range-invalid",
             Some("bytes=20-30"),
             0,
             "range-416-rejected",
         ),
+        CaseKind::StreamingPositive => local_case(
+            "/stream-small",
+            None,
+            6,
+            "streaming-single-fragment-accepted",
+        ),
         CaseKind::StreamingLocal => local_case("/stream", None, 21, "streamed-with-byte-credits"),
         CaseKind::RedirectCrossOrigin => redirect_cross_origin(),
         CaseKind::RedirectDowngrade => redirect_downgrade(),
         CaseKind::RedirectLimit => redirect_limit(),
+        CaseKind::RedirectSpecialUse => redirect_special_use(),
         CaseKind::CookieScope => cookie_scope(),
         CaseKind::CookiePublicSuffix => cookie_public_suffix(),
+        CaseKind::CookieIpDomain => cookie_ip_domain(),
         CaseKind::CookieSyntax => cookie_syntax(),
         CaseKind::CookieCountBoundary => cookie_count_boundary(),
         CaseKind::DnsPositive => Ok(dns_positive()),
+        CaseKind::DnsProvenanceMismatch => Ok(dns_provenance_mismatch()),
         CaseKind::SsrfMixedAnswers => Ok(ssrf_mixed_answers()),
+        CaseKind::SsrfRegistryBoundary => Ok(ssrf_registry_boundary()),
         CaseKind::DnsSelection => Ok(dns_selection()),
         CaseKind::DnsRebind => Ok(dns_rebind()),
         CaseKind::ProxyEvidence => Ok(proxy_evidence()),
@@ -797,6 +952,7 @@ fn execute_case(
         CaseKind::PoolFingerprintPartition => pool_partition(false),
         CaseKind::PoolBound => pool_bound(),
         CaseKind::PoolAllDimensions => pool_all_dimensions(),
+        CaseKind::BoundsPositive => Ok(bounds_positive()),
         CaseKind::BoundsExact => Ok(bounds_exact()),
         CaseKind::MetadataBound => Ok(body_bound("metadata")),
         CaseKind::BodyBound => Ok(body_bound("body")),
@@ -804,9 +960,15 @@ fn execute_case(
         CaseKind::ByteCredit => byte_credit(),
         CaseKind::RetryBound => Ok(retry_bound()),
         CaseKind::RetryAllowed => retry_allowed(),
+        CaseKind::CancellationPositive => cancellation_positive(),
+        CaseKind::CancellationBoundary => cancellation_boundary(),
         CaseKind::CancellationCorrelation => cancellation_correlation(),
         CaseKind::CancellationPool => cancellation_pool(),
+        CaseKind::ReplayBoundary => replay_boundary(),
+        CaseKind::ReplayNegative => replay_negative(),
         CaseKind::SanitizedReplay => sanitized_replay(),
+        CaseKind::UrlPositive => url_positive(),
+        CaseKind::UrlBoundary => url_boundary(),
         CaseKind::UrlBounds => Ok(url_bounds()),
         CaseKind::TlsFingerprintBlocked
         | CaseKind::Http2FingerprintBlocked
@@ -837,8 +999,14 @@ fn local_case(
             b"2345".as_slice(),
             Some(("content-range", "bytes 2-5/10")),
         ),
+        "/range-boundary" => (
+            206,
+            b"9".as_slice(),
+            Some(("content-range", "bytes 9-9/10")),
+        ),
         "/range-invalid" => (416, b"".as_slice(), Some(("content-range", "bytes */10"))),
         "/stream" => (200, b"stream-one-stream-two".as_slice(), None),
+        "/stream-small" => (200, b"stream".as_slice(), None),
         _ => {
             return Err(TransportError::Protocol(
                 "FF-TRANSPORT-E-LOCAL-CASE".to_owned(),
@@ -847,12 +1015,19 @@ fn local_case(
     };
     let header_matches = required_header
         .is_none_or(|(name, value)| response.headers.get(name).map(String::as_str) == Some(value));
-    let streaming_fragmented = path != "/stream" || response.body_read_operations >= 3;
+    let expected_fragments = match path {
+        "/stream" => 4,
+        "/range-invalid" => 0,
+        _ => 1,
+    };
+    let streaming_fragmented = response.body_read_operations == expected_fragments;
     if response.status != expected_status
         || response.body != expected_body
+        || response.response_sha256 != expected_response_sha256(path)
         || credits.accepted() != body_bytes
         || !header_matches
         || !streaming_fragmented
+        || receipt.normalized_wire_sha256 != expected_request_sha256(path)
         || !receipt.request_line.ends_with(" HTTP/1.1")
         || range.is_some() != receipt.headers.contains_key("range")
     {
@@ -866,8 +1041,8 @@ fn local_case(
         observed_outcome: outcome.to_owned(),
         connection_identity: response.connection_identity,
         wire_identity: format!(
-            "{};sha256={}",
-            response.wire_identity, response.response_sha256
+            "{};request_sha256={};response_sha256={}",
+            response.wire_identity, receipt.normalized_wire_sha256, response.response_sha256
         ),
         pool_identity: "connection-close:no-pool".to_owned(),
         selected_address: "loopback-harness".to_owned(),
@@ -881,6 +1056,58 @@ fn local_case(
         transcript: None,
         skipped_semantic_dependencies: Vec::new(),
     })
+}
+
+fn expected_request_sha256(path: &str) -> &'static str {
+    match path {
+        "/ok" => "70802ef8b900229b7802b1582e9689e66dc8a4aa1badf20871aff9949b3b1520",
+        "/range" => "7bc2bb848d8da6c592ef853dcc89cc9928cfb5a962c68723050032395bce1841",
+        "/range-boundary" => "2305c49a0cab031a6a000205a9e04b23694b04a2bd2315e0f44f7a17f9b3d387",
+        "/range-invalid" => "729f5064cc036f25dbfe806706ceee7b0f6c684c5460a8e99cf47fa6637eddce",
+        "/stream-small" => "0ef5d961c83e921aee4ae4b2169aec622b0d06b4b46445df3d39b426fbc27b58",
+        "/stream" => "094d3f7a4caa1df9bbd30ae2a0035323c8d7e0d0bbc7dbbd0a7b4d8f62d82df3",
+        _ => "unsupported",
+    }
+}
+
+fn expected_response_sha256(path: &str) -> &'static str {
+    match path {
+        "/ok" => "b3ac0ad43bb781320d8b1c59671e110aaa251972c7ac64bc83c3a521a06cce18",
+        "/range" => "c488879da67aae3a930ddb171fa095618620711c88516166aaa7260cf5b6eec1",
+        "/range-boundary" => "9cef28d73496441ba2d8f7cd847f5d2abf79bd9a04b2618678ce5ff6c5c9a8cb",
+        "/range-invalid" => "c5385ff191bb05a70bdf4626b5659be07ad8fa27266f465e592384974e9c0be3",
+        "/stream-small" => "8e43fd7f1f6cf24324c8fa70675f8d2e6a2cf313ed6b6dbc0c6d759b21ec21b7",
+        "/stream" => "412345768c8b043872f22f7199ffcceffa7d82424bfe8dec5a35be2fd22f194b",
+        _ => "unsupported",
+    }
+}
+
+fn http11_huge_length() -> Result<CaseEvidence, TransportError> {
+    let server = LocalProtocolServer::spawn()?;
+    let target = server.target();
+    let mut credits = ByteCredits::new(32);
+    credits.grant(32)?;
+    let error = execute_local(&target, "/huge-length", None, &mut credits)
+        .expect_err("huge declared response must fail before body allocation");
+    let receipt = server.finish()?;
+    if receipt.request_line != "GET /huge-length HTTP/1.1" {
+        return Err(TransportError::Protocol(
+            "FF-TRANSPORT-E-HARNESS-REQUEST".to_owned(),
+        ));
+    }
+    let mut evidence = CaseEvidence::policy(
+        "Content-Length=18446744073709551615; maximum_body_bytes=32",
+        error.to_string(),
+    );
+    "std-tcp-http11-preallocation-bound".clone_into(&mut evidence.executed_boundary);
+    "loopback-http11-ephemeral".clone_into(&mut evidence.connection_identity);
+    "http/1.1-std-tcp-v1;huge-content-length".clone_into(&mut evidence.wire_identity);
+    "http/1.1".clone_into(&mut evidence.protocol_identity);
+    evidence.limits = BTreeMap::from([
+        ("maximum_body_bytes".to_owned(), 32),
+        ("observed_content_length".to_owned(), u64::MAX),
+    ]);
+    Ok(evidence)
 }
 
 fn redirect_cross_origin() -> Result<CaseEvidence, TransportError> {
@@ -935,6 +1162,21 @@ fn redirect_limit() -> Result<CaseEvidence, TransportError> {
         .expect_err("redirect limit fixture must be rejected");
     Ok(CaseEvidence::policy(
         "redirect_count=3; maximum=3",
+        error.to_string(),
+    ))
+}
+
+fn redirect_special_use() -> Result<CaseEvidence, TransportError> {
+    let request = HttpRequest::new(
+        "redirect-special-use",
+        "GET",
+        HttpUrl::parse("https://media.example/public")?,
+    )?;
+    let error = redirect_policy()
+        .apply(&request, HttpUrl::parse("https://127.0.0.1/admin")?)
+        .expect_err("special-use literal redirect must fail");
+    Ok(CaseEvidence::policy(
+        "public HTTPS origin -> https://127.0.0.1/admin",
         error.to_string(),
     ))
 }
@@ -1000,6 +1242,28 @@ fn cookie_public_suffix() -> Result<CaseEvidence, TransportError> {
         )
         .expect_err("public suffix fixture must fail");
     Ok(CaseEvidence::policy("Domain=com", error.to_string()))
+}
+
+fn cookie_ip_domain() -> Result<CaseEvidence, TransportError> {
+    let source = HttpUrl::parse("https://127.0.0.1/")?;
+    let error = CookieJar::new(4)
+        .store(
+            &source,
+            Cookie {
+                name: "bad".to_owned(),
+                value: "value".to_owned(),
+                domain: "0.0.0.1".to_owned(),
+                host_only: false,
+                path: "/".to_owned(),
+                secure: true,
+            },
+            &suffixes(),
+        )
+        .expect_err("cross-IP domain cookie must fail");
+    Ok(CaseEvidence::policy(
+        "source=127.0.0.1 Domain=0.0.0.1",
+        error.to_string(),
+    ))
 }
 
 fn cookie_syntax() -> Result<CaseEvidence, TransportError> {
@@ -1072,6 +1336,27 @@ fn dns_positive() -> CaseEvidence {
     );
     "93.184.216.34".clone_into(&mut evidence.selected_address);
     evidence
+}
+
+fn dns_provenance_mismatch() -> CaseEvidence {
+    let error = validate_dns_evidence("other.example", &public_evidence(), ProxyEvidence::Direct)
+        .expect_err("host/provenance mismatch must fail");
+    CaseEvidence::policy(
+        "expected_host=other.example query_host=media.example",
+        error.to_string(),
+    )
+}
+
+fn ssrf_registry_boundary() -> CaseEvidence {
+    let evidence = DnsEvidence {
+        query_host: "media.example".to_owned(),
+        answers: vec!["5f00::1".parse().expect("static IPv6 fixture")],
+        selected: "5f00::1".parse().expect("static IPv6 fixture"),
+        resolver_identity: "fixture-resolver-v1".to_owned(),
+    };
+    let error = validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct)
+        .expect_err("IANA SRv6 special-purpose address must fail");
+    CaseEvidence::policy("IANA special-purpose 5f00::/16", error.to_string())
 }
 
 fn ssrf_mixed_answers() -> CaseEvidence {
@@ -1267,6 +1552,26 @@ fn bounds_exact() -> CaseEvidence {
     evidence
 }
 
+fn bounds_positive() -> CaseEvidence {
+    BodyBudget {
+        maximum_metadata_bytes: 10,
+        maximum_body_bytes: 20,
+        maximum_decompressed_bytes: 30,
+    }
+    .validate(9, 19, 29)
+    .expect("below-bound fixture must pass");
+    let mut evidence = CaseEvidence::policy(
+        "metadata=9 body=19 decompressed=29",
+        "below-resource-bounds-accepted",
+    );
+    evidence.limits = BTreeMap::from([
+        ("maximum_metadata_bytes".to_owned(), 10),
+        ("maximum_body_bytes".to_owned(), 20),
+        ("maximum_decompressed_bytes".to_owned(), 30),
+    ]);
+    evidence
+}
+
 fn body_bound(kind: &str) -> CaseEvidence {
     let budget = BodyBudget {
         maximum_metadata_bytes: 10,
@@ -1281,13 +1586,38 @@ fn body_bound(kind: &str) -> CaseEvidence {
     let error = budget
         .validate(values.0, values.1, values.2)
         .expect_err("bound fixture must fail");
-    CaseEvidence::policy(
+    let mut evidence = CaseEvidence::policy(
         format!(
             "metadata={} body={} decompressed={}",
             values.0, values.1, values.2
         ),
         error.to_string(),
-    )
+    );
+    let (maximum_key, maximum, observed_key, observed) = match kind {
+        "metadata" => (
+            "maximum_metadata_bytes",
+            budget.maximum_metadata_bytes,
+            "observed_metadata_bytes",
+            values.0,
+        ),
+        "body" => (
+            "maximum_body_bytes",
+            budget.maximum_body_bytes,
+            "observed_body_bytes",
+            values.1,
+        ),
+        _ => (
+            "maximum_decompressed_bytes",
+            budget.maximum_decompressed_bytes,
+            "observed_decompressed_bytes",
+            values.2,
+        ),
+    };
+    evidence.limits = BTreeMap::from([
+        (maximum_key.to_owned(), maximum),
+        (observed_key.to_owned(), observed),
+    ]);
+    evidence
 }
 
 fn byte_credit() -> Result<CaseEvidence, TransportError> {
@@ -1296,10 +1626,13 @@ fn byte_credit() -> Result<CaseEvidence, TransportError> {
     let error = credits
         .accept(5)
         .expect_err("credit overrun fixture must fail");
-    Ok(CaseEvidence::policy(
-        "granted=4 attempted=5",
-        error.to_string(),
-    ))
+    let mut evidence = CaseEvidence::policy("granted=4 attempted=5", error.to_string());
+    evidence.limits = BTreeMap::from([
+        ("maximum_body_bytes".to_owned(), 8),
+        ("granted_byte_credits".to_owned(), 4),
+        ("attempted_body_bytes".to_owned(), 5),
+    ]);
+    Ok(evidence)
 }
 
 fn retry_bound() -> CaseEvidence {
@@ -1323,6 +1656,79 @@ fn retry_allowed() -> Result<CaseEvidence, TransportError> {
         "maximum_retries=2 retries_used=2",
         "retry-exact-limit-accepted",
     ))
+}
+
+fn cancellation_boundary() -> Result<CaseEvidence, TransportError> {
+    let request_id = RequestId::new("request_cancel_boundary").map_err(contract_error)?;
+    let target = RequestId::new("request_target_boundary").map_err(contract_error)?;
+    let requester = ProducerId::new("producer_requester").map_err(contract_error)?;
+    let acknowledger = ProducerId::new("producer_acknowledger").map_err(contract_error)?;
+    let request = CancellationRequest {
+        header: EnvelopeHeader {
+            schema_id: "ff.cancel@1".to_owned(),
+            version: SchemaVersion { major: 1, minor: 0 },
+            request_id: request_id.clone(),
+            producer_id: requester,
+            job_id: None,
+            sequence: 1,
+        },
+        target_request_id: target.clone(),
+        generation: 1,
+        reason: "transport_cancelled".to_owned(),
+    };
+    let acknowledgement = CancellationAcknowledgement {
+        header: EnvelopeHeader {
+            schema_id: "ff.cancel@1".to_owned(),
+            version: SchemaVersion { major: 1, minor: 0 },
+            request_id,
+            producer_id: acknowledger.clone(),
+            job_id: None,
+            sequence: 2,
+        },
+        target_request_id: target,
+        generation: 1,
+        outcome: CancellationOutcome::Accepted,
+    };
+    validate_cancellation_correlation(
+        &request,
+        &acknowledgement,
+        &acknowledger,
+        ProtocolLimits::default(),
+    )
+    .map_err(|error| {
+        TransportError::Cancellation(format!("FF-TRANSPORT-E-CANCEL-BOUNDARY: {error:?}"))
+    })?;
+    let mut evidence = CaseEvidence::policy(
+        "matching request, target, producer, and generation=1",
+        "cancellation-exact-generation-accepted",
+    );
+    evidence.limits = BTreeMap::from([
+        ("cancellation_generation".to_owned(), 1),
+        ("acknowledgement_sequence".to_owned(), 2),
+    ]);
+    Ok(evidence)
+}
+
+fn cancellation_positive() -> Result<CaseEvidence, TransportError> {
+    let probe = run_cancellation_probe()?;
+    if !probe.socket_shutdown || !probe.worker_reaped || probe.partial_body_bytes != 7 {
+        return Err(TransportError::Cancellation(
+            "FF-TRANSPORT-E-CANCEL-WORKER-REAP".to_owned(),
+        ));
+    }
+    let mut evidence = CaseEvidence::policy(
+        "partial_body_bytes=7; socket shutdown; worker joined",
+        "cancelled-socket-worker-reaped",
+    );
+    "std-tcp-inflight-cancellation".clone_into(&mut evidence.executed_boundary);
+    "loopback-cancelled-connection".clone_into(&mut evidence.connection_identity);
+    "http/1.1-partial-body-then-shutdown".clone_into(&mut evidence.wire_identity);
+    "http/1.1".clone_into(&mut evidence.protocol_identity);
+    evidence.limits = BTreeMap::from([
+        ("partial_body_bytes".to_owned(), probe.partial_body_bytes),
+        ("worker_reaped".to_owned(), u64::from(probe.worker_reaped)),
+    ]);
+    Ok(evidence)
 }
 
 fn cancellation_correlation() -> Result<CaseEvidence, TransportError> {
@@ -1464,6 +1870,77 @@ fn sanitized_replay() -> Result<CaseEvidence, TransportError> {
     })
 }
 
+fn replay_boundary() -> Result<CaseEvidence, TransportError> {
+    let url = HttpUrl::parse("https://media.example/replay")?;
+    let request_headers = BTreeMap::from([(
+        "x-boundary".to_owned(),
+        HeaderValue::new("a".repeat(8 * 1024), false, false)?,
+    )]);
+    let transcript = sanitize_exchange(
+        "replay-boundary",
+        "GET",
+        &url,
+        &request_headers,
+        200,
+        &BTreeMap::new(),
+        b"",
+    )?;
+    let mut evidence =
+        CaseEvidence {
+            transcript: Some(serde_json::to_value(transcript).map_err(|error| {
+                TransportError::Protocol(format!("FF-TRANSPORT-E-JSON: {error}"))
+            })?),
+            ..CaseEvidence::policy(
+                "request header value bytes=8192",
+                "replay-header-exact-boundary-accepted",
+            )
+        };
+    evidence.limits = BTreeMap::from([("maximum_header_value_bytes".to_owned(), 8 * 1024)]);
+    Ok(evidence)
+}
+
+fn replay_negative() -> Result<CaseEvidence, TransportError> {
+    let url = HttpUrl::parse("https://media.example/replay")?;
+    let response_headers = BTreeMap::from([("x-overlong".to_owned(), "a".repeat(8 * 1024 + 1))]);
+    let error = sanitize_exchange(
+        "replay-negative",
+        "GET",
+        &url,
+        &BTreeMap::new(),
+        200,
+        &response_headers,
+        b"",
+    )
+    .expect_err("overlong response header must be rejected");
+    let mut evidence = CaseEvidence::policy("response header value bytes=8193", error.to_string());
+    evidence.limits = BTreeMap::from([("maximum_header_value_bytes".to_owned(), 8 * 1024)]);
+    Ok(evidence)
+}
+
+fn url_positive() -> Result<CaseEvidence, TransportError> {
+    let url = HttpUrl::parse("https://media.example/ok")?;
+    Ok(CaseEvidence::policy(url.render(), "bounded-url-accepted"))
+}
+
+fn url_boundary() -> Result<CaseEvidence, TransportError> {
+    let prefix = "https://media.example/";
+    let value = format!("{prefix}{}", "a".repeat(4 * 1024 - prefix.len()));
+    let url = HttpUrl::parse(&value)?;
+    let mut evidence = CaseEvidence::policy(
+        format!("URL bytes={}", value.len()),
+        "url-exact-boundary-accepted",
+    );
+    evidence.limits = BTreeMap::from([("maximum_url_bytes".to_owned(), 4 * 1024)]);
+    if value.len() != 4 * 1024
+        || url.path_and_query.len() != 4 * 1024 - "https://media.example".len()
+    {
+        return Err(TransportError::InvalidUrl(
+            "FF-TRANSPORT-E-URL-BOUNDARY".to_owned(),
+        ));
+    }
+    Ok(evidence)
+}
+
 fn url_bounds() -> CaseEvidence {
     let overlong = format!("https://media.example/{}", "a".repeat(4 * 1024));
     let error = HttpUrl::parse(&overlong).expect_err("overlong URL fixture must fail");
@@ -1598,6 +2075,16 @@ mod tests {
                 .expect_err("missing case")
                 .contains("CANONICAL-CORPUS")
         );
+    }
+
+    #[test]
+    fn supported_family_requires_positive_boundary_negative_triad() {
+        let mut manifest = manifest();
+        manifest
+            .cases
+            .retain(|case| case.kind != CaseKind::RangeBoundary);
+        let error = validate_coverage(&manifest).expect_err("range boundary omission");
+        assert_eq!(error, "FF-TRANSPORT-E-COVERAGE-CLASS: range:boundary");
     }
 
     #[test]

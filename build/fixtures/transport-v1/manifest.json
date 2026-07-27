@@ -10,7 +10,7 @@
       "kind": "standard_capability",
       "mandatory": true,
       "proof_class": "structural",
-      "requested_capabilities": ["http11", "range", "streaming", "redirect_policy", "cookie_scope", "dns_provenance", "ssrf_policy", "pool_partition", "replay", "cancellation", "metadata_bounds", "body_bounds", "decompression_bounds", "retry_bounds"],
+      "requested_capabilities": ["http11", "range", "streaming", "replay", "cancellation", "metadata_bounds", "body_bounds"],
       "expected_outcome": "standard-capabilities-supported"
     },
     {
@@ -62,6 +62,22 @@
       "expected_outcome": "http11-body-ok"
     },
     {
+      "id": "http11-metadata-exact-boundary",
+      "kind": "http11_header_boundary",
+      "mandatory": true,
+      "proof_class": "protocol",
+      "requested_capabilities": ["http11"],
+      "expected_outcome": "http11-wire-exact-boundary-accepted"
+    },
+    {
+      "id": "http11-huge-content-length-rejection",
+      "kind": "http11_huge_length",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["http11"],
+      "expected_outcome": "FF-TRANSPORT-E-BOUND: byte_credit observed 18446744073709551615 exceeds 32"
+    },
+    {
       "id": "range-loopback-wire",
       "kind": "range_local",
       "mandatory": true,
@@ -78,6 +94,22 @@
       "expected_outcome": "range-416-rejected"
     },
     {
+      "id": "range-last-byte-boundary",
+      "kind": "range_boundary",
+      "mandatory": true,
+      "proof_class": "protocol",
+      "requested_capabilities": ["http11", "range"],
+      "expected_outcome": "range-last-byte-accepted"
+    },
+    {
+      "id": "streaming-single-fragment-positive",
+      "kind": "streaming_positive",
+      "mandatory": true,
+      "proof_class": "runtime",
+      "requested_capabilities": ["http11", "streaming", "body_bounds"],
+      "expected_outcome": "streaming-single-fragment-accepted"
+    },
+    {
       "id": "streaming-byte-credits",
       "kind": "streaming_local",
       "mandatory": true,
@@ -91,7 +123,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["redirect_policy"],
-      "expected_outcome": "cross-origin-sensitive-headers-stripped"
+      "expected_outcome": "FF-TRANSPORT-E-REDIRECT-INTEGRATION-BLOCKED"
     },
     {
       "id": "redirect-https-downgrade",
@@ -99,7 +131,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["redirect_policy"],
-      "expected_outcome": "FF-TRANSPORT-E-REDIRECT-DOWNGRADE: HTTPS downgrade rejected"
+      "expected_outcome": "FF-TRANSPORT-E-REDIRECT-INTEGRATION-BLOCKED"
     },
     {
       "id": "redirect-hop-limit",
@@ -107,7 +139,15 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["redirect_policy", "retry_bounds"],
-      "expected_outcome": "FF-TRANSPORT-E-REDIRECT-LIMIT: redirect budget exhausted"
+      "expected_outcome": "FF-TRANSPORT-E-REDIRECT-INTEGRATION-BLOCKED"
+    },
+    {
+      "id": "redirect-special-use-rejection",
+      "kind": "redirect_special_use",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["redirect_policy"],
+      "expected_outcome": "FF-TRANSPORT-E-REDIRECT-INTEGRATION-BLOCKED"
     },
     {
       "id": "cookie-host-path-secure-scope",
@@ -115,7 +155,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["cookie_scope"],
-      "expected_outcome": "cookie-scoped-to-secure-host-path"
+      "expected_outcome": "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED"
     },
     {
       "id": "cookie-public-suffix-rejection",
@@ -123,7 +163,15 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["cookie_scope"],
-      "expected_outcome": "FF-TRANSPORT-E-COOKIE-PUBLIC-SUFFIX: cookie domain is a public suffix"
+      "expected_outcome": "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED"
+    },
+    {
+      "id": "cookie-ip-domain-rejection",
+      "kind": "cookie_ip_domain",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["cookie_scope"],
+      "expected_outcome": "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED"
     },
     {
       "id": "cookie-control-character-rejection",
@@ -131,7 +179,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["cookie_scope"],
-      "expected_outcome": "FF-TRANSPORT-E-COOKIE-SYNTAX: invalid cookie"
+      "expected_outcome": "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED"
     },
     {
       "id": "cookie-count-boundary",
@@ -139,7 +187,7 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["cookie_scope"],
-      "expected_outcome": "FF-TRANSPORT-E-BOUND: cookie_count observed 2 exceeds 1"
+      "expected_outcome": "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED"
     },
     {
       "id": "dns-public-evidence-positive",
@@ -147,7 +195,15 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["dns_provenance", "ssrf_policy"],
-      "expected_outcome": "dns-public-evidence-accepted"
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
+    },
+    {
+      "id": "dns-provenance-host-mismatch",
+      "kind": "dns_provenance_mismatch",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["dns_provenance", "ssrf_policy"],
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
     },
     {
       "id": "ssrf-mixed-answer-rejection",
@@ -155,7 +211,15 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["dns_provenance", "ssrf_policy"],
-      "expected_outcome": "FF-TRANSPORT-E-SSRF-SPECIAL-USE: 127.0.0.1"
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
+    },
+    {
+      "id": "ssrf-iana-ipv6-special-boundary",
+      "kind": "ssrf_registry_boundary",
+      "mandatory": true,
+      "proof_class": "security",
+      "requested_capabilities": ["dns_provenance", "ssrf_policy"],
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
     },
     {
       "id": "dns-selected-address-membership",
@@ -163,7 +227,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["dns_provenance", "ssrf_policy"],
-      "expected_outcome": "FF-TRANSPORT-E-DNS-SELECTION: 8.8.8.8"
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
     },
     {
       "id": "dns-connect-time-rebinding",
@@ -171,7 +235,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["dns_provenance", "ssrf_policy"],
-      "expected_outcome": "FF-TRANSPORT-E-DNS-REBIND: selected 93.184.216.34, connected 93.184.216.35"
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
     },
     {
       "id": "proxy-destination-evidence-missing",
@@ -179,7 +243,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["dns_provenance", "ssrf_policy"],
-      "expected_outcome": "FF-TRANSPORT-E-PROXY-DESTINATION-EVIDENCE"
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
     },
     {
       "id": "proxy-destination-evidence-positive",
@@ -187,7 +251,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["dns_provenance", "ssrf_policy"],
-      "expected_outcome": "proxy-destination-evidence-accepted"
+      "expected_outcome": "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED"
     },
     {
       "id": "pool-complete-key-reuse",
@@ -195,7 +259,7 @@
       "mandatory": true,
       "proof_class": "runtime",
       "requested_capabilities": ["pool_partition"],
-      "expected_outcome": "identical-pool-key-reused"
+      "expected_outcome": "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED"
     },
     {
       "id": "pool-session-partition",
@@ -203,7 +267,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["pool_partition"],
-      "expected_outcome": "session-partition-prevents-reuse"
+      "expected_outcome": "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED"
     },
     {
       "id": "pool-fingerprint-partition",
@@ -211,7 +275,7 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["pool_partition"],
-      "expected_outcome": "fingerprint-partition-prevents-reuse"
+      "expected_outcome": "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED"
     },
     {
       "id": "pool-entry-bound",
@@ -219,7 +283,7 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["pool_partition"],
-      "expected_outcome": "FF-TRANSPORT-E-BOUND: pool_entries observed 2 exceeds 1"
+      "expected_outcome": "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED"
     },
     {
       "id": "pool-all-dimensions-partition",
@@ -227,15 +291,23 @@
       "mandatory": true,
       "proof_class": "security",
       "requested_capabilities": ["pool_partition"],
-      "expected_outcome": "all-pool-key-dimensions-partitioned"
+      "expected_outcome": "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED"
     },
     {
       "id": "resource-exact-boundaries",
       "kind": "bounds_exact",
       "mandatory": true,
       "proof_class": "resource",
-      "requested_capabilities": ["metadata_bounds", "body_bounds", "decompression_bounds"],
+      "requested_capabilities": ["metadata_bounds", "body_bounds"],
       "expected_outcome": "exact-resource-bounds-accepted"
+    },
+    {
+      "id": "resource-below-bounds",
+      "kind": "bounds_positive",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["metadata_bounds", "body_bounds"],
+      "expected_outcome": "below-resource-bounds-accepted"
     },
     {
       "id": "response-metadata-bound",
@@ -259,7 +331,7 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["decompression_bounds"],
-      "expected_outcome": "FF-TRANSPORT-E-BOUND: decompressed_bytes observed 31 exceeds 30"
+      "expected_outcome": "FF-TRANSPORT-E-DECOMPRESSION-BOUNDS-BLOCKED"
     },
     {
       "id": "byte-credit-overrun",
@@ -275,7 +347,7 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["retry_bounds"],
-      "expected_outcome": "FF-TRANSPORT-E-BOUND: retry_attempts observed 3 exceeds 2"
+      "expected_outcome": "FF-TRANSPORT-E-RETRY-EXECUTOR-BLOCKED"
     },
     {
       "id": "retry-exact-limit",
@@ -283,7 +355,15 @@
       "mandatory": true,
       "proof_class": "resource",
       "requested_capabilities": ["retry_bounds"],
-      "expected_outcome": "retry-exact-limit-accepted"
+      "expected_outcome": "FF-TRANSPORT-E-RETRY-EXECUTOR-BLOCKED"
+    },
+    {
+      "id": "cancellation-inflight-positive",
+      "kind": "cancellation_positive",
+      "mandatory": true,
+      "proof_class": "runtime",
+      "requested_capabilities": ["cancellation"],
+      "expected_outcome": "cancelled-socket-worker-reaped"
     },
     {
       "id": "cancellation-correlation",
@@ -294,12 +374,20 @@
       "expected_outcome": "FF-TRANSPORT-E-CANCEL-CORRELATION: CorrelationMismatch { field: \"target_request_id\" }"
     },
     {
+      "id": "cancellation-generation-boundary",
+      "kind": "cancellation_boundary",
+      "mandatory": true,
+      "proof_class": "runtime",
+      "requested_capabilities": ["cancellation"],
+      "expected_outcome": "cancellation-exact-generation-accepted"
+    },
+    {
       "id": "cancellation-pool-invalidation",
       "kind": "cancellation_pool",
       "mandatory": true,
       "proof_class": "runtime",
       "requested_capabilities": ["cancellation", "pool_partition"],
-      "expected_outcome": "cancelled-connection-not-reusable"
+      "expected_outcome": "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED"
     },
     {
       "id": "sanitized-deterministic-replay",
@@ -308,6 +396,38 @@
       "proof_class": "security",
       "requested_capabilities": ["replay"],
       "expected_outcome": "transcript-deterministic-and-sanitized"
+    },
+    {
+      "id": "replay-header-exact-boundary",
+      "kind": "replay_boundary",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["replay"],
+      "expected_outcome": "replay-header-exact-boundary-accepted"
+    },
+    {
+      "id": "replay-header-over-bound",
+      "kind": "replay_negative",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["replay"],
+      "expected_outcome": "FF-TRANSPORT-E-TRANSCRIPT-HEADER: invalid response header"
+    },
+    {
+      "id": "url-bounded-positive",
+      "kind": "url_positive",
+      "mandatory": true,
+      "proof_class": "structural",
+      "requested_capabilities": ["metadata_bounds"],
+      "expected_outcome": "bounded-url-accepted"
+    },
+    {
+      "id": "url-exact-boundary",
+      "kind": "url_boundary",
+      "mandatory": true,
+      "proof_class": "resource",
+      "requested_capabilities": ["metadata_bounds"],
+      "expected_outcome": "url-exact-boundary-accepted"
     },
     {
       "id": "url-input-bound",

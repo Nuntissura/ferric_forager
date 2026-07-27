@@ -65,17 +65,10 @@ impl CandidateAdapter {
                 Capability::Http11,
                 Capability::Range,
                 Capability::Streaming,
-                Capability::RedirectPolicy,
-                Capability::CookieScope,
-                Capability::DnsProvenance,
-                Capability::SsrfPolicy,
-                Capability::PoolPartition,
                 Capability::Replay,
                 Capability::Cancellation,
                 Capability::MetadataBounds,
                 Capability::BodyBounds,
-                Capability::DecompressionBounds,
-                Capability::RetryBounds,
             ]),
         }
     }
@@ -112,12 +105,18 @@ impl CandidateAdapter {
     /// Returns a typed blocked-capability error before the operation closure is
     /// invoked when any requested capability is unavailable, or propagates the
     /// operation's transport error.
-    pub fn execute<T>(
+    pub(crate) fn execute<T>(
         &self,
         requested: impl IntoIterator<Item = Capability>,
         operation: impl FnOnce(&ExecutionGrant) -> Result<T, TransportError>,
     ) -> Result<(CapabilityDecision, T), TransportError> {
         let decision = self.negotiate(requested);
+        if decision.requested.is_empty() {
+            return Err(TransportError::Policy(
+                "FF-TRANSPORT-E-CAPABILITY-EMPTY: operation requires declared capabilities"
+                    .to_owned(),
+            ));
+        }
         if !decision.execution_allowed {
             return Err(TransportError::CapabilityBlocked(decision.blocked));
         }
@@ -178,6 +177,34 @@ fn blocked_capability(capability: Capability) -> BlockedCapability {
         Capability::Compression => (
             "FF-TRANSPORT-E-COMPRESSION-BLOCKED",
             "no authorized decompressor implementation is present in the candidate",
+        ),
+        Capability::DecompressionBounds => (
+            "FF-TRANSPORT-E-DECOMPRESSION-BOUNDS-BLOCKED",
+            "no authorized decompressor exists through which decompressed-byte admission can be enforced",
+        ),
+        Capability::RedirectPolicy => (
+            "FF-TRANSPORT-E-REDIRECT-INTEGRATION-BLOCKED",
+            "redirect targets are not integrated with authoritative DNS and peer-address SSRF validation",
+        ),
+        Capability::CookieScope => (
+            "FF-TRANSPORT-E-COOKIE-PSL-BLOCKED",
+            "no versioned authoritative public-suffix snapshot with wildcard and exception semantics is present",
+        ),
+        Capability::DnsProvenance => (
+            "FF-TRANSPORT-E-DNS-PROVENANCE-BLOCKED",
+            "the candidate has no resolver-bound DNS provenance implementation",
+        ),
+        Capability::SsrfPolicy => (
+            "FF-TRANSPORT-E-SSRF-REGISTRY-BLOCKED",
+            "the candidate has no generated complete current special-purpose address registry",
+        ),
+        Capability::PoolPartition => (
+            "FF-TRANSPORT-E-POOL-CONTEXT-BLOCKED",
+            "pool identity is not derived from immutable candidate execution context",
+        ),
+        Capability::RetryBounds => (
+            "FF-TRANSPORT-E-RETRY-EXECUTOR-BLOCKED",
+            "retry policy is not integrated with request attempts, deadlines, cancellation, and partial-body state",
         ),
         _ => (
             "FF-TRANSPORT-E-CAPABILITY-BLOCKED",
@@ -504,7 +531,7 @@ impl RedirectPolicy {
     /// Returns a transport error when the hop limit is exhausted or an HTTPS
     /// downgrade is requested.
     pub fn apply(
-        &self,
+        self,
         request: &HttpRequest,
         target: HttpUrl,
     ) -> Result<RedirectResult, TransportError> {
@@ -516,6 +543,15 @@ impl RedirectPolicy {
         if self.reject_https_downgrade && request.url.is_secure() && !target.is_secure() {
             return Err(TransportError::Policy(
                 "FF-TRANSPORT-E-REDIRECT-DOWNGRADE: HTTPS downgrade rejected".to_owned(),
+            ));
+        }
+        if target
+            .host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| !is_allowed_public_address(address))
+        {
+            return Err(TransportError::Policy(
+                "FF-TRANSPORT-E-REDIRECT-SSRF: special-use literal target rejected".to_owned(),
             ));
         }
         let cross_origin = request.url.origin() != target.origin();
@@ -860,6 +896,9 @@ fn is_allowed_public_v4(address: Ipv4Addr) -> bool {
         || (a == 192 && b == 0 && c == 2)
         || (a == 192 && b == 88 && c == 99)
         || (a == 192 && b == 168)
+        || (a == 192 && b == 31 && c == 196)
+        || (a == 192 && b == 52 && c == 193)
+        || (a == 192 && b == 175 && c == 48)
         || (a == 198 && (b == 18 || b == 19))
         || (a == 198 && b == 51 && c == 100)
         || (a == 203 && b == 0 && c == 113)
@@ -880,6 +919,7 @@ fn is_allowed_public_v6(address: Ipv6Addr) -> bool {
         || (segments[0] == 0x2001 && segments[1] == 0x0db8)
         || segments[0] == 0x2002
         || (segments[0] & 0xfff0 == 0x3ff0)
+        || segments[0] == 0x5f00
     {
         return false;
     }
@@ -1117,6 +1157,7 @@ impl RetryBudget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_field_names)]
 pub struct BodyBudget {
     pub maximum_metadata_bytes: u64,
     pub maximum_body_bytes: u64,
@@ -1234,13 +1275,14 @@ impl CancellationModel {
     }
 
     #[must_use]
-    pub fn status(&self) -> CancellationStatus {
-        self.status
-    }
-
-    #[must_use]
     pub fn pool_reusable(&self) -> bool {
         self.status == CancellationStatus::Running
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub fn status(&self) -> CancellationStatus {
+        self.status
     }
 }
 
@@ -1648,6 +1690,42 @@ mod tests {
             validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct),
             Err(IpPolicyError::SpecialUse(_))
         ));
+        for special in ["5f00::1", "192.31.196.1", "192.52.193.1", "192.175.48.1"] {
+            evidence.answers = vec![special.parse().expect("special-purpose fixture IP")];
+            evidence.selected = evidence.answers[0];
+            assert!(
+                matches!(
+                    validate_dns_evidence("media.example", &evidence, ProxyEvidence::Direct),
+                    Err(IpPolicyError::SpecialUse(_))
+                ),
+                "{special} must fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn adapter_rejects_empty_capabilities_and_redirect_special_use() {
+        let empty = CandidateAdapter::std_first().execute([], |_| Ok("must-not-run"));
+        assert!(
+            matches!(empty, Err(TransportError::Policy(message)) if message.contains("CAPABILITY-EMPTY"))
+        );
+
+        let request = HttpRequest::new(
+            "redirect-special",
+            "GET",
+            HttpUrl::parse("https://media.example/public").expect("source URL"),
+        )
+        .expect("request");
+        let error = RedirectPolicy {
+            maximum_hops: 3,
+            reject_https_downgrade: true,
+        }
+        .apply(
+            &request,
+            HttpUrl::parse("https://127.0.0.1/admin").expect("target URL"),
+        )
+        .expect_err("special-use redirect must fail");
+        assert!(error.to_string().contains("REDIRECT-SSRF"));
     }
 
     #[test]

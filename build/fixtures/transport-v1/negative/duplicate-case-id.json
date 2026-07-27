@@ -10,7 +10,7 @@
       "kind": "standard_capability",
       "mandatory": true,
       "proof_class": "structural",
-      "requested_capabilities": ["http11"],
+      "requested_capabilities": ["http11", "range", "streaming", "replay", "cancellation", "metadata_bounds", "body_bounds"],
       "expected_outcome": "standard-capabilities-supported"
     },
     {
@@ -18,7 +18,7 @@
       "kind": "standard_capability",
       "mandatory": true,
       "proof_class": "structural",
-      "requested_capabilities": ["http11"],
+      "requested_capabilities": ["http11", "range", "streaming", "replay", "cancellation", "metadata_bounds", "body_bounds"],
       "expected_outcome": "standard-capabilities-supported"
     }
   ]

@@ -533,6 +533,15 @@ fn repo_root() -> Result<PathBuf, String> {
         .ok_or_else(|| "cannot derive repository root from CARGO_MANIFEST_DIR".to_owned())
 }
 
+fn disposable_artifact_root(root: &Path) -> PathBuf {
+    match repo_root() {
+        Ok(repository_root) if root.starts_with(&repository_root) => {
+            repository_root.join(".fforager-artifacts")
+        }
+        _ => root.join(".fforager-artifacts"),
+    }
+}
+
 fn require_repository_root_cwd(root: &Path) -> Result<(), String> {
     let cwd = env::current_dir().map_err(|e| format!("read current directory: {e}"))?;
     let expected = root
@@ -632,7 +641,7 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
             "build/fixtures/contracts/inventory.json".to_owned(),
             "build/reports".to_owned(),
             transport_report,
-            "build/target".to_owned(),
+            ".fforager-artifacts/cargo-target".to_owned(),
         ],
     };
     let path = write_report(root, "verify-deep", &report)?;
@@ -2822,6 +2831,7 @@ fn canonical_contract_manual_commands() -> Vec<&'static str> {
 fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
     let policy: ArchitecturePolicy = read_toml(&root.join("build/architecture-policy.toml"))?;
     validate_policy_identity(&policy)?;
+    validate_artifact_layout(root)?;
     let tooling: ToolingPolicy = read_toml(&root.join("build/tooling-policy.toml"))?;
     validate_tooling_policy(&tooling)?;
     validate_current_host(root, &tooling)?;
@@ -2872,7 +2882,10 @@ fn validate_policy_identity(policy: &ArchitecturePolicy) -> Result<(), String> {
     let exact_paths = [
         (policy.workspace_manifest.as_str(), "build/Cargo.toml"),
         (policy.workspace_root.as_str(), "build"),
-        (policy.target_directory.as_str(), "build/target"),
+        (
+            policy.target_directory.as_str(),
+            ".fforager-artifacts/cargo-target",
+        ),
         (
             policy.root_toolchain_selector.as_str(),
             "rust-toolchain.toml",
@@ -3153,8 +3166,47 @@ fn validate_workspace(
     }
     checks.push(pass(
         "workspace-shape",
-        "locked resolver-3 workspace members exactly match policy, inherit the pinned package contract, and use build/target output",
+        "locked resolver-3 workspace members exactly match policy, inherit the pinned package contract, and use .fforager-artifacts/cargo-target output",
     ));
+    Ok(())
+}
+
+fn validate_artifact_layout(root: &Path) -> Result<(), String> {
+    let cargo_config = fs::read_to_string(root.join(".cargo/config.toml"))
+        .map_err(|error| format!("FF-ARCH-E-ARTIFACT-ROOT: read Cargo config: {error}"))?
+        .replace("\r\n", "\n");
+    if cargo_config != "[build]\ntarget-dir = \".fforager-artifacts/cargo-target\"\n" {
+        return Err(
+            "FF-ARCH-E-ARTIFACT-ROOT: .cargo/config.toml must select the canonical artifact root"
+                .to_owned(),
+        );
+    }
+    let gitignore = fs::read_to_string(root.join(".gitignore"))
+        .map_err(|error| format!("FF-ARCH-E-ARTIFACT-ROOT: read .gitignore: {error}"))?;
+    for required in ["/.fforager-artifacts/", "/.worktrees/"] {
+        if !gitignore.lines().any(|line| line.trim() == required) {
+            return Err(format!(
+                "FF-ARCH-E-ARTIFACT-ROOT: .gitignore omits {required}"
+            ));
+        }
+    }
+    for forbidden in ["target", "build/target"] {
+        if root.join(forbidden).exists() {
+            return Err(format!(
+                "FF-ARCH-E-ARTIFACT-ROOT: legacy disposable path exists: {forbidden}"
+            ));
+        }
+    }
+    for script in [
+        "build/scripts/clean-artifacts.ps1",
+        "build/scripts/new-worktree.ps1",
+    ] {
+        if !root.join(script).is_file() {
+            return Err(format!(
+                "FF-ARCH-E-ARTIFACT-ROOT: required lifecycle script is absent: {script}"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -3617,8 +3669,10 @@ fn validate_three_roots(
             return Err(format!("required repository root is absent: {expected}"));
         }
     }
-    if policy.forbidden_product_runtime_roots != [".GOV", "build"] {
-        return Err("product runtime boundary must forbid .GOV and build".to_owned());
+    if policy.forbidden_product_runtime_roots != [".GOV", "build", ".fforager-artifacts"] {
+        return Err(
+            "product runtime boundary must forbid .GOV, build, and .fforager-artifacts".to_owned(),
+        );
     }
     let wrong_root = [
         "Cargo.toml",
@@ -3702,7 +3756,7 @@ fn toolchain_selectors(root: &Path) -> Result<Vec<String>, String> {
             selectors.push(name.to_owned());
         }
     }
-    let generated_target = root.join("build/target");
+    let generated_target = root.join(".fforager-artifacts/cargo-target");
     let mut pending = [".GOV", "product", "build"]
         .iter()
         .map(|directory| root.join(directory))
@@ -4912,6 +4966,10 @@ fn compiler_guard_environment_poison_fixture_execution(
     environment_key: &str,
     concrete_input: &str,
 ) -> Result<FixtureExecution, String> {
+    let target_dir = disposable_artifact_root(root).join("cargo-target/compiler-guard-probe");
+    let target_dir = target_dir
+        .to_str()
+        .ok_or("compiler guard target directory is not valid UTF-8")?;
     let diagnostic = with_isolated_fixture_root(root, label, |sandbox| {
         let product = sandbox.join("product");
         let probe = product.join("crates/compiler-guard-probe");
@@ -4955,7 +5013,7 @@ fn compiler_guard_environment_poison_fixture_execution(
                 "product/crates/compiler-guard-probe/Cargo.toml",
                 "--offline",
                 "--target-dir",
-                "build/target/compiler-guard-probe",
+                target_dir,
                 "--",
                 "-D",
                 "warnings",
@@ -5045,7 +5103,8 @@ fn proof_fixture(
 fn proof_map_string_only_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
     const DELETED_PROOF_ID: &str =
         "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
-    let target_dir = root.join("build/target/proof-integrity-fixtures/contract-inventory-resolver");
+    let target_dir = disposable_artifact_root(root)
+        .join("cargo-target/proof-integrity-fixtures/contract-inventory-resolver");
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let diagnostic = with_isolated_fixture_root(root, "proof-map-deleted-test", |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -5080,7 +5139,8 @@ fn proof_map_behavior_stub_fixture_execution(root: &Path) -> Result<FixtureExecu
     const PROOF_ID: &str =
         "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
     const SELECTOR: &str = "identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
-    let target_dir = root.join("build/target/proof-integrity-fixtures/contract-inventory-behavior");
+    let target_dir = disposable_artifact_root(root)
+        .join("cargo-target/proof-integrity-fixtures/contract-inventory-behavior");
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let diagnostic = with_isolated_fixture_root(root, "proof-map-behavior-stub", |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -5243,8 +5303,8 @@ fn with_isolated_fixture_root<T>(
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
-    let sandbox = root
-        .join("build/target/proof-integrity-fixtures")
+    let sandbox = disposable_artifact_root(root)
+        .join("test-runs/proof-integrity-fixtures")
         .join(format!("{label}-{}-{nonce}", std::process::id()));
     fs::create_dir_all(&sandbox).map_err(|error| error.to_string())?;
     let result = action(&sandbox);
@@ -5265,7 +5325,8 @@ fn public_invariant_mutation_fixture_execution(
     diagnostic: &str,
     proof_class: &'static str,
 ) -> Result<FixtureExecution, String> {
-    let target_dir = root.join("build/target/proof-integrity-fixtures/public-invariant-mutations");
+    let target_dir = disposable_artifact_root(root)
+        .join("cargo-target/proof-integrity-fixtures/public-invariant-mutations");
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let observed = with_isolated_fixture_root(root, mutation, |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -5539,7 +5600,8 @@ fn proof_report_fixture_execution(mutation: &str) -> Result<FixtureExecution, St
 }
 
 fn isolated_public_counterexample_mutations(root: &Path) -> Result<FixtureExecution, String> {
-    let target_dir = root.join("build/target/proof-integrity-fixtures/compiled-testkit");
+    let target_dir = disposable_artifact_root(root)
+        .join("cargo-target/proof-integrity-fixtures/compiled-testkit");
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let missing = with_isolated_fixture_root(root, "public-counterexample-removed", |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -5582,7 +5644,8 @@ fn isolated_public_counterexample_mutations(root: &Path) -> Result<FixtureExecut
 fn receipt_only_public_counterexample_fixture_execution(
     root: &Path,
 ) -> Result<FixtureExecution, String> {
-    let target_dir = root.join("build/target/proof-integrity-fixtures/public-receipt-only");
+    let target_dir = disposable_artifact_root(root)
+        .join("cargo-target/proof-integrity-fixtures/public-receipt-only");
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let diagnostic = with_isolated_fixture_root(
         root,
@@ -6967,7 +7030,7 @@ fn execute_runtime_proof(
         "--bin".to_owned(),
         proof.artifact.binary.clone(),
         "--target-dir".to_owned(),
-        "build/target".to_owned(),
+        ".fforager-artifacts/cargo-target".to_owned(),
     ];
     if !proof.artifact.features.is_empty() {
         build_args.push("--features".to_owned());
@@ -6985,7 +7048,7 @@ fn execute_runtime_proof(
         &mut checks,
     )?;
     let mut artifact = root
-        .join("build/target/release")
+        .join(".fforager-artifacts/cargo-target/release")
         .join(&proof.artifact.binary);
     if cfg!(windows) {
         artifact.set_extension("exe");
@@ -7038,7 +7101,7 @@ fn validate_built_runtime_artifact(root: &Path, artifact: &Path) -> Result<(), S
     let metadata = fs::symlink_metadata(artifact)
         .map_err(|error| format!("FF-RUNTIME-E-ARTIFACT-IDENTITY: {error}"))?;
     let release_root = root
-        .join("build/target/release")
+        .join(".fforager-artifacts/cargo-target/release")
         .canonicalize()
         .map_err(|error| format!("FF-RUNTIME-E-ARTIFACT-IDENTITY: {error}"))?;
     let canonical_artifact = artifact
@@ -7101,21 +7164,23 @@ fn stage_runtime_scenario(
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
-    let stage = env::temp_dir()
-        .join("ferric-forager-runtime-proof")
-        .join(format!("{}-{nonce}-{}", scenario.id, std::process::id()));
+    let artifact_root = root.join(".fforager-artifacts");
+    let stage = artifact_root.join("runtime-proof").join(format!(
+        "{}-{nonce}-{}",
+        scenario.id,
+        std::process::id()
+    ));
     fs::create_dir_all(&stage)
         .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: create stage: {error}"))?;
-    let canonical_root = root
+    let canonical_artifact_root = artifact_root
         .canonicalize()
         .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: canonicalize root: {error}"))?;
     let canonical_stage = stage
         .canonicalize()
         .map_err(|error| format!("FF-RUNTIME-E-CLEAN-STAGE: canonicalize stage: {error}"))?;
-    if canonical_stage.starts_with(&canonical_root) {
+    if !canonical_stage.starts_with(&canonical_artifact_root) {
         return Err(
-            "FF-RUNTIME-E-CLEAN-STAGE: runtime stage must be outside the repository tree"
-                .to_owned(),
+            "FF-RUNTIME-E-CLEAN-STAGE: runtime stage must be inside .fforager-artifacts".to_owned(),
         );
     }
     let staged_artifact = stage.join(
@@ -7458,7 +7523,7 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
             "--locked",
             "--no-deps",
             "--target-dir",
-            "build/target",
+            ".fforager-artifacts/cargo-target",
         ],
         "RUSTDOCFLAGS",
         "-Dwarnings",
@@ -7489,7 +7554,7 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
     let mut proof_limitations = architecture.limitations;
     proof_limitations.extend(runtime.limitations);
     let mut artifacts = vec![
-        "build/target".to_owned(),
+        ".fforager-artifacts/cargo-target".to_owned(),
         "build/reports".to_owned(),
         transport_report,
     ];
@@ -7643,7 +7708,7 @@ fn run_rust_verification(root: &Path, checks: &mut Vec<Check>) -> Result<(), Str
         if let Some(feature_arg) = features {
             args.push(feature_arg);
         }
-        args.extend(["--target-dir", "build/target"]);
+        args.extend(["--target-dir", ".fforager-artifacts/cargo-target"]);
         run_command(root, id, "cargo", &args, checks)?;
     }
     run_command(
@@ -7659,7 +7724,7 @@ fn run_rust_verification(root: &Path, checks: &mut Vec<Check>) -> Result<(), Str
             "--all-features",
             "--locked",
             "--target-dir",
-            "build/target",
+            ".fforager-artifacts/cargo-target",
             "--",
             "-D",
             "warnings",
@@ -7680,7 +7745,7 @@ fn run_rust_verification(root: &Path, checks: &mut Vec<Check>) -> Result<(), Str
             "--locked",
             "--no-fail-fast",
             "--target-dir",
-            "build/target",
+            ".fforager-artifacts/cargo-target",
         ],
         checks,
     )?;
@@ -7701,7 +7766,7 @@ fn run_doctests(root: &Path, checks: &mut Vec<Check>) -> Result<(), String> {
             "--all-features",
             "--locked",
             "--target-dir",
-            "build/target",
+            ".fforager-artifacts/cargo-target",
         ],
         checks,
     )
@@ -8796,7 +8861,7 @@ fn command_output_bytes_with_timeout_and_environment(
     timeout: Duration,
     environment: &[(&str, &str)],
 ) -> Result<Vec<u8>, String> {
-    let capture_root = root.join("build/target/command-capture");
+    let capture_root = root.join(".fforager-artifacts/command-capture");
     fs::create_dir_all(&capture_root)
         .map_err(|error| format!("create command capture directory: {error}"))?;
     let stem = command_capture_stem(program)?;
@@ -8905,16 +8970,34 @@ fn validate_rust_verification_environment(root: &Path) -> Result<(), String> {
         config_paths.push(cargo_home.join("config.toml"));
         config_paths.push(cargo_home.join("config"));
     }
-    let present = config_paths
+    config_paths.sort();
+    config_paths.dedup();
+    let canonical_config = "[build]\ntarget-dir = \".fforager-artifacts/cargo-target\"\n";
+    let repository_root = repo_root()?;
+    let mut allowed = vec![root.join(".cargo/config.toml")];
+    if root.starts_with(&repository_root) {
+        allowed.push(repository_root.join(".cargo/config.toml"));
+    }
+    let invalid = config_paths
         .into_iter()
         .filter(|path| path.exists())
-        .map(|path| path.display().to_string())
+        .filter_map(|path| {
+            if allowed.iter().any(|candidate| candidate == &path)
+                && fs::read_to_string(&path)
+                    .map(|text| text.replace("\r\n", "\n") == canonical_config)
+                    .unwrap_or(false)
+            {
+                None
+            } else {
+                Some(path.display().to_string())
+            }
+        })
         .collect::<Vec<_>>();
-    if present.is_empty() {
+    if invalid.is_empty() {
         Ok(())
     } else {
         Err(format!(
-            "FF-ARCH-E-RUST-ENV-OVERRIDE: verification refuses effective Cargo configuration files: {present:?}"
+            "FF-ARCH-E-RUST-ENV-OVERRIDE: verification refuses non-canonical effective Cargo configuration files: {invalid:?}"
         ))
     }
 }
@@ -9737,7 +9820,10 @@ mod tests {
 
     #[test]
     fn slash_normalizes_windows_separator() {
-        assert_eq!(slash(Path::new("build\\target")), "build/target");
+        assert_eq!(
+            slash(Path::new(".fforager-artifacts\\cargo-target")),
+            ".fforager-artifacts/cargo-target"
+        );
     }
 
     #[test]
@@ -10132,7 +10218,7 @@ mod tests {
         );
         assert_eq!(
             product_oracle_boundary_diagnostic(
-                "build/target/research-oracle/yt-dlp.exe",
+                ".fforager-artifacts/cargo-target/research-oracle/yt-dlp.exe",
                 b"yt-dlp",
             ),
             None
@@ -10449,7 +10535,7 @@ mod tests {
     #[test]
     fn nested_toolchain_selectors_are_inventoried() {
         let root = test_root("nested-selector");
-        for directory in [".GOV", "product/nested", "build/target"] {
+        for directory in [".GOV", "product/nested", ".fforager-artifacts/cargo-target"] {
             fs::create_dir_all(root.join(directory)).unwrap();
         }
         fs::write(root.join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
@@ -10459,7 +10545,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            root.join("build/target/rust-toolchain.toml"),
+            root.join(".fforager-artifacts/cargo-target/rust-toolchain.toml"),
             "ignored generated output",
         )
         .unwrap();
@@ -10685,6 +10771,17 @@ mod tests {
                 );
             },
             "FF-ARCH-E-DEPENDENCY-FEATURE",
+        );
+        assert_architecture_mutation_fails(
+            "artifact-root-drift",
+            |root| {
+                replace_file_text(
+                    &root.join(".cargo/config.toml"),
+                    ".fforager-artifacts/cargo-target",
+                    "build/target",
+                );
+            },
+            "FF-ARCH-E-ARTIFACT-ROOT",
         );
     }
 
@@ -11214,10 +11311,13 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        env::temp_dir().join(format!(
-            "fforager-xtask-{label}-{}-{nonce}",
-            std::process::id()
-        ))
+        repo_root()
+            .unwrap()
+            .join(".fforager-artifacts/test-runs")
+            .join(format!(
+                "fforager-xtask-{label}-{}-{nonce}",
+                std::process::id()
+            ))
     }
 
     fn assert_architecture_mutation_fails(
@@ -11249,6 +11349,8 @@ mod tests {
         let root = test_root(label);
         for relative in [
             "rust-toolchain.toml",
+            ".cargo/config.toml",
+            ".gitignore",
             ".GOV/rules/build-rules.yaml",
             "build/Cargo.toml",
             "build/Cargo.lock",
@@ -11257,6 +11359,8 @@ mod tests {
             "build/rule-to-proof.toml",
             "build/tools/fforager-xtask/Cargo.toml",
             "build/tools/fforager-xtask/src/main.rs",
+            "build/scripts/clean-artifacts.ps1",
+            "build/scripts/new-worktree.ps1",
             "product/clippy.toml",
             "product/MODEL_MANUAL.md",
         ] {

@@ -7,10 +7,10 @@ namespaces:
     next_numeric_id: 2
   FF-CODEX:
     entity_kind: project_rule
-    next_numeric_id: 72
+    next_numeric_id: 76
   FF-BOOT:
     entity_kind: bootstrap_rule
-    next_numeric_id: 3
+    next_numeric_id: 7
   FF-BUILD:
     entity_kind: build_rule
     next_numeric_id: 99
@@ -41,7 +41,7 @@ namespaces:
     next_numeric_id: 59
   FF-START-BOUNDARY:
     entity_kind: model_entrypoint_boundary
-    next_numeric_id: 7
+    next_numeric_id: 9
   WP-FF:
     entity_kind: work_packet
     next_numeric_id: 15
@@ -178,14 +178,14 @@ registered_files:
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
-    last: FF-BOOT-002
-    count: 2
+    last: FF-BOOT-006
+    count: 6
     path: AGENTS.md
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX
     first: FF-CODEX-001
-    last: FF-CODEX-071
-    count: 71
+    last: FF-CODEX-075
+    count: 75
     path: .GOV/codex.yaml
   - namespace: FF-BUILD
     first: FF-BUILD-001
@@ -204,8 +204,8 @@ registered_rule_ranges:
     path: .GOV/templates/WORK_PACKET_REQUIREMENTS.yaml
   - namespace: FF-START-BOUNDARY
     first: FF-START-BOUNDARY-001
-    last: FF-START-BOUNDARY-006
-    count: 6
+    last: FF-START-BOUNDARY-008
+    count: 8
     path: START_HERE.yaml
 registered_topology_ids:
   - FF-NODE-ROOT-001
@@ -216,6 +216,8 @@ registered_topology_ids:
   - FF-NODE-TOPOLOGY-001
   - FF-NODE-PRODUCT-001
   - FF-NODE-BUILD-001
+  - FF-NODE-ARTIFACT-ROOT-001
+  - FF-NODE-WORKTREE-ROOT-001
   - FF-NODE-TOOLCHAIN-SELECTOR-001
   - FF-NODE-WATCHER-001
   - FF-NODE-GOV-001
@@ -239,6 +241,9 @@ registered_topology_ids:
   - FF-EDGE-PACKETS-GOVERN-PRODUCT-001
   - FF-EDGE-PACKETS-GOVERN-BUILD-001
   - FF-EDGE-BUILD-BUILDS-PRODUCT-001
+  - FF-EDGE-BUILD-WRITES-ARTIFACTS-001
+  - FF-EDGE-WORKTREES-MERGE-PRODUCT-001
+  - FF-EDGE-WORKTREES-SHARE-ARTIFACTS-001
   - FF-EDGE-TOOLCHAIN-SELECTS-BUILD-001
   - FF-EDGE-WATCHER-OBSERVES-PRODUCT-001
   - FF-EDGE-SPEC-INFORMS-PACKETS-001
@@ -255,3 +260,4 @@ registered_validation_gate_ids:
   - FF-GATE-RELEASE-001
   - FF-GATE-WATCHER-001
   - FF-GATE-RUNTIME-001
+  - FF-GATE-ARTIFACT-HYGIENE-001

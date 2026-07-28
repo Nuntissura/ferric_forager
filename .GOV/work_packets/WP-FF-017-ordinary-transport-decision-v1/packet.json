@@ -1,0 +1,332 @@
+{
+  "schema_id": "ff.work_packet_contract@2",
+  "schema_version": "2.0.0",
+  "profile": "EXPANDED",
+  "identity": {
+    "wp_id": "WP-FF-017-ordinary-transport-decision-v1",
+    "base_wp_id": "WP-FF-017-ordinary-transport-decision",
+    "version": "1",
+    "title": "Resolve the ordinary and browser transport dependency decision",
+    "created_at_utc": "2026-07-28T23:00:15Z",
+    "updated_at_utc": "2026-07-28T23:00:15Z"
+  },
+  "authorization": {
+    "source": "operator_message",
+    "reference": "The Operator directed remediation of the failed transport candidate, required distinct-lens subagent adversarial review and hardening, and explicitly approved: \"I approve shipped reqwest 0.13.4 with rustls 0.23.42 and native ring 0.17.14 under the stated narrow controls. wreq remains non-shipped and disabled.\"",
+    "recorded_at_utc": "2026-07-28T23:00:15Z"
+  },
+  "authority": {
+    "bootstrap": "START_HERE.yaml",
+    "rules": ".GOV/codex.yaml",
+    "taskboard": ".GOV/taskboard/taskboard.yaml",
+    "requirements": ".GOV/templates/WORK_PACKET_REQUIREMENTS.yaml",
+    "spec_anchors": [
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#75-browser-impersonation",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#710-fixed-dependency-and-readiness-boundary",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#85-dependency-rings-and-composition-roots",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#9-workspace-and-module-layout",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#131-transport-capability-contract",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#132-transport-selection",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#133-connection-pools",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#135-redirect-policy",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#141-session-partitions",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#303-browser-impersonation-is-difficult-in-a-pure-rust-stack",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-1--first-runnable-production-slice"
+    ],
+    "decision_ids": [
+      "FF-DEC-001",
+      "FF-DEC-002"
+    ]
+  },
+  "source_control": {
+    "canonical_branch": "main",
+    "base_sha": "bb356cb2eb389e3cac7a9d19f25fa31be6027e99",
+    "work_branch": "codex/ordinary-transport-decision",
+    "worktree_policy": "NONE",
+    "worktree_id": null,
+    "remote_backup": {
+      "required_for_handoff": true,
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
+    },
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
+  },
+  "lifecycle": {
+    "status": "IN_PROGRESS",
+    "risk": "HIGH",
+    "blockers": [],
+    "next_action": "Checkpoint activation, then implement FF-DEC-002, exact graph enforcement, candidate policy controls, and typed browser-required refusal.",
+    "supersedes": [],
+    "superseded_by": null
+  },
+  "scope": {
+    "summary": "Resolve WP-FF-015's failed product-candidate decision by authorizing the narrow reqwest/rustls/ring ordinary transport dependency surface, retaining wreq as non-shipped disabled evidence, and enforcing the split without claiming shipped downloader capability.",
+    "product_impact": "PREREQUISITE",
+    "zero_progress_declaration": "Zero product progress. Zero capability progress. Zero runtime completion. Zero packaging or release progress. Zero phase progress. WP-017 resolves and enforces a dependency decision only; the first fforager-net production consumer must re-prove it through the exact staged shipped artifact and FF-GATE-RUNTIME-001.",
+    "in_scope": [
+      "FF-DEC-002 exact product-native exception for reqwest 0.13.4, rustls 0.23.42, and ring 0.17.14.",
+      "Reqwest default-features-off, rustls-no-provider, explicit ring provider, HTTP/2, and streaming feature enforcement.",
+      "Mechanical distinction between non-shipped-only FF-DEC-001 and shipped-product FF-DEC-002 exception semantics.",
+      "Non-shipped candidate construction proving disabled ambient proxy, redirects, cookie storage, automatic decompression, and dependency retry authority.",
+      "Ferric-owned destination, DNS/SSRF, redirect, cookie, proxy, pool, admission, bounds, timeout, cancellation, and diagnostics requirements.",
+      "Typed browser-transport-required refusal with no wreq product fallback or silent downgrade.",
+      "Current dependency graph, build-script, native-link, source, license, and exact-version evidence.",
+      "Distinct-lens subagent adversarial review and remediation."
+    ],
+    "non_goals": [
+      "Shipped fforager-net, fforager facade, CLI, launcher, watcher, storage, archive, diagnostics, or downloader implementation.",
+      "Product promotion of wreq, wreq-util, BoringSSL, btls, or another browser transport.",
+      "Browser TLS/HTTP2 parity, full compatibility, Phase 1 completion, or replacement claims.",
+      "Adding AWS-LC, native-tls, OpenSSL, curl, Chromium, Python, yt-dlp, or another runtime/native path."
+    ],
+    "allowed_paths": [
+      ".GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/packet.json",
+      ".GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/refinement.json",
+      ".GOV/taskboard/taskboard.yaml",
+      ".GOV/id-registry.yaml",
+      ".GOV/rules/build-rules.yaml",
+      ".GOV/spec/ferric_forager_technical_design_v0.3.0.md",
+      "build/Cargo.toml",
+      "build/Cargo.lock",
+      "build/architecture-policy.toml",
+      "build/deny.toml",
+      "build/rule-to-proof.toml",
+      "build/crates/fforager-transport/",
+      "build/tools/fforager-xtask/",
+      "build/fixtures/architecture/",
+      "build/fixtures/transport-v1/",
+      "build/reports/",
+      "product/MODEL_MANUAL.md"
+    ],
+    "dependencies": [
+      "WP-FF-007-transport-fingerprint-spike-v1 VALIDATED mandatory capability/security corpus.",
+      "WP-FF-015-wreq-transport-adjudication-v1 VALIDATED failed product-candidate verdict and residual blockers.",
+      "Operator approval for exact shipped reqwest/rustls/ring versions and native ring surface.",
+      "FF-GATE-ARCH-001, FF-GATE-RUNTIME-001 prerequisite ceiling, FF-GATE-DEEP-001 as triggered, FF-GATE-PR-001, and FF-GATE-SECRET-001."
+    ]
+  },
+  "acceptance_matrix": [
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-001",
+      "requirement": "FF-DEC-002 records and mechanically enforces the exact Operator-approved shipped dependency boundary: future fforager-net may directly use reqwest 0.13.4 and rustls 0.23.42 with rustls-no-provider and native ring 0.17.14; AWS-LC, native-tls, OpenSSL, default-feature, version, consumer, runtime-class, native-link, build-download, prebuilt-binary, and undeclared feature drift are rejected.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-002",
+      "requirement": "Canonical validation distinguishes product-authorized native exceptions from non-shipped-only exceptions, preserves FF-DEC-001's product prohibition, requires exact per-edge attribution, and rejects attempts to route wreq or its native graph into any shipped member.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-003",
+      "requirement": "The non-shipped ordinary candidate resolves and exercises the exact reqwest/rustls/ring graph with system proxies, automatic redirects, cookie storage, automatic decompression, and dependency retry authority disabled; it records that global/per-origin admission and security partitioning remain Ferric-owned.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-004",
+      "requirement": "Requests requiring TLS or HTTP/2 browser fingerprints return a stable typed browser-transport-required refusal before network execution; ordinary transport never silently invokes wreq, weakens requested capabilities, or reports fingerprint compatibility.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-005",
+      "requirement": "The technical design and no-context model manual state the two-engine decision, exact dependency controls, wreq disabled/non-shipped status, known ceilings, future fforager-net consumer, and required FF-GATE-RUNTIME-001 re-proof without claiming product progress.",
+      "proof_class": "structural",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-006",
+      "requirement": "High-risk distinct-lens subagent review records diff attack surfaces, at least two independent checks, counterfactuals, boundary probes, negative paths, findings, remediations, and residual uncertainty across transport security, resource/lifecycle, and dependency/proof-integrity lenses; every confirmed finding becomes a public-boundary regression and the complete matrix reruns.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
+    },
+    {
+      "id": "WP-FF-017-ordinary-transport-decision-v1-AC-007",
+      "requirement": "The strict final verdict is PASS_ORDINARY_TRANSPORT_DECISION only when every dependency, policy, typed-gap, review, and canonical-gate requirement passes; the verdict retains the prerequisite zero-progress ceiling and cannot be interpreted as shipped downloader behavior.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
+    }
+  ],
+  "recovery": {
+    "last_checkpoint": {
+      "recorded_at_utc": "2026-07-28T23:00:15Z",
+      "branch": "codex/ordinary-transport-decision",
+      "base_sha": "bb356cb2eb389e3cac7a9d19f25fa31be6027e99",
+      "head_sha": "bb356cb2eb389e3cac7a9d19f25fa31be6027e99",
+      "dirty_paths": [
+        ".GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/packet.json",
+        ".GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/refinement.json",
+        ".GOV/taskboard/taskboard.yaml",
+        ".GOV/id-registry.yaml"
+      ],
+      "checks_run": [
+        "PASS FF-GATE-ARTIFACT-HYGIENE-001 before task activation.",
+        "PASS FF-GATE-SECRET-001 hook installation; core.hooksPath=build/git-hooks.",
+        "Verified clean main at bb356cb2eb389e3cac7a9d19f25fa31be6027e99 before branching.",
+        "Read named packets, refinements, topology, build rules, packet templates, design anchors, readiness matrix, current source, and current official dependency sources.",
+        "Resolved exact reqwest/rustls provider graphs under .fforager-artifacts and cleaned them."
+      ],
+      "blockers": [],
+      "next_action": "Commit the activation checkpoint, then implement FF-DEC-002 and its exact enforcement/proof surfaces."
+    }
+  },
+  "validation": {
+    "checks": [],
+    "not_proven": [
+      "Any shipped or operator-usable network or downloader behavior.",
+      "Any fforager-net, fforager CLI, launcher, watcher, storage, archive, or Phase 1 runtime path.",
+      "Browser TLS or HTTP/2 fingerprint compatibility.",
+      "Wreq product suitability or promotion.",
+      "Complete DNS/SSRF, redirect, cookie, proxy, pool, resource, retry, decompression, cancellation, packaging, release, or cross-platform behavior."
+    ]
+  },
+  "extensions": {
+    "refinement": ".GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/refinement.json",
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0c--dependency-and-risk-spikes",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped fforager-net ordinary transport vertical slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged fforager production artifact"
+    },
+    "change_evidence": {
+      "applicable_rule_ids": [
+        "FF-BUILD-011",
+        "FF-BUILD-012",
+        "FF-BUILD-013",
+        "FF-BUILD-014",
+        "FF-BUILD-018",
+        "FF-BUILD-019",
+        "FF-BUILD-021",
+        "FF-BUILD-023",
+        "FF-BUILD-024",
+        "FF-BUILD-030",
+        "FF-BUILD-031",
+        "FF-BUILD-034",
+        "FF-BUILD-035",
+        "FF-BUILD-037",
+        "FF-BUILD-038",
+        "FF-BUILD-046",
+        "FF-BUILD-047",
+        "FF-BUILD-048",
+        "FF-BUILD-050",
+        "FF-BUILD-052",
+        "FF-BUILD-053",
+        "FF-BUILD-054",
+        "FF-BUILD-055",
+        "FF-BUILD-057",
+        "FF-BUILD-058",
+        "FF-BUILD-059",
+        "FF-BUILD-060",
+        "FF-BUILD-064",
+        "FF-BUILD-065",
+        "FF-BUILD-066",
+        "FF-BUILD-077",
+        "FF-BUILD-078",
+        "FF-BUILD-083",
+        "FF-BUILD-086",
+        "FF-BUILD-088",
+        "FF-BUILD-090",
+        "FF-BUILD-091",
+        "FF-BUILD-096",
+        "FF-BUILD-098",
+        "FF-BUILD-099"
+      ],
+      "acceptance_or_authority_ids": [
+        "FF-DEC-001",
+        "FF-DEC-002",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-001",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-002",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-003",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-004",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-005",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-006",
+        "WP-FF-017-ordinary-transport-decision-v1-AC-007"
+      ],
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Exact shipped reqwest/rustls/ring decision with no hidden provider or default-feature surface.",
+          "Mechanical product-native exception semantics that preserve FF-DEC-001's non-shipped ceiling.",
+          "Ferric-owned policy controls and typed browser-required refusal.",
+          "Distinct-lens review, remediation, and strict prerequisite verdict."
+        ],
+        "risk_cases": [
+          "AWS-LC or native-tls enters through additive features",
+          "wreq reaches a shipped package",
+          "reqwest defaults gain policy authority",
+          "pool reuse crosses security partitions",
+          "fingerprint-required traffic silently downgrades",
+          "a dependency decision is overstated as product capability"
+        ]
+      },
+      "reuse_candidates_in_order_with_result": [
+        {
+          "candidate": "no mechanism beyond the accepted outcome",
+          "result": "Rejected because ordinary HTTPS requires a maintained HTTP/TLS implementation and WP-007 proved the std-only spike is not a production transport."
+        },
+        {
+          "candidate": "reuse current Ferric code",
+          "result": "Selected for capability negotiation, typed blockers, policy ownership, corpus, diagnostics, and native-exception validation."
+        },
+        {
+          "candidate": "Rust core/std",
+          "result": "Retained for policy and bounds but rejected as a complete maintained HTTPS implementation."
+        },
+        {
+          "candidate": "approved platform capability",
+          "result": "Rejected because native-tls produces divergent OS/OpenSSL behavior and was not Operator-approved."
+        },
+        {
+          "candidate": "already-approved dependency",
+          "result": "Wreq rejected for product use by WP-015 and the Operator; no existing dependency supplies ordinary production HTTPS."
+        },
+        {
+          "candidate": "smallest complete clear implementation",
+          "result": "Selected by explicit Operator approval: reqwest 0.13.4 with rustls 0.23.42 rustls-no-provider and ring 0.17.14."
+        }
+      ],
+      "artifact_specific_justification": {
+        "FF-DEC-002": "Canonicalizes the exact native product exception outside self-authorizing build policy.",
+        "architecture-validator": "Prevents product/prerequisite confusion and version, feature, consumer, link, source, or runtime drift.",
+        "ordinary-candidate": "Executes construction and typed capability decisions through the existing non-shipped proof boundary.",
+        "technical-design": "Keeps the product design current with the Operator decision and unresolved browser gap.",
+        "model-manual": "Gives no-context models the exact decision, prohibitions, proof commands, and recovery path."
+      },
+      "pre_simplification_verdict": "FAIL: WP-015 returned a valid failed wreq product-candidate verdict; no shipped ordinary transport dependency was authorized; current validation forbids all product-native exceptions; and the proposed reqwest rustls label would hide AWS-LC unless default features and crypto provider are explicitly controlled.",
+      "simplification_changes": [],
+      "post_simplification_verdict": "PENDING",
+      "complete_post_change_verification": [],
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-017-ordinary-transport-decision-v1-CEILING-001",
+        "current_ceiling": "Dependency decision and non-shipped enforcement evidence only; no shipped transport or downloader behavior.",
+        "replacement_trigger": "The first active RUNTIME packet that adds fforager-net to a staged shipped fforager vertical slice.",
+        "likely_upgrade_path": "Consume FF-DEC-002 in fforager-net, implement Ferric-owned controls, and pass FF-GATE-RUNTIME-001 plus the mandatory transport corpus through the exact staged artifact.",
+        "trigger_detection_method": "Taskboard activation, architecture-policy member/dependency edges, Cargo metadata, package inspection, and FF-GATE-RUNTIME-001.",
+        "linked_evidence": [
+          ".GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/refinement.json",
+          ".GOV/rules/build-rules.yaml#exception_authority",
+          "build/architecture-policy.toml",
+          "build/crates/fforager-transport/",
+          "product/MODEL_MANUAL.md"
+        ]
+      }
+    }
+  }
+}

@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Revalidate the sanitized pure-Rust transport-spike lineage",
     "created_at_utc": "2026-07-29T17:23:01Z",
-    "updated_at_utc": "2026-07-29T17:23:01Z"
+    "updated_at_utc": "2026-07-29T17:31:37Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -63,8 +63,8 @@
     "superseded_by": null
   },
   "scope": {
-    "summary": "Build a prototype-only pure-Rust transport capability spike and determine with executable corpus evidence whether mandatory fingerprint, streaming, redirect, cookie, SSRF, replay, pooling, and cancellation requirements can be met inside the authorized dependency boundary.",
-    "product_impact": "PREREQUISITE",
+    "summary": "Revalidate the unchanged prototype-only pure-Rust transport-spike artifacts and complete v1 acceptance requirements against sanitized current main without changing product or prerequisite implementation code.",
+    "product_impact": "NONE",
     "zero_progress_declaration": "Zero product progress. Zero capability progress. Zero runtime completion. Zero packaging or release progress. Zero phase progress. All WP-007 outputs are prerequisite evidence under build/.",
     "in_scope": [
       "Current primary-source evaluation of maintained pure-Rust HTTP/TLS transport candidates, features, wire controls, security posture, maintenance, and transitive dependency boundaries.",
@@ -201,7 +201,8 @@
         "Reused the completed WP-007 research basis under FF-CODEX-060; no source, version, assumption, or selected-approach change was identified.",
         "FF-GATE-ARCH-001 passed on activation checkpoint c4fe12d01683631cb654e7e14f8a2a82b3d195bf.",
         "FF-GATE-RUNTIME-001 rejected both rewriting v1's immutable activation base and using v1's non-ancestral pre-sanitization base on current main, proving a new packet revision is required.",
-        "Archived v1 as immutable SUPERSEDED history and created v2 with the current-main base while preserving the complete v1 scope, refinement, acceptance, risks, zero-progress ceiling, and validation plan."
+        "Archived v1 as immutable SUPERSEDED history and created v2 with the current-main base while preserving the complete v1 scope, refinement, acceptance, risks, zero-progress ceiling, and validation plan.",
+        "FF-GATE-RUNTIME-001 classified the v2 revalidation diff as governance-only because it changes no shipped product or prerequisite implementation path; scope.product_impact was corrected from PREREQUISITE to NONE."
       ],
       "blockers": [],
       "next_action": "Commit the v2 activation checkpoint, then rerun WP-007's behavior-sensitive and canonical gates against the exact sanitized current-main artifacts."
@@ -413,6 +414,7 @@
         "current_main": "8736b3d40f05006c0abd90a99d8dd47a7960e97e"
       },
       "research_reuse": "The completed refinement remains current and is reused under FF-CODEX-060; this revalidation changes no transport requirement, dependency selection, or product claim.",
+      "revision_impact": "NONE: v2 changes only governance lineage and revalidation evidence; the preserved transport spike remains non-product prerequisite evidence from v1.",
       "required_proof": [
         "Fresh complete 54-case behavior-sensitive corpus execution on the sanitized current artifacts",
         "Declaration-preserving behavior mutation and fabricated-producer counterfactual rejection",

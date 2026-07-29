@@ -43,17 +43,14 @@ impl std::fmt::Debug for LocalHarnessTarget {
 }
 
 impl LocalHarnessTarget {
-    #[cfg(test)]
     pub(crate) fn url(&self, path: &str) -> String {
         format!("http://{}:{}{path}", self.address.ip(), self.address.port())
     }
 
-    #[cfg(test)]
     pub(crate) fn authorization(&self) -> &str {
         &self.authorization
     }
 
-    #[cfg(test)]
     pub(crate) fn acknowledge_fragment(&self) -> Result<(), TransportError> {
         let receiver = self.fragment_rx.lock().map_err(|_| {
             TransportError::Protocol("FF-TRANSPORT-E-HARNESS-FRAGMENT-LOCK".to_owned())
@@ -491,6 +488,7 @@ fn response_for(request: &CapturedRequest) -> Result<ResponsePlan, String> {
             ),
             "/stream-small" => (200, "OK", Vec::new(), vec![b"stream".to_vec()], false),
             "/redirect" => (302, "Found", vec![("Location", "/ok")], Vec::new(), false),
+            "/retryable" => (503, "Service Unavailable", Vec::new(), Vec::new(), false),
             "/set-cookie" => (
                 200,
                 "OK",

@@ -50,15 +50,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "94482379e224482ab3f0f1f7f48f1864ea0105e9",
+    "main_containment_status": "PENDING",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Checkpoint activation, then implement FF-DEC-002, exact graph enforcement, candidate policy controls, and typed browser-required refusal.",
+    "next_action": "Verify the merge-pending packet, back up the branch, merge closure commit 94482379e224482ab3f0f1f7f48f1864ea0105e9 into canonical main, and prove main containment.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -113,50 +113,68 @@
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-001",
       "requirement": "FF-DEC-002 records and mechanically enforces the exact Operator-approved shipped dependency boundary: future fforager-net may directly use reqwest 0.13.4 and rustls 0.23.42 with rustls-no-provider, native ring 0.17.14, and webpki-roots 1.0.9; ring's lock/archive/full-source and recursive packaged Windows assembly-object inventories are digest-pinned; selected rustls-platform-verifier 0.7.0 Windows FFI lock/archive/source is explicit and runtime-bypassed by a provider-bound client configuration; the complete ordinary root-reachable identity/feature/edge closure is separately authority-pinned; AWS-LC, native-tls, OpenSSL, default-feature, version, consumer, runtime-class, native-link, native-runtime, no-links FFI, build-download, arbitrary prebuilt-binary, packaged-object, resolved-feature, and undeclared graph drift are rejected.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "FF-GATE-ARCH-001 matched the exact reqwest 0.13.4, rustls 0.23.42, ring 0.17.14, webpki-roots 1.0.9, rustls-platform-verifier 0.7.0, consumer, runtime-class, feature, lock, archive, extracted-source, recursive native-object, and root-reachable closure authority.",
+        "The mutation suite rejected dependency version, default-feature, AWS-LC, native-tls, consumer, runtime-class, edge-attribution, link, no-links FFI, source, archive, packaged-object, resolved-feature, and graph-closure drift."
+      ]
     },
     {
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-002",
       "requirement": "Canonical validation distinguishes product-authorized native exceptions from non-shipped-only exceptions, preserves FF-DEC-001's product prohibition, requires exact per-edge attribution, and rejects attempts to route wreq or its native graph into any shipped member.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Canonical architecture and mutation checks preserved FF-DEC-001 as non-release evidence, constrained FF-DEC-002 to the declared future fforager-net consumer, and rejected wreq reachability from every shipped member."
+      ]
     },
     {
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-003",
       "requirement": "The non-shipped ordinary candidate resolves and behaviorally exercises the exact isolated reqwest/rustls/ring/webpki-roots graph with system proxies, automatic redirects, cookie storage, automatic decompression, and dependency retry authority disabled; it records that rustls-platform-verifier is selected but bypassed at runtime and that global/per-origin admission and security partitioning remain Ferric-owned.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The 27-test focused ordinary suite exercised exact provider-bound client construction, disabled proxy/redirect/retry/decompression/cookie authority, cookie non-persistence, bounded bodies, reports, and deterministic worker cleanup.",
+        "The ordinary component report records ring as the selected provider, rustls-platform-verifier as graph-selected but runtime-bypassed, and every remaining Ferric-owned control as an explicit ceiling."
+      ]
     },
     {
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-004",
       "requirement": "Requests requiring TLS or HTTP/2 browser fingerprints return a stable typed browser-transport-required refusal before network execution; ordinary transport never silently invokes wreq, weakens requested capabilities, or reports fingerprint compatibility.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Typed TLS-fingerprint, HTTP/2-fingerprint, and combined browser-capability cases refuse before client construction or network execution; focused tests also prove no ordinary-to-wreq fallback and no fingerprint compatibility claim."
+      ]
     },
     {
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-005",
       "requirement": "The technical design and no-context model manual state the two-engine decision, exact dependency controls, wreq disabled/non-shipped status, known ceilings, future fforager-net consumer, required FF-GATE-RUNTIME-001 re-proof, and the prerequisite-only zero-completion ceiling.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        ".GOV/spec/ferric_forager_technical_design_v0.3.0.md and product/MODEL_MANUAL.md record the two-engine boundary, exact dependency controls, disabled wreq status, future fforager-net ownership, recovery guidance, and prerequisite-only ceiling."
+      ]
     },
     {
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-006",
       "requirement": "High-risk distinct-lens subagent review records diff attack surfaces, at least two independent checks, counterfactuals, boundary probes, negative paths, findings, remediations, and residual uncertainty across transport security, resource/lifecycle, and dependency/proof-integrity lenses; every confirmed finding becomes a public-boundary regression and the complete matrix reruns.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Independent transport-security, resource/lifecycle, and supply-chain/proof-integrity reviewers each returned no actionable blocker after remediation.",
+        "extensions.change_evidence.adversarial_review records six remediated findings with public-boundary regression IDs, counterfactuals, boundary probes, negative paths, and residual uncertainty; the complete matrix was rerun afterward."
+      ]
     },
     {
       "id": "WP-FF-017-ordinary-transport-decision-v1-AC-007",
       "requirement": "The strict final verdict is PASS_ORDINARY_TRANSPORT_DECISION only when every dependency, policy, typed-gap, review, and canonical-gate requirement passes; the verdict retains the prerequisite zero-progress ceiling and cannot be interpreted as shipped downloader behavior.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The exact component emitted PASS_ORDINARY_TRANSPORT_COMPONENT_PROOF with final_decision_verdict_emitted=false; FF-GATE-RUNTIME-001 report build/reports/runtime-truth-check-1785300204852851700-79864.json retained the prerequisite ceiling.",
+        "FF-GATE-PR-001 report build/reports/verify-pr-1785301302352341000-129168.json completed the integrated repository proof, and the final decision is PASS_ORDINARY_TRANSPORT_DECISION with no downloader-behavior claim."
+      ]
     }
   ],
   "recovery": {
@@ -183,7 +201,23 @@
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "27 focused fforager-transport ordinary tests",
+      "50 fforager-transport all-feature tests",
+      "warnings-denied Clippy for fforager-transport and fforager-xtask",
+      "exact PASS_ORDINARY_TRANSPORT_COMPONENT_PROOF component output",
+      "root-reachable package graph closure: 111 package identities/features/edges",
+      "authenticated reachable registry source closure: 109 packages",
+      "recursive ring packaged native inventory: 17 artifacts",
+      "independent transport-security review",
+      "independent resource/lifecycle review",
+      "independent supply-chain/proof-integrity review",
+      "FF-GATE-ARCH-001",
+      "FF-GATE-RUNTIME-001",
+      "FF-GATE-DEEP-001",
+      "FF-GATE-PR-001",
+      "FF-GATE-SECRET-001 history, staged, and commit-hook scans"
+    ],
     "not_proven": [
       "Any shipped or operator-usable network or downloader behavior.",
       "Any fforager-net, fforager CLI, launcher, watcher, storage, archive, or Phase 1 runtime path.",

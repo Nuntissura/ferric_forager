@@ -376,6 +376,38 @@ Failure and recovery:
 
 </topic>
 
+<topic id="ordinary-transport-dependency-decision" status="active" version="1" wp="WP-FF-017-ordinary-transport-decision-v1" ingestable="true" updated_at="2026-07-29">
+
+## Verify the ordinary transport dependency decision
+
+`FF-DEC-002` authorizes future shipped `fforager-net` use of exact `reqwest 0.13.4`, `rustls 0.23.42`, native `ring 0.17.14`, and `webpki-roots 1.0.9`. Reqwest default features are off; the only requested reqwest features are `http2`, `rustls-no-provider`, and `stream`; the explicit rustls features are `ring`, `std`, and `tls12`. The resolved ordinary profile is pinned, including reqwest's internal `__rustls` and `__tls` features. AWS-LC, native-tls, OpenSSL, ambient system proxy configuration, automatic redirects, cookie storage, automatic decompression, and dependency retry authority are not part of this decision.
+
+Run the exact non-shipped construction and typed refusal proof from the repository root:
+
+```powershell
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-transport --no-default-features --features ordinary-transport --bin fforager-ordinary-transport-decision
+```
+
+The command builds the exact reqwest client from a provider-bound rustls `ClientConfig` using ring and the pinned Mozilla root snapshot; it does not install a process-global provider or select the platform trust store at runtime. It behaviorally proves that injected proxy/redirect and retry policies are overridden, a received cookie is not stored or resent, and a gzip response remains compressed. Automatic decompression is disabled primarily by the exact resolved feature graph; the wire probe validates the resulting behavior rather than claiming that a feature-gated no-op builder call caused it. The command separately requests TLS and HTTP/2 fingerprint capabilities and proves that `FF-TRANSPORT-E-BROWSER-TRANSPORT-REQUIRED` is returned before client construction or network execution. The strict reload emits only `PASS_ORDINARY_TRANSPORT_COMPONENT_PROOF`, `final_decision_verdict_emitted: false`, `wreq_product_fallback: false`, and `PREREQUISITE only: zero Phase 1 product implementation and runtime progress`; only the canonical packet/gate/review aggregator may later emit `PASS_ORDINARY_TRANSPORT_DECISION`.
+
+The locked ring crate contains bundled C source and 17 packaged pregenerated Windows assembly objects. This is explicit rather than hidden: `FF-DEC-002` authorizes only exact `ring@0.17.14`, and the architecture gate checks the Cargo.lock checksum, cached crate archive checksum, full extracted source-tree digest, exact selected features, recursive object-inventory digest, and native-link reachability. It does not authorize arbitrary prebuilt libraries, another provider, build-time downloads, or environment-selected crypto.
+
+Reqwest's `rustls-no-provider` feature currently selects `rustls-platform-verifier 0.7.0`. On Windows that package contains native trust-verifier FFI, so `FF-DEC-002` records and validates its lock/archive/source digests as a selected native-runtime package even though Ferric's preconfigured rustls client bypasses it at runtime. Ring remains the only native crypto link/build provider. A digest under separate `FF-DEC-002` authority pins the entire `fforager-transport`-reachable ordinary resolve closure—package identities, selected features, and edges—so an unknown no-`links` FFI wrapper cannot self-authorize through build policy. The ordinary profile also rejects wreq, BoringSSL, AWS-LC, native-tls, and OpenSSL.
+
+Ferric—not reqwest—must own address admission, redirect approval, cookie storage and scope, proxy authorization, immutable pool partitioning, global and per-origin in-flight admission, download and decompression bounds, retry budgets, timeouts, cancellation, receipts, and diagnostics. A future `fforager-net` product consumer must pass the mandatory transport corpus and staged `FF-GATE-RUNTIME-001`; this prerequisite decision is not a working downloader or product progress.
+
+`wreq 6.0.0-rc.29` and `wreq-util 3.0.0-rc.14` remain confined to non-shipped `fforager-transport` evidence under `FF-DEC-001`. They are disabled for product routing and cannot be used as an automatic fallback. A browser transport requires closed blockers and a new explicit Operator decision.
+
+Recovery:
+
+- `FF-ARCH-E-DEPENDENCY-FEATURE`: restore the exact feature lists and disabled defaults in `build/Cargo.toml`, the consumer manifest, and `build/architecture-policy.toml`.
+- `FF-ARCH-E-NATIVE-LINK-SURFACE`, `FF-ARCH-E-NATIVE-SOURCE`, or `FF-ARCH-E-NATIVE-PRECOMPILED`: restore exact `ring@0.17.14`, its locked source package and object-inventory digest, exact `rustls-platform-verifier@0.7.0` attribution, and the narrow exception. Do not add AWS-LC or broaden the native allowlist.
+- `FF-ARCH-E-RESOLVED-FEATURE-SURFACE` or `FF-ARCH-E-ORDINARY-PROFILE-ISOLATION`: restore the exact ordinary feature graph and keep wreq/BoringSSL disabled for that profile.
+- `FF-TRANSPORT-E-BROWSER-TRANSPORT-REQUIRED`: this is the intended fail-closed product result for fingerprint-required requests until a browser engine is separately approved; do not retry through `wreq`.
+- A report mismatch or forged PASS: rerun the command from the clean repository root and inspect the exact dependency, control, and product-progress fields. Do not edit the expected report.
+
+</topic>
+
 <topic id="runtime-proof-contract" status="active" version="1" wp="WP-FF-012-runtime-truth-gates-v1" ingestable="true" updated_at="2026-07-19">
 
 ## Declare production runtime proof

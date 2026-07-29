@@ -73,6 +73,7 @@ impl CandidateAdapter {
         }
     }
 
+    #[cfg(feature = "wreq-adjudication")]
     pub(crate) fn wreq_adjudication() -> Self {
         Self {
             identity: "ferric-wreq-adjudication-v1".to_owned(),
@@ -80,6 +81,18 @@ impl CandidateAdapter {
                 Capability::Http11,
                 Capability::Http2,
                 Capability::BodyBounds,
+            ]),
+        }
+    }
+
+    pub(crate) fn ordinary_reqwest() -> Self {
+        Self {
+            identity: "ferric-ordinary-reqwest-transport-v1".to_owned(),
+            supported: BTreeSet::from([
+                Capability::Http11,
+                Capability::Http2,
+                Capability::Range,
+                Capability::Streaming,
             ]),
         }
     }
@@ -183,7 +196,21 @@ fn blocked_capability(capability: Capability) -> BlockedCapability {
     blocked_capability_for("ferric-std-first-transport-spike-v1", capability)
 }
 
+#[allow(clippy::too_many_lines)]
 fn blocked_capability_for(candidate: &str, capability: Capability) -> BlockedCapability {
+    if candidate == "ferric-ordinary-reqwest-transport-v1"
+        && matches!(
+            capability,
+            Capability::TlsFingerprint | Capability::Http2Fingerprint
+        )
+    {
+        return BlockedCapability {
+            capability,
+            code: "FF-TRANSPORT-E-BROWSER-TRANSPORT-REQUIRED".to_owned(),
+            reason: "the request requires browser wire impersonation, which the ordinary reqwest transport cannot provide; the non-shipped wreq candidate is disabled"
+                .to_owned(),
+        };
+    }
     if candidate == "ferric-wreq-adjudication-v1" {
         let (code, reason) = match capability {
             Capability::TlsFingerprint => (

@@ -76,19 +76,53 @@ exception_authority:
       status: ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY
       owner: WP-FF-015-wreq-transport-adjudication
       approval_id: WP-FF-015-wreq-transport-adjudication-v1-AC-001
-      allowed_consumers: [fforager-transport]
+      allowed_prerequisite_consumers: [fforager-transport]
+      allowed_product_consumers: []
       allowed_direct_dependencies: [wreq, wreq-util]
       allowed_versions: ["wreq@5.3.0", "wreq@6.0.0-rc.29", "wreq-util@3.0.0-rc.14"]
       allowed_native_link_packages: ["btls-sys@0.5.6", "clang-sys@1.8.1", "zstd-sys@2.0.16+zstd.1.5.7"]
+      allowed_native_runtime_packages: []
+      allowed_package_archive_sha256: []
+      allowed_package_source_inventory_sha256: []
+      ordinary_transport_resolved_closure_sha256: ""
+      ordinary_transport_registry_source_closure_sha256: ""
       allowed_runtime_classes: [non_shipped_phase0_prerequisite]
       allow_build_scripts: true
       allow_build_time_downloads: false
       allow_prebuilt_binaries: false
+      allow_packaged_pregenerated_assembly_objects: false
+      packaged_object_inventory_sha256: ""
       allow_product_use: false
       allow_packaging_or_release: false
       promotion_requires_new_operator_decision: true
       reason: The validated WP-007 corpus produced 31 mandatory typed blockers and proved that the approved std-first stack cannot execute browser TLS or HTTP2 fingerprint semantics; the Operator explicitly selected the recommended bounded wreq adjudication path.
       removal_trigger: Remove the exception if wreq fails adjudication, a maintained non-native implementation passes the same corpus, or the non-shipped transport prerequisite is retired; production promotion requires a separate explicit Operator decision.
+    - id: FF-DEC-002
+      kind: native_dependency
+      status: ACTIVE_SHIPPED_PRODUCT_NARROW_ONLY
+      owner: WP-FF-017-ordinary-transport-decision
+      approval_id: WP-FF-017-ordinary-transport-decision-v1-AC-001
+      allowed_prerequisite_consumers: [fforager-transport]
+      allowed_product_consumers: [fforager-net]
+      allowed_direct_dependencies: [reqwest, rustls]
+      allowed_versions: ["reqwest@0.13.4", "ring@0.17.14", "rustls@0.23.42"]
+      allowed_native_link_packages: ["ring@0.17.14"]
+      allowed_native_runtime_packages: ["rustls-platform-verifier@0.7.0"]
+      allowed_package_archive_sha256: ["ring@0.17.14=a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7", "rustls-platform-verifier@0.7.0=26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"]
+      allowed_package_source_inventory_sha256: ["ring@0.17.14=60be074c360264320b3fa0a46515ca828e44954988d8843ad3766bf84fc452d3", "rustls-platform-verifier@0.7.0=8d7a222bf3a643ce4c2003c1ede94bbd0d4e10443271602ab445c9d940ac40b0"]
+      ordinary_transport_resolved_closure_sha256: "f042b288374c8cd88b72191983df65732abd5bd940f950c44dce57051de45210"
+      ordinary_transport_registry_source_closure_sha256: "77cd4f81824d693e36750605c68eadedb57dbda5db35ec85bc4aae8b78719bc3"
+      allowed_runtime_classes: [non_shipped_phase0_prerequisite, shipped_rust_product]
+      allow_build_scripts: true
+      allow_build_time_downloads: false
+      allow_prebuilt_binaries: false
+      allow_packaged_pregenerated_assembly_objects: true
+      packaged_object_inventory_sha256: "be06dab876434410926fdf8d9ab7c37b18054f87adaf761dc6c8fcf167a56fb3"
+      allow_product_use: true
+      allow_packaging_or_release: true
+      promotion_requires_new_operator_decision: false
+      reason: The Operator explicitly approved shipped reqwest 0.13.4 with rustls 0.23.42, rustls-no-provider, and native ring 0.17.14 for Ferric's ordinary transport under narrow Ferric-owned policy controls; the exact locked ring crate includes a digest-pinned packaged Windows assembly-object inventory, and rustls-no-provider selects rustls-platform-verifier 0.7.0 whose Windows FFI remains supply-chain governed even though Ferric's provider-bound ClientConfig bypasses it at runtime.
+      removal_trigger: Replace only through a new explicit Operator decision that re-proves the exact provider, native-link, feature, consumer, runtime-class, policy-control, and staged-runtime boundaries.
   rule: build/architecture-policy.toml MUST reference a stable decision ID in this separate allowlist and MUST NOT authorize native runtimes, unsafe crates, forbidden edges, build-time downloads, prebuilt binaries, FFI, or other architecture exceptions by editing build policy alone.
 rules:
   - id: FF-BUILD-001

@@ -142,10 +142,18 @@ struct NativeDependencyException {
     id: String,
     owner: String,
     approval_id: String,
-    allowed_consumers: BTreeSet<String>,
+    allow_packaged_pregenerated_assembly_objects: bool,
+    packaged_object_inventory_sha256: String,
+    allowed_prerequisite_consumers: BTreeSet<String>,
+    allowed_product_consumers: BTreeSet<String>,
     allowed_direct_dependencies: BTreeSet<String>,
     allowed_versions: BTreeSet<String>,
     allowed_native_link_packages: BTreeSet<String>,
+    allowed_native_runtime_packages: BTreeSet<String>,
+    allowed_package_archive_sha256: BTreeMap<String, String>,
+    allowed_package_source_inventory_sha256: BTreeMap<String, String>,
+    ordinary_transport_resolved_closure_sha256: String,
+    ordinary_transport_registry_source_closure_sha256: String,
     allowed_runtime_classes: BTreeSet<String>,
 }
 
@@ -2966,12 +2974,18 @@ fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
     validate_current_host(root, &tooling)?;
     let rule_map: RuleMap = read_toml(&root.join("build/rule-to-proof.toml"))?;
     validate_rule_map_identity(&rule_map)?;
-    let metadata = cargo_metadata(root, &policy)?;
+    let metadata_target = tooling
+        .supported_hosts
+        .first()
+        .ok_or("tooling policy has no supported Cargo metadata target")?;
+    let metadata = cargo_metadata(root, &policy, metadata_target)?;
     let mut checks = Vec::new();
     validate_workspace(root, &policy, &metadata, &mut checks)?;
     validate_internal_graph(&policy, &metadata, &mut checks)?;
     validate_three_roots(root, &policy, &mut checks)?;
     validate_dependencies(&policy, &metadata, &native_exceptions, &mut checks)?;
+    let ordinary_metadata = cargo_metadata_ordinary_profile(root, &policy, metadata_target)?;
+    validate_ordinary_profile_isolation(&ordinary_metadata, &native_exceptions, &mut checks)?;
     let canonical_rules = required_architecture_rules(&root.join(".GOV/rules/build-rules.yaml"))?;
     validate_rule_map(&rule_map, &canonical_rules, &mut checks)?;
     let fixtures = validate_fixtures(root, &rule_map, &mut checks)?;
@@ -3047,6 +3061,22 @@ fn validate_policy_identity(
     if declared_exception_ids != authorized_exception_ids {
         return Err(
             "FF-ARCH-E-UNAPPROVED-EXCEPTION: architecture policy and canonical exception allowlist differ"
+                .to_owned(),
+        );
+    }
+    let declared_native_links = native_exceptions
+        .values()
+        .flat_map(|exception| exception.allowed_native_link_packages.iter())
+        .collect::<Vec<_>>();
+    if declared_native_links.len()
+        != declared_native_links
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .len()
+    {
+        return Err(
+            "FF-ARCH-E-NATIVE-LINK-ATTRIBUTION: a native link package is attributed to multiple exceptions"
                 .to_owned(),
         );
     }
@@ -3242,7 +3272,11 @@ fn host_supported(supported_hosts: &[String], host: &str) -> bool {
     supported_hosts.iter().any(|supported| supported == host)
 }
 
-fn cargo_metadata(root: &Path, policy: &ArchitecturePolicy) -> Result<Metadata, String> {
+fn cargo_metadata(
+    root: &Path,
+    policy: &ArchitecturePolicy,
+    target: &str,
+) -> Result<Metadata, String> {
     let output = command_output_with_timeout(
         root,
         "cargo",
@@ -3254,10 +3288,328 @@ fn cargo_metadata(root: &Path, policy: &ArchitecturePolicy) -> Result<Metadata, 
             &policy.workspace_manifest,
             "--all-features",
             "--locked",
+            "--filter-platform",
+            target,
         ],
         METADATA_COMMAND_TIMEOUT,
     )?;
     serde_json::from_str(&output).map_err(|error| format!("parse locked Cargo metadata: {error}"))
+}
+
+fn cargo_metadata_ordinary_profile(
+    root: &Path,
+    policy: &ArchitecturePolicy,
+    target: &str,
+) -> Result<Metadata, String> {
+    let output = command_output_with_timeout(
+        root,
+        "cargo",
+        &[
+            "metadata",
+            "--format-version",
+            "1",
+            "--manifest-path",
+            &policy.workspace_manifest,
+            "--no-default-features",
+            "--features",
+            "fforager-transport/ordinary-transport",
+            "--locked",
+            "--filter-platform",
+            target,
+        ],
+        METADATA_COMMAND_TIMEOUT,
+    )?;
+    serde_json::from_str(&output)
+        .map_err(|error| format!("parse locked ordinary-profile Cargo metadata: {error}"))
+}
+
+fn validate_ordinary_profile_isolation(
+    metadata: &Metadata,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
+    checks: &mut Vec<Check>,
+) -> Result<(), String> {
+    let resolve = metadata
+        .resolve
+        .as_ref()
+        .ok_or("ordinary-profile Cargo metadata omitted resolve graph")?;
+    let resolved_ids = resolve
+        .nodes
+        .iter()
+        .map(|node| node.id.to_string())
+        .collect::<BTreeSet<_>>();
+    let resolved_packages = metadata
+        .packages
+        .iter()
+        .filter(|package| resolved_ids.contains(&package.id.to_string()))
+        .map(|package| {
+            (
+                format!("{}@{}", package.name, package.version),
+                package.id.clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let expected_features = BTreeMap::from([
+        (
+            "reqwest@0.13.4",
+            BTreeSet::from(["__rustls", "__tls", "http2", "rustls-no-provider", "stream"]),
+        ),
+        ("rustls@0.23.42", BTreeSet::from(["ring", "std", "tls12"])),
+        (
+            "ring@0.17.14",
+            BTreeSet::from(["alloc", "default", "dev_urandom_fallback"]),
+        ),
+        ("rustls-platform-verifier@0.7.0", BTreeSet::new()),
+        ("webpki-roots@1.0.9", BTreeSet::new()),
+    ]);
+    for (identity, expected) in expected_features {
+        let package_id = resolved_packages.get(identity).ok_or_else(|| {
+            format!("FF-ARCH-E-RESOLVED-FEATURE-SURFACE: ordinary profile omitted {identity}")
+        })?;
+        let observed = resolve
+            .nodes
+            .iter()
+            .find(|node| &node.id == package_id)
+            .map(|node| {
+                node.features
+                    .iter()
+                    .map(|feature| feature.as_str())
+                    .collect::<BTreeSet<_>>()
+            })
+            .ok_or_else(|| {
+                format!(
+                    "FF-ARCH-E-RESOLVED-FEATURE-SURFACE: ordinary profile omitted resolve node for {identity}"
+                )
+            })?;
+        if observed != expected {
+            return Err(format!(
+                "FF-ARCH-E-RESOLVED-FEATURE-SURFACE: {identity} expected {expected:?}, observed {observed:?}"
+            ));
+        }
+    }
+    let forbidden = [
+        "aws-lc-rs",
+        "aws-lc-sys",
+        "btls",
+        "btls-sys",
+        "hyper-tls",
+        "native-tls",
+        "openssl",
+        "openssl-sys",
+        "tokio-native-tls",
+        "wreq",
+        "wreq-util",
+    ];
+    let selected_forbidden = metadata
+        .packages
+        .iter()
+        .filter(|package| {
+            resolved_ids.contains(&package.id.to_string())
+                && forbidden.contains(&package.name.as_str())
+        })
+        .map(|package| format!("{}@{}", package.name, package.version))
+        .collect::<BTreeSet<_>>();
+    if !selected_forbidden.is_empty() {
+        return Err(format!(
+            "FF-ARCH-E-ORDINARY-PROFILE-ISOLATION: ordinary profile selected forbidden transport packages {selected_forbidden:?}"
+        ));
+    }
+    let (expected_closure_sha256, expected_source_closure_sha256) =
+        validate_ordinary_profile_closures(metadata, native_exceptions)?;
+    checks.push(pass(
+        "ordinary-transport-profile",
+        &format!(
+            "root-reachable resolved identities, features, and edges match closure {expected_closure_sha256}; root-reachable crates.io extracted sources match closure {expected_source_closure_sha256}; exact reqwest/rustls/ring/webpki-root resolved features are pinned for the supported target; rustls-platform-verifier is explicitly governed but bypassed by the provider-bound client configuration; wreq, BoringSSL, AWS-LC, native-tls, and OpenSSL are absent"
+        ),
+    ));
+    Ok(())
+}
+
+fn validate_ordinary_profile_closures(
+    metadata: &Metadata,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
+) -> Result<(String, String), String> {
+    let exception = native_exceptions
+        .get("FF-DEC-002")
+        .ok_or("FF-ARCH-E-ORDINARY-PROFILE-CLOSURE: FF-DEC-002 is absent")?;
+    let expected = exception.ordinary_transport_resolved_closure_sha256.clone();
+    let observed = ordinary_transport_resolved_closure_sha256(metadata)?;
+    if observed != expected {
+        return Err(format!(
+            "FF-ARCH-E-ORDINARY-PROFILE-CLOSURE: expected {expected}, observed {observed}"
+        ));
+    }
+    let expected_source = exception
+        .ordinary_transport_registry_source_closure_sha256
+        .clone();
+    let observed_source = ordinary_transport_registry_source_closure_sha256(metadata)?;
+    if observed_source != expected_source {
+        return Err(format!(
+            "FF-ARCH-E-ORDINARY-SOURCE-CLOSURE: expected {expected_source}, observed {observed_source}"
+        ));
+    }
+    Ok((expected, expected_source))
+}
+
+fn ordinary_transport_resolved_closure_sha256(metadata: &Metadata) -> Result<String, String> {
+    let resolve = metadata
+        .resolve
+        .as_ref()
+        .ok_or("ordinary-profile Cargo metadata omitted resolve graph")?;
+    let packages = metadata
+        .packages
+        .iter()
+        .map(|package| (package.id.to_string(), package))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = resolve
+        .nodes
+        .iter()
+        .map(|node| (node.id.to_string(), node))
+        .collect::<BTreeMap<_, _>>();
+    let root_id = metadata
+        .workspace_members
+        .iter()
+        .find(|id| {
+            packages
+                .get(&id.to_string())
+                .is_some_and(|package| package.name.as_str() == "fforager-transport")
+        })
+        .ok_or("FF-ARCH-E-ORDINARY-PROFILE-CLOSURE: fforager-transport root is absent")?
+        .to_string();
+    let mut pending = vec![root_id];
+    let mut visited = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id.clone()) {
+            continue;
+        }
+        let node = nodes.get(&id).ok_or_else(|| {
+            format!("FF-ARCH-E-ORDINARY-PROFILE-CLOSURE: missing resolve node {id}")
+        })?;
+        pending.extend(
+            node.deps
+                .iter()
+                .map(|dependency| dependency.pkg.to_string()),
+        );
+    }
+    let package_identity = |id: &str| -> Result<String, String> {
+        let package = packages
+            .get(id)
+            .ok_or_else(|| format!("FF-ARCH-E-ORDINARY-PROFILE-CLOSURE: missing package {id}"))?;
+        let source = package
+            .source
+            .as_ref()
+            .map_or("workspace", |source| source.repr.as_str());
+        Ok(format!("{}@{}[{source}]", package.name, package.version))
+    };
+    let mut lines = Vec::new();
+    for id in visited {
+        let node = nodes.get(&id).ok_or_else(|| {
+            format!("FF-ARCH-E-ORDINARY-PROFILE-CLOSURE: missing resolve node {id}")
+        })?;
+        let mut features = node
+            .features
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        features.sort();
+        let mut edges = node
+            .deps
+            .iter()
+            .map(|dependency| {
+                package_identity(&dependency.pkg.to_string())
+                    .map(|identity| format!("{}->{identity}", dependency.name))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        edges.sort();
+        lines.push(format!(
+            "{}|features={}|edges={}\n",
+            package_identity(&id)?,
+            features.join(","),
+            edges.join(",")
+        ));
+    }
+    lines.sort();
+    Ok(encode_sha256(lines.concat().as_bytes()))
+}
+
+fn ordinary_transport_registry_source_closure_sha256(
+    metadata: &Metadata,
+) -> Result<String, String> {
+    let resolve = metadata
+        .resolve
+        .as_ref()
+        .ok_or("ordinary-profile Cargo metadata omitted resolve graph")?;
+    let packages = metadata
+        .packages
+        .iter()
+        .map(|package| (package.id.to_string(), package))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = resolve
+        .nodes
+        .iter()
+        .map(|node| (node.id.to_string(), node))
+        .collect::<BTreeMap<_, _>>();
+    let root_id = metadata
+        .workspace_members
+        .iter()
+        .find(|id| {
+            packages
+                .get(&id.to_string())
+                .is_some_and(|package| package.name.as_str() == "fforager-transport")
+        })
+        .ok_or("FF-ARCH-E-ORDINARY-SOURCE-CLOSURE: fforager-transport root is absent")?
+        .to_string();
+    let mut pending = vec![root_id];
+    let mut visited = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id.clone()) {
+            continue;
+        }
+        let node = nodes.get(&id).ok_or_else(|| {
+            format!("FF-ARCH-E-ORDINARY-SOURCE-CLOSURE: missing resolve node {id}")
+        })?;
+        pending.extend(
+            node.deps
+                .iter()
+                .map(|dependency| dependency.pkg.to_string()),
+        );
+    }
+    let mut lines = Vec::new();
+    for id in visited {
+        let package = packages
+            .get(&id)
+            .ok_or_else(|| format!("FF-ARCH-E-ORDINARY-SOURCE-CLOSURE: missing package {id}"))?;
+        let Some(source) = package.source.as_ref() else {
+            continue;
+        };
+        if !source
+            .repr
+            .starts_with("registry+https://github.com/rust-lang/crates.io-index")
+        {
+            return Err(format!(
+                "FF-ARCH-E-ORDINARY-SOURCE-CLOSURE: {}@{} has non-crates.io source {}",
+                package.name, package.version, source.repr
+            ));
+        }
+        let root = package
+            .manifest_path
+            .parent()
+            .ok_or_else(|| {
+                format!(
+                    "FF-ARCH-E-ORDINARY-SOURCE-CLOSURE: manifest has no parent for {}@{}",
+                    package.name, package.version
+                )
+            })?
+            .as_std_path();
+        lines.push(format!(
+            "{}@{}[{}] {}\n",
+            package.name,
+            package.version,
+            source.repr,
+            package_source_inventory_sha256(root)?
+        ));
+    }
+    lines.sort();
+    Ok(encode_sha256(lines.concat().as_bytes()))
 }
 
 fn validate_workspace(
@@ -4228,19 +4580,31 @@ fn validate_dependency_decisions<'policy>(
     let members = policy
         .members
         .iter()
-        .map(|member| member.name.as_str())
-        .collect::<BTreeSet<_>>();
+        .map(|member| (member.name.as_str(), member))
+        .collect::<BTreeMap<_, _>>();
     for decision in decisions.values() {
-        if !members.contains(decision.consumer.as_str())
-            || !matches!(
-                decision.runtime_class.as_str(),
-                "non_shipped_build_tooling"
-                    | "non_shipped_test_tooling"
-                    | "non_shipped_phase0_prerequisite"
-                    | "non_shipped_phase0_proof_telemetry"
-                    | "shipped_rust_product"
-            )
-            || decision.purpose.trim().is_empty()
+        let Some(member) = members.get(decision.consumer.as_str()) else {
+            return Err(format!(
+                "invalid tooling-only dependency decision for {}",
+                decision.name
+            ));
+        };
+        let is_product = member.shipped || member.manifest.starts_with("product/");
+        let runtime_class_is_product = decision.runtime_class == "shipped_rust_product";
+        if is_product != runtime_class_is_product {
+            return Err(format!(
+                "FF-ARCH-E-DEPENDENCY-RUNTIME-CLASS: {} -> {} runtime class {} does not match its product boundary",
+                decision.consumer, decision.name, decision.runtime_class
+            ));
+        }
+        if !matches!(
+            decision.runtime_class.as_str(),
+            "non_shipped_build_tooling"
+                | "non_shipped_test_tooling"
+                | "non_shipped_phase0_prerequisite"
+                | "non_shipped_phase0_proof_telemetry"
+                | "shipped_rust_product"
+        ) || decision.purpose.trim().is_empty()
             || decision.version.trim().is_empty()
             || !work_packet_base_owner_valid(&decision.owner)
             || decision.allowed_consumers != [decision.consumer.as_str()]
@@ -4277,9 +4641,14 @@ fn dependency_native_exception_valid(
     let Some(exception) = native_exceptions.get(exception_id) else {
         return false;
     };
+    let allowed_consumers = if decision.runtime_class == "shipped_rust_product" {
+        &exception.allowed_product_consumers
+    } else {
+        &exception.allowed_prerequisite_consumers
+    };
     exception.owner == decision.owner
         && exception.approval_id == decision.approval_id
-        && exception.allowed_consumers.contains(&decision.consumer)
+        && allowed_consumers.contains(&decision.consumer)
         && exception
             .allowed_direct_dependencies
             .contains(&decision.name)
@@ -4423,7 +4792,7 @@ fn validate_transitive_dependencies(
         ));
     }
     validate_native_exception_reachability(policy, metadata, native_exceptions)?;
-    validate_native_supply_chain(metadata, &expected_native_links)?;
+    validate_native_supply_chain(metadata, native_exceptions, &expected_native_links)?;
     Ok(())
 }
 
@@ -4450,6 +4819,9 @@ fn validate_native_exception_reachability(
                 let identity = format!("{}@{}", package.name, package.version);
                 exception.allowed_versions.contains(&identity)
                     || exception.allowed_native_link_packages.contains(&identity)
+                    || exception
+                        .allowed_native_runtime_packages
+                        .contains(&identity)
             })
             .map(|package| package.id.to_string())
             .collect::<BTreeSet<_>>();
@@ -4506,12 +4878,15 @@ fn validate_native_exception_reachability(
             if !reaches_exception {
                 continue;
             }
-            if member.shipped
-                || member.manifest.starts_with("product/")
-                || !exception.allowed_consumers.contains(&member.name)
-            {
+            let is_product = member.shipped || member.manifest.starts_with("product/");
+            let allowed_consumers = if is_product {
+                &exception.allowed_product_consumers
+            } else {
+                &exception.allowed_prerequisite_consumers
+            };
+            if !allowed_consumers.contains(&member.name) {
                 return Err(format!(
-                    "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {} reaches {exception_id} but is not an allowed non-shipped consumer",
+                    "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {} reaches {exception_id} without matching consumer and product-use authority",
                     member.name
                 ));
             }
@@ -4595,6 +4970,7 @@ fn validate_native_exception_reachability(
                 || direct_exception_decisions.iter().any(|decision| {
                     !decision.native
                         || decision.exception_id.as_deref() != Some(exception_id.as_str())
+                        || (is_product && decision.runtime_class != "shipped_rust_product")
                 })
             {
                 return Err(format!(
@@ -4609,6 +4985,7 @@ fn validate_native_exception_reachability(
 
 fn validate_native_supply_chain(
     metadata: &Metadata,
+    native_exceptions: &BTreeMap<String, NativeDependencyException>,
     expected_native_links: &BTreeSet<String>,
 ) -> Result<(), String> {
     let forbidden_environment = std::env::vars_os()
@@ -4624,6 +5001,18 @@ fn validate_native_supply_chain(
         .resolve
         .as_ref()
         .ok_or("Cargo metadata omitted resolve graph")?;
+    for (identity, expected_checksum) in native_exceptions
+        .values()
+        .flat_map(|exception| exception.allowed_package_archive_sha256.iter())
+    {
+        validate_locked_package_checksum(metadata, identity, expected_checksum)?;
+    }
+    for (identity, expected_digest) in native_exceptions
+        .values()
+        .flat_map(|exception| exception.allowed_package_source_inventory_sha256.iter())
+    {
+        validate_package_source_inventory(metadata, identity, expected_digest)?;
+    }
     for identity in expected_native_links {
         let Some((name, version)) = identity.rsplit_once('@') else {
             return Err(format!(
@@ -4667,11 +5056,274 @@ fn validate_native_supply_chain(
             "clang-sys" => {
                 validate_clang_source_dir(identity, manifest_dir, &selected_features)?;
             }
+            "ring" => {
+                let exception = native_exceptions
+                    .values()
+                    .find(|exception| exception.allowed_native_link_packages.contains(identity))
+                    .ok_or_else(|| {
+                        format!(
+                            "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} has no exact exception authority"
+                        )
+                    })?;
+                validate_ring_source_dir(
+                    identity,
+                    manifest_dir,
+                    &selected_features,
+                    exception.allow_packaged_pregenerated_assembly_objects,
+                    &exception.packaged_object_inventory_sha256,
+                )?;
+            }
             _ => {
                 return Err(format!(
                     "FF-ARCH-E-NATIVE-SOURCE: {identity} has no governed source validator"
                 ));
             }
+        }
+    }
+    for identity in native_exceptions
+        .values()
+        .flat_map(|exception| exception.allowed_native_runtime_packages.iter())
+    {
+        validate_native_runtime_package(metadata, resolve, identity)?;
+    }
+    Ok(())
+}
+
+fn validate_locked_package_checksum(
+    metadata: &Metadata,
+    identity: &str,
+    expected_checksum: &str,
+) -> Result<(), String> {
+    let Some((name, version)) = identity.rsplit_once('@') else {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: invalid locked package identity {identity}"
+        ));
+    };
+    let lock_path = Path::new(metadata.workspace_root.as_str()).join("Cargo.lock");
+    let lock_text = fs::read_to_string(&lock_path)
+        .map_err(|error| format!("read {}: {error}", lock_path.display()))?;
+    let lock: toml::Value = toml::from_str(&lock_text)
+        .map_err(|error| format!("parse {}: {error}", lock_path.display()))?;
+    let packages = lock
+        .get("package")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| format!("{} has no package array", lock_path.display()))?;
+    let matches = packages
+        .iter()
+        .filter(|package| {
+            package.get("name").and_then(toml::Value::as_str) == Some(name)
+                && package.get("version").and_then(toml::Value::as_str) == Some(version)
+        })
+        .collect::<Vec<_>>();
+    if matches.len() != 1
+        || matches[0].get("checksum").and_then(toml::Value::as_str) != Some(expected_checksum)
+        || matches[0].get("source").and_then(toml::Value::as_str)
+            != Some("registry+https://github.com/rust-lang/crates.io-index")
+    {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} Cargo.lock source/checksum does not match exact authority"
+        ));
+    }
+    let package = metadata
+        .packages
+        .iter()
+        .find(|package| package.name.as_str() == name && package.version.to_string() == version)
+        .ok_or_else(|| {
+            format!("FF-ARCH-E-NATIVE-SOURCE: metadata omitted governed package {identity}")
+        })?;
+    let package_root = package
+        .manifest_path
+        .parent()
+        .ok_or_else(|| format!("FF-ARCH-E-NATIVE-SOURCE: manifest has no parent for {identity}"))?
+        .as_std_path();
+    let registry_index = package_root
+        .parent()
+        .ok_or_else(|| format!("FF-ARCH-E-NATIVE-SOURCE: no registry index for {identity}"))?;
+    let registry_src = registry_index
+        .parent()
+        .ok_or_else(|| format!("FF-ARCH-E-NATIVE-SOURCE: no registry src root for {identity}"))?;
+    let registry_root = registry_src
+        .parent()
+        .ok_or_else(|| format!("FF-ARCH-E-NATIVE-SOURCE: no registry root for {identity}"))?;
+    let archive = registry_root
+        .join("cache")
+        .join(registry_index.file_name().ok_or_else(|| {
+            format!("FF-ARCH-E-NATIVE-SOURCE: registry index has no name for {identity}")
+        })?)
+        .join(format!("{name}-{version}.crate"));
+    validate_file_sha256(identity, &archive, expected_checksum)
+}
+
+fn validate_file_sha256(identity: &str, path: &Path, expected: &str) -> Result<(), String> {
+    let observed = encode_sha256(&fs::read(path).map_err(|error| {
+        format!(
+            "FF-ARCH-E-NATIVE-SOURCE: read locked archive {}: {error}",
+            path.display()
+        )
+    })?);
+    if observed != expected {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} cached crate archive checksum drifted: expected {expected}, observed {observed}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_package_source_inventory(
+    metadata: &Metadata,
+    identity: &str,
+    expected_digest: &str,
+) -> Result<(), String> {
+    let Some((name, version)) = identity.rsplit_once('@') else {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: invalid package source identity {identity}"
+        ));
+    };
+    let package = metadata
+        .packages
+        .iter()
+        .find(|package| package.name.as_str() == name && package.version.to_string() == version)
+        .ok_or_else(|| {
+            format!("FF-ARCH-E-NATIVE-SOURCE: metadata omitted governed package {identity}")
+        })?;
+    if package.source.as_ref().is_none_or(|source| {
+        !source
+            .repr
+            .starts_with("registry+https://github.com/rust-lang/crates.io-index")
+    }) {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} is not the exact crates.io package source"
+        ));
+    }
+    let root = package
+        .manifest_path
+        .parent()
+        .ok_or_else(|| format!("FF-ARCH-E-NATIVE-SOURCE: manifest has no parent for {identity}"))?
+        .as_std_path();
+    validate_package_source_inventory_path(identity, root, expected_digest)
+}
+
+fn validate_package_source_inventory_path(
+    identity: &str,
+    root: &Path,
+    expected_digest: &str,
+) -> Result<(), String> {
+    let observed = package_source_inventory_sha256(root)?;
+    if observed != expected_digest {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} extracted source inventory drifted: expected {expected_digest}, observed {observed}"
+        ));
+    }
+    Ok(())
+}
+
+fn package_source_inventory_sha256(root: &Path) -> Result<String, String> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).map_err(|error| {
+            format!(
+                "FF-ARCH-E-NATIVE-SOURCE: enumerate {}: {error}",
+                directory.display()
+            )
+        })? {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "FF-ARCH-E-NATIVE-SOURCE: enumerate {} entry: {error}",
+                    directory.display()
+                )
+            })?;
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.is_file() {
+                let relative = path.strip_prefix(root).map_err(|error| {
+                    format!(
+                        "FF-ARCH-E-NATIVE-SOURCE: package file escaped {}: {error}",
+                        root.display()
+                    )
+                })?;
+                let canonical = relative
+                    .components()
+                    .map(|component| {
+                        component.as_os_str().to_str().ok_or_else(|| {
+                            format!(
+                                "FF-ARCH-E-NATIVE-SOURCE: non-UTF8 package path under {}",
+                                root.display()
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join("/");
+                files.push((canonical, path));
+            }
+        }
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut canonical_inventory = Vec::new();
+    for (relative, path) in files {
+        canonical_inventory.extend_from_slice(relative.as_bytes());
+        canonical_inventory.push(b' ');
+        canonical_inventory.extend_from_slice(
+            encode_sha256(&fs::read(&path).map_err(|error| {
+                format!("FF-ARCH-E-NATIVE-SOURCE: read {}: {error}", path.display())
+            })?)
+            .as_bytes(),
+        );
+        canonical_inventory.push(b'\n');
+    }
+    Ok(encode_sha256(&canonical_inventory))
+}
+
+fn validate_native_runtime_package(
+    metadata: &Metadata,
+    resolve: &cargo_metadata::Resolve,
+    identity: &str,
+) -> Result<(), String> {
+    let Some((name, version)) = identity.rsplit_once('@') else {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: invalid native runtime package identity {identity}"
+        ));
+    };
+    let package = metadata
+        .packages
+        .iter()
+        .find(|package| package.name.as_str() == name && package.version.to_string() == version)
+        .ok_or_else(|| {
+            format!("FF-ARCH-E-NATIVE-SOURCE: metadata omitted native runtime package {identity}")
+        })?;
+    let selected_features = resolve
+        .nodes
+        .iter()
+        .find(|node| node.id == package.id)
+        .map(|node| node.features.iter().collect::<BTreeSet<_>>())
+        .ok_or_else(|| {
+            format!(
+                "FF-ARCH-E-NATIVE-SOURCE: resolve graph omitted native runtime package {identity}"
+            )
+        })?;
+    match name {
+        "rustls-platform-verifier" => {
+            let manifest_dir = package
+                .manifest_path
+                .parent()
+                .ok_or_else(|| {
+                    format!("FF-ARCH-E-NATIVE-SOURCE: manifest has no parent for {identity}")
+                })?
+                .as_std_path();
+            if !selected_features.is_empty()
+                || !manifest_dir.join("Cargo.toml").is_file()
+                || !manifest_dir.join("src/verification/windows.rs").is_file()
+            {
+                return Err(format!(
+                    "FF-ARCH-E-NATIVE-SOURCE: {identity} Windows trust-verifier FFI source or feature surface drifted"
+                ));
+            }
+        }
+        _ => {
+            return Err(format!(
+                "FF-ARCH-E-NATIVE-SOURCE: {identity} has no governed native-runtime validator"
+            ));
         }
     }
     Ok(())
@@ -4689,6 +5341,7 @@ fn native_source_override_variable(name: &str) -> bool {
                 | "LLVM_CONFIG_PATH"
                 | "CLANG_PATH"
                 | "BINDGEN_EXTRA_CLANG_ARGS"
+                | "RING_PREGENERATE_ASM"
                 | "PKG_CONFIG_PATH"
                 | "PKG_CONFIG_LIBDIR"
                 | "VCPKG_ROOT"
@@ -4762,6 +5415,148 @@ fn validate_clang_source_dir(
     Ok(())
 }
 
+fn validate_ring_source_dir(
+    identity: &str,
+    manifest_dir: &Path,
+    selected_features: &BTreeSet<String>,
+    allows_packaged_objects: bool,
+    expected_inventory_sha256: &str,
+) -> Result<(), String> {
+    let exact_features = BTreeSet::from([
+        "alloc".to_owned(),
+        "default".to_owned(),
+        "dev_urandom_fallback".to_owned(),
+    ]);
+    if selected_features != &exact_features {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-SOURCE: {identity} feature surface drifted: {selected_features:?}"
+        ));
+    }
+    for marker in [
+        manifest_dir.join("build.rs"),
+        manifest_dir.join("crypto/crypto.c"),
+        manifest_dir.join("include/ring-core/base.h"),
+        manifest_dir.join("pregenerated"),
+    ] {
+        if !marker.exists() {
+            return Err(format!(
+                "FF-ARCH-E-NATIVE-SOURCE: {identity} omitted packaged source marker {}",
+                marker.display()
+            ));
+        }
+    }
+    let pregenerated = manifest_dir.join("pregenerated");
+    validate_packaged_object_inventory(
+        identity,
+        &pregenerated,
+        allows_packaged_objects,
+        expected_inventory_sha256,
+    )
+}
+
+fn validate_packaged_object_inventory(
+    identity: &str,
+    pregenerated: &Path,
+    allows_packaged_objects: bool,
+    expected_inventory_sha256: &str,
+) -> Result<(), String> {
+    let native_artifacts = recursive_native_artifacts(pregenerated)?;
+    let packaged_objects = native_artifacts
+        .iter()
+        .filter(|path| path.extension().is_some_and(|extension| extension == "o"))
+        .collect::<Vec<_>>();
+    let unexpected_native_artifacts = native_artifacts
+        .iter()
+        .filter(|path| path.extension().is_some_and(|extension| extension != "o"))
+        .collect::<Vec<_>>();
+    if !unexpected_native_artifacts.is_empty() {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} contains unexpected packaged native artifacts {unexpected_native_artifacts:?}"
+        ));
+    }
+    if packaged_objects.is_empty() || !allows_packaged_objects {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} contains {} packaged pregenerated assembly objects without its exact exception authority",
+            packaged_objects.len()
+        ));
+    }
+    let mut canonical_inventory = Vec::new();
+    for path in &packaged_objects {
+        let relative = path.strip_prefix(pregenerated).map_err(|error| {
+            format!(
+                "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} object path escaped its root: {error}"
+            )
+        })?;
+        let canonical_path = relative
+            .components()
+            .map(|component| {
+                component.as_os_str().to_str().ok_or_else(|| {
+                    format!(
+                        "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} contains a non-UTF8 object path"
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .join("/");
+        let bytes = fs::read(path).map_err(|error| {
+            format!(
+                "FF-ARCH-E-NATIVE-PRECOMPILED: read {}: {error}",
+                path.display()
+            )
+        })?;
+        canonical_inventory.extend_from_slice(canonical_path.as_bytes());
+        canonical_inventory.push(b' ');
+        canonical_inventory.extend_from_slice(encode_sha256(&bytes).as_bytes());
+        canonical_inventory.push(b'\n');
+    }
+    let observed_inventory_sha256 = encode_sha256(&canonical_inventory);
+    if observed_inventory_sha256 != expected_inventory_sha256 {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-PRECOMPILED: {identity} packaged object inventory digest drifted: expected {expected_inventory_sha256}, observed {observed_inventory_sha256}"
+        ));
+    }
+    Ok(())
+}
+
+fn recursive_native_artifacts(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut artifacts = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).map_err(|error| {
+            format!(
+                "FF-ARCH-E-NATIVE-SOURCE: enumerate {}: {error}",
+                directory.display()
+            )
+        })? {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "FF-ARCH-E-NATIVE-SOURCE: enumerate {} entry: {error}",
+                    directory.display()
+                )
+            })?;
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let extension = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if matches!(
+                extension.as_str(),
+                "o" | "obj" | "a" | "lib" | "dll" | "so" | "dylib" | "exe"
+            ) {
+                artifacts.push(path);
+            }
+        }
+    }
+    artifacts.sort();
+    Ok(artifacts)
+}
+
+#[allow(clippy::too_many_lines)]
 fn read_native_dependency_exceptions(
     path: &Path,
 ) -> Result<BTreeMap<String, NativeDependencyException>, String> {
@@ -4784,17 +5579,25 @@ fn read_native_dependency_exceptions(
         "allow_build_scripts",
         "allow_build_time_downloads",
         "allow_packaging_or_release",
+        "allow_packaged_pregenerated_assembly_objects",
         "allow_prebuilt_binaries",
         "allow_product_use",
-        "allowed_consumers",
         "allowed_direct_dependencies",
         "allowed_native_link_packages",
+        "allowed_native_runtime_packages",
+        "allowed_package_archive_sha256",
+        "allowed_package_source_inventory_sha256",
+        "allowed_prerequisite_consumers",
+        "allowed_product_consumers",
         "allowed_runtime_classes",
         "allowed_versions",
         "approval_id",
         "id",
         "kind",
         "owner",
+        "ordinary_transport_resolved_closure_sha256",
+        "ordinary_transport_registry_source_closure_sha256",
+        "packaged_object_inventory_sha256",
         "promotion_requires_new_operator_decision",
         "reason",
         "removal_trigger",
@@ -4820,17 +5623,150 @@ fn read_native_dependency_exceptions(
         let id = yaml_string(row, "id")?;
         let owner = yaml_string(row, "owner")?;
         let approval_id = yaml_string(row, "approval_id")?;
+        let status = yaml_string(row, "status")?;
+        let allow_product_use = yaml_bool(row, "allow_product_use")?;
+        let allow_packaged_pregenerated_assembly_objects =
+            yaml_bool(row, "allow_packaged_pregenerated_assembly_objects")?;
+        let allow_packaging_or_release = yaml_bool(row, "allow_packaging_or_release")?;
+        let promotion_requires_new_operator_decision =
+            yaml_bool(row, "promotion_requires_new_operator_decision")?;
+        let packaged_object_inventory_sha256 =
+            yaml_string_allow_empty(row, "packaged_object_inventory_sha256")?;
+        let ordinary_transport_resolved_closure_sha256 =
+            yaml_string_allow_empty(row, "ordinary_transport_resolved_closure_sha256")?;
+        let ordinary_transport_registry_source_closure_sha256 =
+            yaml_string_allow_empty(row, "ordinary_transport_registry_source_closure_sha256")?;
+        let allowed_prerequisite_consumers =
+            yaml_string_set(row, "allowed_prerequisite_consumers")?;
+        let allowed_product_consumers = yaml_string_set(row, "allowed_product_consumers")?;
+        let allowed_direct_dependencies = yaml_string_set(row, "allowed_direct_dependencies")?;
+        let allowed_versions = yaml_string_set(row, "allowed_versions")?;
+        let allowed_native_link_packages = yaml_string_set(row, "allowed_native_link_packages")?;
+        let allowed_native_runtime_packages =
+            yaml_string_set(row, "allowed_native_runtime_packages")?;
+        let allowed_package_archive_sha256 =
+            yaml_identity_digest_map(row, "allowed_package_archive_sha256")?;
+        let allowed_package_source_inventory_sha256 =
+            yaml_identity_digest_map(row, "allowed_package_source_inventory_sha256")?;
+        let allowed_runtime_classes = yaml_string_set(row, "allowed_runtime_classes")?;
+        let valid_scope = match status {
+            "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY" => {
+                !allow_product_use
+                    && !allow_packaging_or_release
+                    && promotion_requires_new_operator_decision
+            }
+            "ACTIVE_SHIPPED_PRODUCT_NARROW_ONLY" => {
+                allow_product_use
+                    && allow_packaging_or_release
+                    && !promotion_requires_new_operator_decision
+            }
+            _ => false,
+        };
+        let valid_packaged_object_scope = !allow_packaged_pregenerated_assembly_objects
+            && packaged_object_inventory_sha256.is_empty()
+            || (allow_packaged_pregenerated_assembly_objects
+                && status == "ACTIVE_SHIPPED_PRODUCT_NARROW_ONLY"
+                && allowed_native_link_packages == BTreeSet::from(["ring@0.17.14".to_owned()])
+                && allowed_versions.contains("ring@0.17.14")
+                && packaged_object_inventory_sha256.len() == 64
+                && packaged_object_inventory_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        let exact_decision_scope =
+            match id {
+                "FF-DEC-001" => {
+                    owner == "WP-FF-015-wreq-transport-adjudication"
+                        && approval_id == "WP-FF-015-wreq-transport-adjudication-v1-AC-001"
+                        && status == "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY"
+                        && allowed_prerequisite_consumers
+                            == BTreeSet::from(["fforager-transport".to_owned()])
+                        && allowed_product_consumers.is_empty()
+                        && allowed_direct_dependencies
+                            == BTreeSet::from(["wreq".to_owned(), "wreq-util".to_owned()])
+                        && allowed_versions
+                            == BTreeSet::from([
+                                "wreq@5.3.0".to_owned(),
+                                "wreq@6.0.0-rc.29".to_owned(),
+                                "wreq-util@3.0.0-rc.14".to_owned(),
+                            ])
+                        && allowed_native_link_packages
+                            == BTreeSet::from([
+                                "btls-sys@0.5.6".to_owned(),
+                                "clang-sys@1.8.1".to_owned(),
+                                "zstd-sys@2.0.16+zstd.1.5.7".to_owned(),
+                            ])
+                        && allowed_native_runtime_packages.is_empty()
+                        && allowed_package_archive_sha256.is_empty()
+                        && allowed_package_source_inventory_sha256.is_empty()
+                        && ordinary_transport_resolved_closure_sha256.is_empty()
+                        && ordinary_transport_registry_source_closure_sha256.is_empty()
+                        && allowed_runtime_classes
+                            == BTreeSet::from(["non_shipped_phase0_prerequisite".to_owned()])
+                }
+                "FF-DEC-002" => owner == "WP-FF-017-ordinary-transport-decision"
+                    && approval_id == "WP-FF-017-ordinary-transport-decision-v1-AC-001"
+                    && status == "ACTIVE_SHIPPED_PRODUCT_NARROW_ONLY"
+                    && allowed_prerequisite_consumers
+                        == BTreeSet::from(["fforager-transport".to_owned()])
+                    && allowed_product_consumers == BTreeSet::from(["fforager-net".to_owned()])
+                    && allowed_direct_dependencies
+                        == BTreeSet::from(["reqwest".to_owned(), "rustls".to_owned()])
+                    && allowed_versions
+                        == BTreeSet::from([
+                            "reqwest@0.13.4".to_owned(),
+                            "ring@0.17.14".to_owned(),
+                            "rustls@0.23.42".to_owned(),
+                        ])
+                    && allowed_native_link_packages == BTreeSet::from(["ring@0.17.14".to_owned()])
+                    && allowed_native_runtime_packages
+                        == BTreeSet::from(["rustls-platform-verifier@0.7.0".to_owned()])
+                    && allowed_package_archive_sha256
+                        == BTreeMap::from([
+                            (
+                                "ring@0.17.14".to_owned(),
+                                "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
+                                    .to_owned(),
+                            ),
+                            (
+                                "rustls-platform-verifier@0.7.0".to_owned(),
+                                "26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"
+                                    .to_owned(),
+                            ),
+                        ])
+                    && allowed_package_source_inventory_sha256
+                        == BTreeMap::from([
+                            (
+                                "ring@0.17.14".to_owned(),
+                                "60be074c360264320b3fa0a46515ca828e44954988d8843ad3766bf84fc452d3"
+                                    .to_owned(),
+                            ),
+                            (
+                                "rustls-platform-verifier@0.7.0".to_owned(),
+                                "8d7a222bf3a643ce4c2003c1ede94bbd0d4e10443271602ab445c9d940ac40b0"
+                                    .to_owned(),
+                            ),
+                        ])
+                    && ordinary_transport_resolved_closure_sha256
+                        == "f042b288374c8cd88b72191983df65732abd5bd940f950c44dce57051de45210"
+                    && ordinary_transport_registry_source_closure_sha256
+                        == "77cd4f81824d693e36750605c68eadedb57dbda5db35ec85bc4aae8b78719bc3"
+                    && allowed_runtime_classes
+                        == BTreeSet::from([
+                            "non_shipped_phase0_prerequisite".to_owned(),
+                            "shipped_rust_product".to_owned(),
+                        ]),
+                _ => false,
+            };
         if !id.starts_with("FF-DEC-")
             || yaml_string(row, "kind")? != "native_dependency"
-            || yaml_string(row, "status")? != "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY"
+            || !valid_scope
+            || !valid_packaged_object_scope
+            || !exact_decision_scope
             || !work_packet_base_owner_valid(owner)
             || !decision_approval_matches_owner(approval_id, owner)
             || !yaml_bool(row, "allow_build_scripts")?
             || yaml_bool(row, "allow_build_time_downloads")?
             || yaml_bool(row, "allow_prebuilt_binaries")?
-            || yaml_bool(row, "allow_product_use")?
-            || yaml_bool(row, "allow_packaging_or_release")?
-            || !yaml_bool(row, "promotion_requires_new_operator_decision")?
             || yaml_string(row, "reason")?.trim().is_empty()
             || yaml_string(row, "removal_trigger")?.trim().is_empty()
         {
@@ -4842,13 +5778,23 @@ fn read_native_dependency_exceptions(
             id: id.to_owned(),
             owner: owner.to_owned(),
             approval_id: approval_id.to_owned(),
-            allowed_consumers: yaml_string_set(row, "allowed_consumers")?,
-            allowed_direct_dependencies: yaml_string_set(row, "allowed_direct_dependencies")?,
-            allowed_versions: yaml_string_set(row, "allowed_versions")?,
-            allowed_native_link_packages: yaml_string_set(row, "allowed_native_link_packages")?,
-            allowed_runtime_classes: yaml_string_set(row, "allowed_runtime_classes")?,
+            allow_packaged_pregenerated_assembly_objects,
+            packaged_object_inventory_sha256: packaged_object_inventory_sha256.to_owned(),
+            allowed_prerequisite_consumers,
+            allowed_product_consumers,
+            allowed_direct_dependencies,
+            allowed_versions,
+            allowed_native_link_packages,
+            allowed_native_runtime_packages,
+            allowed_package_archive_sha256,
+            allowed_package_source_inventory_sha256,
+            ordinary_transport_resolved_closure_sha256: ordinary_transport_resolved_closure_sha256
+                .to_owned(),
+            ordinary_transport_registry_source_closure_sha256:
+                ordinary_transport_registry_source_closure_sha256.to_owned(),
+            allowed_runtime_classes,
         };
-        if exception.allowed_consumers.is_empty()
+        if exception.allowed_prerequisite_consumers.is_empty()
             || exception.allowed_direct_dependencies.is_empty()
             || exception.allowed_versions.is_empty()
             || exception.allowed_runtime_classes.is_empty()
@@ -4941,6 +5887,13 @@ fn yaml_string<'a>(mapping: &'a Yaml<'_>, key: &str) -> Result<&'a str, String> 
         .ok_or_else(|| format!("YAML mapping has no nonempty string {key}"))
 }
 
+fn yaml_string_allow_empty<'a>(mapping: &'a Yaml<'_>, key: &str) -> Result<&'a str, String> {
+    mapping
+        .as_mapping_get(key)
+        .and_then(Yaml::as_str)
+        .ok_or_else(|| format!("YAML mapping has no string {key}"))
+}
+
 fn yaml_bool(mapping: &Yaml<'_>, key: &str) -> Result<bool, String> {
     mapping
         .as_mapping_get(key)
@@ -4967,6 +5920,29 @@ fn yaml_string_set(mapping: &Yaml<'_>, key: &str) -> Result<BTreeSet<String>, St
         return Err(format!("YAML sequence {key} contains duplicate values"));
     }
     Ok(parsed)
+}
+
+fn yaml_identity_digest_map(
+    mapping: &Yaml<'_>,
+    key: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    yaml_string_set(mapping, key)?
+        .into_iter()
+        .map(|item| {
+            let (identity, digest) = item
+                .split_once('=')
+                .ok_or_else(|| format!("YAML mapping {key} item has no identity=digest form"))?;
+            if identity.trim().is_empty()
+                || digest.len() != 64
+                || !digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(format!("YAML mapping {key} item is invalid: {item}"));
+            }
+            Ok((identity.to_owned(), digest.to_owned()))
+        })
+        .collect()
 }
 
 #[allow(
@@ -9059,6 +10035,21 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-016-FINDING-PROOF-BOUNDARY-008" => {
             Some("FF-GATE-ARCH-001::credential-snapshot-boundary")
         }
+        "WP-FF-017-FINDING-COOKIE-001" => Some(
+            "fforager_transport::ordinary::tests::dependency_cookie_storage_boundary_is_disabled",
+        ),
+        "WP-FF-017-FINDING-WORKER-002" => Some(
+            "fforager_transport::ordinary::tests::failed_compression_probe_reaps_server_and_acknowledgement_workers",
+        ),
+        "WP-FF-017-FINDING-NATIVE-INVENTORY-003" => {
+            Some("xtask::tests::packaged_object_inventory_rejects_add_remove_replace_and_rename")
+        }
+        "WP-FF-017-FINDING-PACKAGE-SOURCE-004" => {
+            Some("xtask::tests::package_source_and_archive_content_mutations_fail_closed")
+        }
+        "WP-FF-017-FINDING-GRAPH-CLOSURE-005" | "WP-FF-017-FINDING-SOURCE-CLOSURE-006" => {
+            Some("xtask::tests::ordinary_profile_rejects_resolved_transitive_feature_unification")
+        }
         "WP-FF-013-FINDING-SEMANTIC-REPLAY-001" => Some(
             "xtask::compatibility::tests::native_semantic_replay_executes_each_corpus_plane_and_rejects_label_echoes",
         ),
@@ -11519,8 +12510,8 @@ mod tests {
             |root| {
                 replace_file_text(
                     &root.join("build/architecture-policy.toml"),
-                    "exception_decision_ids = [\"FF-DEC-001\"]",
-                    "exception_decision_ids = [\"SELF-AUTHORIZED\"]",
+                    "exception_decision_ids = [\"FF-DEC-001\", \"FF-DEC-002\"]",
+                    "exception_decision_ids = [\"SELF-AUTHORIZED\", \"FF-DEC-002\"]",
                 );
             },
             "FF-ARCH-E-UNAPPROVED-EXCEPTION",
@@ -11587,17 +12578,18 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn native_exception_mutations_reach_production_validation() {
         assert_architecture_mutation_fails(
             "native-exception-wrong-consumer",
             |root| {
                 replace_file_text(
                     &root.join(".GOV/rules/build-rules.yaml"),
-                    "allowed_consumers: [fforager-transport]",
-                    "allowed_consumers: [fforager-xtask]",
+                    "allowed_prerequisite_consumers: [fforager-transport]",
+                    "allowed_prerequisite_consumers: [fforager-xtask]",
                 );
             },
-            "FF-ARCH-E-UNAPPROVED-NATIVE-DEPENDENCY",
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
         );
         assert_architecture_mutation_fails(
             "native-exception-hidden-link-package",
@@ -11608,7 +12600,7 @@ mod tests {
                     "",
                 );
             },
-            "FF-ARCH-E-NATIVE-LINK-SURFACE",
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
         );
         assert_architecture_mutation_fails(
             "native-exception-product-promotion",
@@ -11620,6 +12612,105 @@ mod tests {
                 );
             },
             "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-native-exception-product-demotion",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allow_product_use: true",
+                    "allow_product_use: false",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-native-exception-packaged-object-digest-drift",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "packaged_object_inventory_sha256: \"be06dab876434410926fdf8d9ab7c37b18054f87adaf761dc6c8fcf167a56fb3\"",
+                    "packaged_object_inventory_sha256: \"ae06dab876434410926fdf8d9ab7c37b18054f87adaf761dc6c8fcf167a56fb3\"",
+                );
+            },
+            "FF-ARCH-E-NATIVE-PRECOMPILED",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-native-exception-additive-consumer-widening",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allowed_product_consumers: [fforager-net]",
+                    "allowed_product_consumers: [fforager-core, fforager-net]",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-native-exception-additive-dependency-widening",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allowed_direct_dependencies: [reqwest, rustls]",
+                    "allowed_direct_dependencies: [openssl, reqwest, rustls]",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-native-exception-additive-runtime-widening",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allowed_runtime_classes: [non_shipped_phase0_prerequisite, shipped_rust_product]",
+                    "allowed_runtime_classes: [non_shipped_build_tooling, non_shipped_phase0_prerequisite, shipped_rust_product]",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-native-exception-ring-version-drift",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "\"ring@0.17.14\"",
+                    "\"ring@0.17.13\"",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-reqwest-default-feature-drift",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "features = [\"http2\", \"rustls-no-provider\", \"stream\"]\ndefault_features = false",
+                    "features = [\"http2\", \"rustls-no-provider\", \"stream\"]\ndefault_features = true",
+                );
+            },
+            "FF-ARCH-E-DEPENDENCY-FEATURE",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-prerequisite-runtime-relabeled-shipped",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "name = \"reqwest\"\nversion = \"0.13.4\"\nconsumer = \"fforager-transport\"\nruntime_class = \"non_shipped_phase0_prerequisite\"",
+                    "name = \"reqwest\"\nversion = \"0.13.4\"\nconsumer = \"fforager-transport\"\nruntime_class = \"shipped_rust_product\"",
+                );
+            },
+            "FF-ARCH-E-DEPENDENCY-RUNTIME-CLASS",
+        );
+        assert_architecture_mutation_fails(
+            "ordinary-reqwest-aws-lc-feature-drift",
+            |root| {
+                replace_file_text(
+                    &root.join("build/architecture-policy.toml"),
+                    "features = [\"http2\", \"rustls-no-provider\", \"stream\"]",
+                    "features = [\"http2\", \"rustls\", \"stream\"]",
+                );
+            },
+            "FF-ARCH-E-DEPENDENCY-FEATURE",
         );
         assert_architecture_mutation_fails(
             "native-exception-shipped-product-reachability",
@@ -11641,7 +12732,8 @@ mod tests {
             read_toml(&root.join("build/architecture-policy.toml")).unwrap();
         let native_exceptions =
             read_native_dependency_exceptions(&root.join(&policy.exception_authority)).unwrap();
-        let metadata = cargo_metadata(&root, &policy).unwrap();
+        let tooling: ToolingPolicy = read_toml(&root.join("build/tooling-policy.toml")).unwrap();
+        let metadata = cargo_metadata(&root, &policy, &tooling.supported_hosts[0]).unwrap();
         let error = validate_native_exception_reachability(&policy, &metadata, &native_exceptions)
             .unwrap_err();
         fs::remove_dir_all(&root).unwrap();
@@ -11649,6 +12741,233 @@ mod tests {
             error.contains("FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY"),
             "expected shipped-product reachability rejection, observed {error}"
         );
+    }
+
+    #[test]
+    fn packaged_object_inventory_rejects_add_remove_replace_and_rename() {
+        const EXPECTED: &str = "1289642843a8c1080a5bd1d122028ea90c4378b2a235f133ed3c78f5bfa492db";
+        let root = test_root("packaged-object-inventory");
+        fs::create_dir_all(&root).unwrap();
+        let a = root.join("a.o");
+        let b = root.join("b.o");
+        fs::write(&a, b"alpha").unwrap();
+        fs::write(&b, b"beta").unwrap();
+        validate_packaged_object_inventory("fixture@1", &root, true, EXPECTED)
+            .expect("baseline inventory");
+
+        fs::remove_file(&b).unwrap();
+        assert!(validate_packaged_object_inventory("fixture@1", &root, true, EXPECTED).is_err());
+        fs::write(&b, b"beta").unwrap();
+
+        fs::write(&a, b"replaced").unwrap();
+        assert!(validate_packaged_object_inventory("fixture@1", &root, true, EXPECTED).is_err());
+        fs::write(&a, b"alpha").unwrap();
+
+        let renamed = root.join("c.o");
+        fs::rename(&b, &renamed).unwrap();
+        assert!(validate_packaged_object_inventory("fixture@1", &root, true, EXPECTED).is_err());
+        fs::rename(&renamed, &b).unwrap();
+
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("rogue.o"), b"native").unwrap();
+        assert!(validate_packaged_object_inventory("fixture@1", &root, true, EXPECTED).is_err());
+        fs::remove_dir_all(&nested).unwrap();
+
+        let unexpected = root.join("rogue.lib");
+        fs::write(&unexpected, b"native").unwrap();
+        let error =
+            validate_packaged_object_inventory("fixture@1", &root, true, EXPECTED).unwrap_err();
+        assert!(error.contains("unexpected packaged native artifacts"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn package_source_and_archive_content_mutations_fail_closed() {
+        const SOURCE_EXPECTED: &str =
+            "212c6412839a1ec079394d757c86b69519700f92ee9307bcddf6356e27a5be4b";
+        const ALPHA_SHA256: &str =
+            "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8";
+        let root = test_root("package-source-content");
+        fs::create_dir_all(root.join("crypto")).unwrap();
+        fs::create_dir_all(root.join("src/verification")).unwrap();
+        let build_rs = root.join("build.rs");
+        let crypto_c = root.join("crypto/crypto.c");
+        let windows_rs = root.join("src/verification/windows.rs");
+        fs::write(&build_rs, b"alpha").unwrap();
+        fs::write(&crypto_c, b"beta").unwrap();
+        fs::write(&windows_rs, b"gamma").unwrap();
+        validate_package_source_inventory_path("fixture@1", &root, SOURCE_EXPECTED)
+            .expect("baseline source inventory");
+
+        for path in [&build_rs, &crypto_c, &windows_rs] {
+            let original = fs::read(path).unwrap();
+            fs::write(path, b"mutated").unwrap();
+            assert!(
+                validate_package_source_inventory_path("fixture@1", &root, SOURCE_EXPECTED)
+                    .is_err()
+            );
+            fs::write(path, original).unwrap();
+        }
+
+        let archive = root.join("fixture-1.crate");
+        fs::write(&archive, b"alpha").unwrap();
+        validate_file_sha256("fixture@1", &archive, ALPHA_SHA256)
+            .expect("baseline archive checksum");
+        fs::write(&archive, b"mutated").unwrap();
+        assert!(validate_file_sha256("fixture@1", &archive, ALPHA_SHA256).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn assert_ordinary_profile_mutation_rejected(
+        metadata: &Metadata,
+        native_exceptions: &BTreeMap<String, NativeDependencyException>,
+        diagnostic: &str,
+    ) {
+        let error =
+            validate_ordinary_profile_isolation(metadata, native_exceptions, &mut Vec::new())
+                .unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+    }
+
+    fn add_reqwest_resolved_feature(metadata: &Metadata) -> Metadata {
+        let reqwest_id = metadata
+            .packages
+            .iter()
+            .find(|package| {
+                package.name.as_str() == "reqwest" && package.version.to_string() == "0.13.4"
+            })
+            .expect("reqwest package")
+            .id
+            .to_string();
+        let mut value = serde_json::to_value(metadata).unwrap();
+        let reqwest_node = value["resolve"]["nodes"]
+            .as_array_mut()
+            .expect("resolve nodes")
+            .iter_mut()
+            .find(|node| node["id"].as_str() == Some(&reqwest_id))
+            .expect("reqwest resolve node");
+        reqwest_node["features"]
+            .as_array_mut()
+            .expect("reqwest features")
+            .push(Value::String("json".to_owned()));
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn add_no_links_ffi_package(metadata: &Metadata) -> Metadata {
+        let mut value = serde_json::to_value(metadata).unwrap();
+        let fake_id = "path+file:///synthetic-no-links-ffi#ffi-wrapper@0.1.0";
+        let mut fake_package = value["packages"]
+            .as_array()
+            .expect("packages")
+            .iter()
+            .find(|package| package["name"].as_str() == Some("webpki-roots"))
+            .expect("package template")
+            .clone();
+        fake_package["name"] = Value::String("ffi-wrapper".to_owned());
+        fake_package["version"] = Value::String("0.1.0".to_owned());
+        fake_package["id"] = Value::String(fake_id.to_owned());
+        fake_package["source"] = Value::Null;
+        fake_package["dependencies"] = Value::Array(Vec::new());
+        fake_package["links"] = Value::Null;
+        value["packages"]
+            .as_array_mut()
+            .expect("packages")
+            .push(fake_package);
+        let nodes = value["resolve"]["nodes"]
+            .as_array_mut()
+            .expect("resolve nodes");
+        let transport_node = nodes
+            .iter_mut()
+            .find(|node| {
+                node["id"]
+                    .as_str()
+                    .is_some_and(|id| id.contains("/fforager-transport#"))
+            })
+            .expect("transport resolve node");
+        transport_node["dependencies"]
+            .as_array_mut()
+            .expect("transport dependencies")
+            .push(Value::String(fake_id.to_owned()));
+        let mut fake_edge = transport_node["deps"]
+            .as_array()
+            .expect("transport deps")
+            .first()
+            .expect("edge template")
+            .clone();
+        fake_edge["name"] = Value::String("ffi_wrapper".to_owned());
+        fake_edge["pkg"] = Value::String(fake_id.to_owned());
+        transport_node["deps"]
+            .as_array_mut()
+            .expect("transport deps")
+            .push(fake_edge);
+        nodes.push(serde_json::json!({
+            "id": fake_id,
+            "dependencies": [],
+            "deps": [],
+            "features": []
+        }));
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn substitute_reqwest_source(metadata: &Metadata, manifest: &Path) -> Metadata {
+        let mut value = serde_json::to_value(metadata).unwrap();
+        let reqwest = value["packages"]
+            .as_array_mut()
+            .expect("packages")
+            .iter_mut()
+            .find(|package| {
+                package["name"].as_str() == Some("reqwest")
+                    && package["version"].as_str() == Some("0.13.4")
+            })
+            .expect("reqwest package");
+        reqwest["manifest_path"] = Value::String(manifest.to_string_lossy().replace('\\', "/"));
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn ordinary_profile_rejects_resolved_transitive_feature_unification() {
+        let root = repo_root().unwrap();
+        let policy: ArchitecturePolicy =
+            read_toml(&root.join("build/architecture-policy.toml")).unwrap();
+        let tooling: ToolingPolicy = read_toml(&root.join("build/tooling-policy.toml")).unwrap();
+        let native_exceptions =
+            read_native_dependency_exceptions(&root.join(&policy.exception_authority)).unwrap();
+        let metadata =
+            cargo_metadata_ordinary_profile(&root, &policy, &tooling.supported_hosts[0]).unwrap();
+        let mutated = add_reqwest_resolved_feature(&metadata);
+        assert_ordinary_profile_mutation_rejected(
+            &mutated,
+            &native_exceptions,
+            "FF-ARCH-E-RESOLVED-FEATURE-SURFACE",
+        );
+
+        let mutated = add_no_links_ffi_package(&metadata);
+        assert_ordinary_profile_mutation_rejected(
+            &mutated,
+            &native_exceptions,
+            "FF-ARCH-E-ORDINARY-PROFILE-CLOSURE",
+        );
+
+        let source_root = test_root("ordinary-reqwest-source-substitution");
+        fs::create_dir_all(&source_root).unwrap();
+        let substituted_manifest = source_root.join("Cargo.toml");
+        fs::write(&substituted_manifest, b"[package]\nname='reqwest'\n").unwrap();
+        let mutated = substitute_reqwest_source(&metadata, &substituted_manifest);
+        assert_ordinary_profile_mutation_rejected(
+            &mutated,
+            &native_exceptions,
+            "FF-ARCH-E-ORDINARY-SOURCE-CLOSURE",
+        );
+        fs::remove_dir_all(&source_root).unwrap();
+    }
+
+    #[test]
+    fn native_exception_accepts_only_the_exact_approved_product_consumer() {
+        let root = architecture_sandbox("native-exception-approved-product-resolve-graph");
+        mutate_approved_shipped_product_native_reachability(&root);
+        architecture_check(&root).expect("exact approved fforager-net reachability");
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -12449,6 +13768,46 @@ product_root = "product"
         );
     }
 
+    fn mutate_approved_shipped_product_native_reachability(root: &Path) {
+        replace_file_text(
+            &root.join("build/Cargo.toml"),
+            "members = [\n    \"tools/fforager-xtask\",\n    \"crates/fforager-javascript\",\n    \"crates/fforager-transport\",\n    \"../product/crates/fforager-contracts\",",
+            "members = [\n    \"tools/fforager-xtask\",\n    \"crates/fforager-javascript\",\n    \"crates/fforager-transport\",\n    \"../product/crates/fforager-net\",\n    \"../product/crates/fforager-contracts\",",
+        );
+        replace_file_text(
+            &root.join("build/Cargo.toml"),
+            "default-members = [\n    \"tools/fforager-xtask\",\n    \"crates/fforager-javascript\",\n    \"crates/fforager-transport\",\n    \"../product/crates/fforager-contracts\",",
+            "default-members = [\n    \"tools/fforager-xtask\",\n    \"crates/fforager-javascript\",\n    \"crates/fforager-transport\",\n    \"../product/crates/fforager-net\",\n    \"../product/crates/fforager-contracts\",",
+        );
+        let manifest = root.join("product/crates/fforager-net/Cargo.toml");
+        fs::create_dir_all(manifest.parent().unwrap().join("src")).unwrap();
+        fs::write(
+            &manifest,
+            "[package]\nname = \"fforager-net\"\nversion = \"0.1.0\"\nworkspace = \"../../../build\"\nedition = \"2024\"\nrust-version = \"1.97.1\"\nlicense = \"MIT OR Apache-2.0\"\npublish = false\n\n[lib]\npath = \"src/lib.rs\"\n\n[dependencies]\nreqwest.workspace = true\nrustls.workspace = true\n\n[lints]\nworkspace = true\n",
+        )
+        .unwrap();
+        fs::write(
+            manifest.parent().unwrap().join("src/lib.rs"),
+            "#![forbid(unsafe_code)]\n//! Mutation-only approved shipped native consumer.\n",
+        )
+        .unwrap();
+        replace_file_text(
+            &root.join("build/Cargo.lock"),
+            "[[package]]\nname = \"fforager-diagnostics-contract\"",
+            "[[package]]\nname = \"fforager-net\"\nversion = \"0.1.0\"\ndependencies = [\n \"reqwest\",\n \"rustls\",\n]\n\n[[package]]\nname = \"fforager-diagnostics-contract\"",
+        );
+        replace_file_text(
+            &root.join("build/architecture-policy.toml"),
+            "[[members]]\nname = \"fforager-core\"",
+            "[[members]]\nname = \"fforager-net\"\nmanifest = \"product/crates/fforager-net/Cargo.toml\"\nsource_root = \"product/crates/fforager-net/src\"\nlayer = \"adapter\"\nartifact_role = \"mutation_only_approved_shipped_transport\"\nshipped = true\ntest_only = false\npublish_allowed = false\nallowed_internal_dependencies = []\nsplit_trigger = \"WP-FF-017-ordinary-transport-decision-v1-AC-001\"\nfeature_owner = \"WP-FF-017-ordinary-transport-decision-v1\"\nprofile = \"mutation_only_product_reachability\"\nremoval_condition = \"Mutation sandbox is deleted after the assertion.\"\nruntime_native_constraint_ref = \"FF-START-BOUNDARY-001\"\nunsafe_policy_ref = \"FF-BUILD-050\"\nexception_policy_ref = \"FF-BUILD-052\"\n\n[[members]]\nname = \"fforager-core\"",
+        );
+        replace_file_text(
+            &root.join("build/architecture-policy.toml"),
+            "[[dependency_decisions]]\nname = \"toml\"",
+            "[[dependency_decisions]]\nname = \"reqwest\"\nversion = \"0.13.4\"\nconsumer = \"fforager-net\"\nruntime_class = \"shipped_rust_product\"\npurpose = \"Mutation-only proof of the exact approved product-native consumer.\"\nnative = true\nowner = \"WP-FF-017-ordinary-transport-decision\"\nallowed_consumers = [\"fforager-net\"]\nreason = \"Exercise the positive product-authorized reachability branch.\"\nremoval_trigger = \"Mutation sandbox is deleted after the assertion.\"\napproval_id = \"WP-FF-017-ordinary-transport-decision-v1-AC-001\"\nfeatures = [\"http2\", \"rustls-no-provider\", \"stream\"]\ndefault_features = false\nexception_id = \"FF-DEC-002\"\n\n[[dependency_decisions]]\nname = \"rustls\"\nversion = \"0.23.42\"\nconsumer = \"fforager-net\"\nruntime_class = \"shipped_rust_product\"\npurpose = \"Mutation-only proof of the exact approved ring provider edge.\"\nnative = true\nowner = \"WP-FF-017-ordinary-transport-decision\"\nallowed_consumers = [\"fforager-net\"]\nreason = \"Exercise exact rustls product-native attribution.\"\nremoval_trigger = \"Mutation sandbox is deleted after the assertion.\"\napproval_id = \"WP-FF-017-ordinary-transport-decision-v1-AC-001\"\nfeatures = [\"ring\", \"std\", \"tls12\"]\ndefault_features = false\nexception_id = \"FF-DEC-002\"\n\n[[dependency_decisions]]\nname = \"toml\"",
+        );
+    }
+
     fn mutate_direct_native_edge_misattribution(root: &Path) {
         replace_file_text(
             &root.join("build/Cargo.toml"),
@@ -12457,8 +13816,8 @@ product_root = "product"
         );
         replace_file_text(
             &root.join("build/crates/fforager-transport/Cargo.toml"),
-            "wreq-util.workspace = true",
-            "wreq-util.workspace = true\nbtls.workspace = true",
+            "wreq-util = { workspace = true, optional = true }",
+            "wreq-util = { workspace = true, optional = true }\nbtls.workspace = true",
         );
         replace_file_text(
             &root.join("build/Cargo.lock"),

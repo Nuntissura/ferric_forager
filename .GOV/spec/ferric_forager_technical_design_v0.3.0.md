@@ -1088,8 +1088,8 @@ pub trait HttpTransport: Send + Sync {
 
 Required capability classes:
 
-1. **Standard pure-Rust transport** for HTTP/1.1, HTTP/2, proxies, compression, ranges, streaming, and connection pooling.
-2. **Fingerprint-capable transport** for mandatory cases requiring controlled TLS, HTTP/2, header, and wire identity. No production backend is selected until the pure-Rust Phase 0 corpus passes or the Operator approves a specific exception.
+1. **Ordinary Rust transport** using exact `reqwest 0.13.4` with default features disabled, `rustls-no-provider`, a provider-bound `rustls 0.23.42` client configuration with native `ring 0.17.14`, and exact `webpki-roots 1.0.9` under `FF-DEC-002`. This engine does not install a process-global provider, select platform trust at runtime, or receive Ferric policy authority merely because it supplies HTTP/1.1, HTTP/2, ranges, and streaming.
+2. **Fingerprint-capable transport** for mandatory cases requiring controlled TLS, HTTP/2, header, and wire identity. The current `wreq` candidate remains non-shipped and disabled under `FF-DEC-001`; no product browser transport is selected.
 3. **WebSocket capability** where a mandatory extractor declares it.
 
 An arbitrary external downloader adapter is not a default architecture path. Any compatibility behavior that historically executed an arbitrary command must become a typed supervised operation or an explicit approved divergence.
@@ -1107,6 +1107,12 @@ Selection is based on:
 - security restrictions.
 
 The decision, requested capabilities, satisfied capabilities, pool identity, and any blocked capability are visible in structured diagnostics and sanitized replay transcripts.
+
+The ordinary engine must return `FF-TRANSPORT-E-BROWSER-TRANSPORT-REQUIRED` before network execution when TLS or HTTP/2 browser-fingerprint semantics are requested. It must not invoke `wreq`, weaken the requested capability set, or label ordinary HTTPS success as browser compatibility.
+
+`reqwest` is an execution dependency, not the security-policy owner. Ferric owns address admission, redirect approval, cookie storage and scope, proxy authorization, immutable connection-pool partitioning, global and per-origin in-flight admission, download and decompression limits, retry budgets, timeouts, cancellation, receipts, and diagnostics. Until those product controls exist in `fforager-net` and pass the mandatory corpus plus `FF-GATE-RUNTIME-001`, `FF-DEC-002` is dependency authorization with zero Phase 1 product progress.
+
+The exact locked `ring 0.17.14` crates.io package contains bundled C source and 17 packaged pregenerated Windows assembly objects. Those objects are an explicit, ring-specific part of `FF-DEC-002`; the architecture gate verifies the Cargo.lock checksum, cached crate archive checksum, full extracted source-tree digest, exact feature set, recursive object-inventory digest, and native-link reachability. Reqwest's `rustls-no-provider` feature also selects exact `rustls-platform-verifier 0.7.0`, whose Windows trust-verifier FFI lock/archive/source digests are explicitly governed as a selected native-runtime package even though Ferric bypasses it by supplying its own provider-bound rustls configuration and root store. A closure digest held under separate `FF-DEC-002` authority pins every package identity, selected feature, and edge reachable from the ordinary transport root; the profile gate also excludes wreq, BoringSSL, AWS-LC, native-tls, and OpenSSL. This does not authorize arbitrary prebuilt libraries, build-time downloads, environment-selected crypto providers, or another native package.
 
 ## 13.3 Connection pools
 
@@ -2799,7 +2805,7 @@ Each scenario records whether Ferric Forager provides equivalent capability, an 
 
 **Risk:** Standard TLS and HTTP behavior may be rejected by sites using browser fingerprints.
 
-**Mitigation:** Design transport pluggability from the beginning, implement fingerprint profiles as a dedicated subsystem, and permit a compatibility transport while native coverage matures.
+**Mitigation:** Route ordinary requests through the exact `FF-DEC-002` reqwest/rustls/ring engine only after Ferric-owned security and resource admission. Return a typed browser-transport-required result for fingerprint-sensitive requests. Retain `wreq` only as disabled non-shipped evidence until its blockers close and a separate Operator decision authorizes a product browser engine.
 
 ## 30.4 JavaScript challenge changes
 

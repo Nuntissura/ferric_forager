@@ -46,9 +46,9 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/ordinary-transport-decision",
+      "head_sha": "f7c5c6249d12a86d8d5d8e6da0a559c0ca283aa0",
+      "verified_at_utc": "2026-07-29T05:19:48Z"
     },
     "closure_commit": "94482379e224482ab3f0f1f7f48f1864ea0105e9",
     "main_containment_status": "PENDING",

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove or reject the pure-Rust fingerprint-capable transport path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-29T16:13:56Z"
+    "updated_at_utc": "2026-07-29T17:12:44Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -38,7 +38,7 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "8736b3d40f05006c0abd90a99d8dd47a7960e97e",
+    "base_sha": "c17016bc74d4456b4599fcd6d29894de53518f3b",
     "work_branch": "codex/wp-ff-007-revalidation",
     "worktree_policy": "NONE",
     "worktree_id": null,
@@ -206,7 +206,9 @@
         "Confirmed recorded WP-007 closure 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb and recorded merge d8abdf0ce30d6317f8d04d909ea284ba51735dd7 are not ancestors of current main 8736b3d40f05006c0abd90a99d8dd47a7960e97e.",
         "Confirmed sanitized WP-007 replacement merge 3dddb2cfa428c1e8fce8f453e1107297045ff546, validation 5635a76e6a849f6a25cb42e27481108a5830bd24, and post-merge observation de8b50d780224dc54a62ad2be914e9047f4b7bfd are ancestors of current main.",
         "Confirmed no canonical packet is MERGE_PENDING; unmerged preserve and stale branches are not authorized merge inputs.",
-        "Reused the completed WP-007 research basis under FF-CODEX-060; no source, version, assumption, or selected-approach change was identified."
+        "Reused the completed WP-007 research basis under FF-CODEX-060; no source, version, assumption, or selected-approach change was identified.",
+        "FF-GATE-ARCH-001 passed on activation checkpoint c4fe12d01683631cb654e7e14f8a2a82b3d195bf.",
+        "FF-GATE-RUNTIME-001 rejected rewriting the immutable original activation base from c17016bc74d4456b4599fcd6d29894de53518f3b to the revalidation branch base; source_control.base_sha was restored and the revalidation base remains separately recorded."
       ],
       "blockers": [],
       "next_action": "Commit the activation checkpoint, then run WP-007's behavior-sensitive revalidation against the exact sanitized current-main artifacts."
@@ -418,6 +420,7 @@
     "lineage_revalidation": {
       "status": "IN_PROGRESS",
       "activated_at_utc": "2026-07-29T16:13:56Z",
+      "revalidation_branch_base": "8736b3d40f05006c0abd90a99d8dd47a7960e97e",
       "reason": "The pre-sanitization closure and merge commits recorded by WP-007 are no longer ancestors of canonical main, so VALIDATED must be re-proven against the sanitized current-main artifacts.",
       "superseded_receipt": {
         "closure_commit": "7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb",

@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: No work packet is active; WP-FF-017 is validated as a prerequisite-only dependency decision under its zero-completion ceiling.
-  active_wp_id: null
+  statement: WP-FF-007 is active only to revalidate its sanitized current-main artifact lineage and replace stale pre-sanitization containment receipts; no product or capability progress is authorized.
+  active_wp_id: WP-FF-007-transport-fingerprint-spike-v1
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

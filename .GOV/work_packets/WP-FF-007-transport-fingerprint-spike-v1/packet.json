@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove or reject the pure-Rust fingerprint-capable transport path",
     "created_at_utc": "2026-07-18T21:12:21Z",
-    "updated_at_utc": "2026-07-27T03:39:40Z"
+    "updated_at_utc": "2026-07-29T16:13:56Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -38,25 +38,25 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "c17016bc74d4456b4599fcd6d29894de53518f3b",
-    "work_branch": "codex/transport-fingerprint-spike",
+    "base_sha": "8736b3d40f05006c0abd90a99d8dd47a7960e97e",
+    "work_branch": "codex/wp-ff-007-revalidation",
     "worktree_policy": "NONE",
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": "origin/codex/transport-fingerprint-spike",
-      "head_sha": "807c16fb97cf72fef8f76d52e74bf176b87d88f0",
-      "verified_at_utc": "2026-07-27T06:49:50Z"
+      "branch": null,
+      "head_sha": null,
+      "verified_at_utc": null
     },
-    "closure_commit": "7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb",
-    "main_containment_status": "VERIFIED",
-    "merged_main_commit": "d8abdf0ce30d6317f8d04d909ea284ba51735dd7"
+    "closure_commit": null,
+    "main_containment_status": "NOT_STARTED",
+    "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "VALIDATED",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Await Operator selection before activating another work packet.",
+    "next_action": "Re-execute WP-007's behavior-sensitive corpus, counterfactual, dependency, architecture, runtime-ceiling, deep, and PR gates against the sanitized current-main artifact lineage; record a new closure commit and prove its containment in main.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -183,28 +183,33 @@
       "evidence": [
         "build/fixtures/transport-v1/manifest.json is the WP-007-owned 54-case corpus; build/crates/fforager-transport/src/corpus.rs and the strict xtask consumer enforce exact declaration and semantic digests while reusing stable IDs and transcript normalization without attributing transport semantics to WP-004."
       ]
+    },
+    {
+      "id": "WP-FF-007-transport-fingerprint-spike-v1-AC-009",
+      "requirement": "The sanitized current-main WP-007 artifacts independently re-execute the complete 54-case behavior-sensitive corpus and declaration-preserving counterfactual, retain the exact FAILED_SPIKE_REQUIRES_OPERATOR_DECISION ceiling, pass the applicable canonical gates, and bind all new evidence and containment receipts to the current Git lineage rather than the stale pre-sanitization closure and merge commits.",
+      "proof_class": "integration",
+      "status": "PENDING",
+      "evidence": []
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-27T03:39:40Z",
-      "branch": "codex/transport-fingerprint-spike",
-      "base_sha": "c17016bc74d4456b4599fcd6d29894de53518f3b",
-      "head_sha": "c17016bc74d4456b4599fcd6d29894de53518f3b",
+      "recorded_at_utc": "2026-07-29T16:13:56Z",
+      "branch": "codex/wp-ff-007-revalidation",
+      "base_sha": "8736b3d40f05006c0abd90a99d8dd47a7960e97e",
+      "head_sha": "8736b3d40f05006c0abd90a99d8dd47a7960e97e",
       "dirty_paths": [
-        ".GOV/id-registry.yaml",
         ".GOV/taskboard/taskboard.yaml",
-        ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/refinement.json"
+        ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json"
       ],
       "checks_run": [
-        "Verified WP-FF-003 v1, WP-FF-004 v2, and WP-FF-005 v1 are VALIDATED with mechanically verified main containment.",
-        "Verified WP-006 closure and current branch head are contained in main; created codex/transport-fingerprint-spike from main c17016bc74d4456b4599fcd6d29894de53518f3b.",
-        "Inspected WP-004 transcript fixture and replay code: it supplies bounded sanitized transcript normalization but no mandatory transport/fingerprint semantics.",
-        "Completed current source-level candidate research recorded in refinement.json."
+        "Confirmed recorded WP-007 closure 7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb and recorded merge d8abdf0ce30d6317f8d04d909ea284ba51735dd7 are not ancestors of current main 8736b3d40f05006c0abd90a99d8dd47a7960e97e.",
+        "Confirmed sanitized WP-007 replacement merge 3dddb2cfa428c1e8fce8f453e1107297045ff546, validation 5635a76e6a849f6a25cb42e27481108a5830bd24, and post-merge observation de8b50d780224dc54a62ad2be914e9047f4b7bfd are ancestors of current main.",
+        "Confirmed no canonical packet is MERGE_PENDING; unmerged preserve and stale branches are not authorized merge inputs.",
+        "Reused the completed WP-007 research basis under FF-CODEX-060; no source, version, assumption, or selected-approach change was identified."
       ],
       "blockers": [],
-      "next_action": "Implement the WP-007-owned mandatory corpus and non-shipped pure-Rust candidate adapter, then run behavior-sensitive verification."
+      "next_action": "Commit the activation checkpoint, then run WP-007's behavior-sensitive revalidation against the exact sanitized current-main artifacts."
     }
   },
   "validation": {
@@ -263,7 +268,8 @@
         "WP-FF-007-transport-fingerprint-spike-v1-AC-005",
         "WP-FF-007-transport-fingerprint-spike-v1-AC-006",
         "WP-FF-007-transport-fingerprint-spike-v1-AC-007",
-        "WP-FF-007-transport-fingerprint-spike-v1-AC-008"
+        "WP-FF-007-transport-fingerprint-spike-v1-AC-008",
+        "WP-FF-007-transport-fingerprint-spike-v1-AC-009"
       ],
       "scope_and_risk_matrix": {
         "required_outcomes": [
@@ -408,6 +414,29 @@
           "product/MODEL_MANUAL.md"
         ]
       }
+    },
+    "lineage_revalidation": {
+      "status": "IN_PROGRESS",
+      "activated_at_utc": "2026-07-29T16:13:56Z",
+      "reason": "The pre-sanitization closure and merge commits recorded by WP-007 are no longer ancestors of canonical main, so VALIDATED must be re-proven against the sanitized current-main artifacts.",
+      "superseded_receipt": {
+        "closure_commit": "7e4fa07df8443a5f7758ee3f5bf47a89e7e255bb",
+        "remote_backup_commit": "807c16fb97cf72fef8f76d52e74bf176b87d88f0",
+        "merged_main_commit": "d8abdf0ce30d6317f8d04d909ea284ba51735dd7"
+      },
+      "sanitized_lineage_observed_on_activation": {
+        "merge_commit": "3dddb2cfa428c1e8fce8f453e1107297045ff546",
+        "validation_commit": "5635a76e6a849f6a25cb42e27481108a5830bd24",
+        "post_merge_observation_commit": "de8b50d780224dc54a62ad2be914e9047f4b7bfd",
+        "current_main": "8736b3d40f05006c0abd90a99d8dd47a7960e97e"
+      },
+      "research_reuse": "The completed refinement remains current and is reused under FF-CODEX-060; this revalidation changes no transport requirement, dependency selection, or product claim.",
+      "required_proof": [
+        "Fresh complete 54-case behavior-sensitive corpus execution on the sanitized current artifacts",
+        "Declaration-preserving behavior mutation and fabricated-producer counterfactual rejection",
+        "Applicable dependency, architecture, runtime-ceiling, deep, and PR gates",
+        "New closure commit contained in canonical main"
+      ]
     },
     "repository_layout": {
       "governance_root": ".GOV/",

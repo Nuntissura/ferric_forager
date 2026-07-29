@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Resolve the ordinary and browser transport dependency decision",
     "created_at_utc": "2026-07-28T23:00:15Z",
-    "updated_at_utc": "2026-07-28T23:00:15Z"
+    "updated_at_utc": "2026-07-29T05:23:18Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -47,18 +47,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/ordinary-transport-decision",
-      "head_sha": "f7c5c6249d12a86d8d5d8e6da0a559c0ca283aa0",
-      "verified_at_utc": "2026-07-29T05:19:48Z"
+      "head_sha": "8adc0ec8dffb3187aab1312ec205c0ed9ee1e257",
+      "verified_at_utc": "2026-07-29T05:23:18Z"
     },
     "closure_commit": "94482379e224482ab3f0f1f7f48f1864ea0105e9",
-    "main_containment_status": "PENDING",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "63976500300e12abd232621897d43cfabe5d4340"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Verify the merge-pending packet, back up the branch, merge closure commit 94482379e224482ab3f0f1f7f48f1864ea0105e9 into canonical main, and prove main containment.",
+    "next_action": "Await Operator direction before activating another work packet or authorizing the first fforager-net consumer.",
     "supersedes": [],
     "superseded_by": null
   },

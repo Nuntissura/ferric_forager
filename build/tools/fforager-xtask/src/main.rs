@@ -34,8 +34,9 @@ const PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID: &str =
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v5:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-journal-record-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes";
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const CARGO_PROOF_COMMAND_TIMEOUT: Duration = Duration::from_mins(5);
+const CARGO_PROOF_TRANSIENT_RETRIES: usize = 2;
 const METADATA_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
-const GATE_COMMAND_TIMEOUT: Duration = Duration::from_mins(15);
+const GATE_COMMAND_TIMEOUT: Duration = Duration::from_mins(30);
 const TERMINATION_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 const RUST_ENVIRONMENT_OVERRIDES: &[&str] = &[
     "CARGO_CONFIG",
@@ -675,6 +676,33 @@ fn disposable_artifact_root(root: &Path) -> PathBuf {
         }
         _ => root.join(".fforager-artifacts"),
     }
+}
+
+fn isolated_fixture_target_dir(root: &Path, label: &str) -> Result<PathBuf, String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let canonical_root = root.canonicalize().map_err(|error| {
+        format!(
+            "canonicalize fixture source root {}: {error}",
+            root.display()
+        )
+    })?;
+    let mut digest = Sha256::new();
+    digest.update(
+        canonical_root
+            .to_string_lossy()
+            .replace('\\', "/")
+            .as_bytes(),
+    );
+    let bytes = digest.finalize();
+    let mut encoded = String::with_capacity(16);
+    for byte in bytes.iter().take(8) {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(disposable_artifact_root(root)
+        .join("cargo-target/proof-integrity-fixtures")
+        .join(encoded)
+        .join(label))
 }
 
 fn require_repository_root_cwd(root: &Path) -> Result<(), String> {
@@ -2963,7 +2991,23 @@ fn canonical_contract_manual_commands() -> Vec<&'static str> {
     ]
 }
 
+/// Prevents parallel unit tests from launching overlapping architecture-check
+/// compiler/linker trees inside one test process.
+///
+/// Production gate invocations run one architecture check per process. The
+/// Rust test harness, however, executes several adversarial architecture tests
+/// concurrently. Each check intentionally compiles multiple isolated mutated
+/// workspaces, and overlapping those trees can exhaust or destabilize the
+/// Windows compiler/linker boundary even though their target directories are
+/// distinct.
+#[cfg(test)]
+static ARCHITECTURE_CHECK_EXECUTION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn architecture_check(root: &Path) -> Result<ArchitectureResult, String> {
+    #[cfg(test)]
+    let _execution_guard = ARCHITECTURE_CHECK_EXECUTION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let policy: ArchitecturePolicy = read_toml(&root.join("build/architecture-policy.toml"))?;
     let native_exceptions =
         read_native_dependency_exceptions(&root.join(&policy.exception_authority))?;
@@ -6622,7 +6666,7 @@ fn compiler_guard_environment_poison_fixture_execution(
     environment_key: &str,
     concrete_input: &str,
 ) -> Result<FixtureExecution, String> {
-    let target_dir = disposable_artifact_root(root).join("cargo-target/compiler-guard-probe");
+    let target_dir = isolated_fixture_target_dir(root, "compiler-guard-probe")?;
     let target_dir = target_dir
         .to_str()
         .ok_or("compiler guard target directory is not valid UTF-8")?;
@@ -6759,8 +6803,7 @@ fn proof_fixture(
 fn proof_map_string_only_fixture_execution(root: &Path) -> Result<FixtureExecution, String> {
     const DELETED_PROOF_ID: &str =
         "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
-    let target_dir = disposable_artifact_root(root)
-        .join("cargo-target/proof-integrity-fixtures/contract-inventory-resolver");
+    let target_dir = isolated_fixture_target_dir(root, "contract-inventory-resolver")?;
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let diagnostic = with_isolated_fixture_root(root, "proof-map-deleted-test", |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -6795,8 +6838,7 @@ fn proof_map_behavior_stub_fixture_execution(root: &Path) -> Result<FixtureExecu
     const PROOF_ID: &str =
         "contracts::identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
     const SELECTOR: &str = "identity::tests::typed_ids_reject_wrong_prefix_and_uppercase";
-    let target_dir = disposable_artifact_root(root)
-        .join("cargo-target/proof-integrity-fixtures/contract-inventory-behavior");
+    let target_dir = isolated_fixture_target_dir(root, "contract-inventory-behavior")?;
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let diagnostic = with_isolated_fixture_root(root, "proof-map-behavior-stub", |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -6981,8 +7023,7 @@ fn public_invariant_mutation_fixture_execution(
     diagnostic: &str,
     proof_class: &'static str,
 ) -> Result<FixtureExecution, String> {
-    let target_dir = disposable_artifact_root(root)
-        .join("cargo-target/proof-integrity-fixtures/public-invariant-mutations");
+    let target_dir = isolated_fixture_target_dir(root, "public-invariant-mutations")?;
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let observed = with_isolated_fixture_root(root, mutation, |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -7256,8 +7297,7 @@ fn proof_report_fixture_execution(mutation: &str) -> Result<FixtureExecution, St
 }
 
 fn isolated_public_counterexample_mutations(root: &Path) -> Result<FixtureExecution, String> {
-    let target_dir = disposable_artifact_root(root)
-        .join("cargo-target/proof-integrity-fixtures/compiled-testkit");
+    let target_dir = isolated_fixture_target_dir(root, "compiled-testkit")?;
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let missing = with_isolated_fixture_root(root, "public-counterexample-removed", |sandbox| {
         prepare_isolated_testkit_workspace(root, sandbox)?;
@@ -7300,8 +7340,7 @@ fn isolated_public_counterexample_mutations(root: &Path) -> Result<FixtureExecut
 fn receipt_only_public_counterexample_fixture_execution(
     root: &Path,
 ) -> Result<FixtureExecution, String> {
-    let target_dir = disposable_artifact_root(root)
-        .join("cargo-target/proof-integrity-fixtures/public-receipt-only");
+    let target_dir = isolated_fixture_target_dir(root, "public-receipt-only")?;
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
     let diagnostic = with_isolated_fixture_root(
         root,
@@ -10504,7 +10543,22 @@ fn cargo_proof_output(root: &Path, program: &str, args: &[&str]) -> Result<Strin
             "cargo proof path received non-cargo program {program}"
         ));
     }
-    command_output_with_timeout(root, program, args, CARGO_PROOF_COMMAND_TIMEOUT)
+    for attempt in 0..=CARGO_PROOF_TRANSIENT_RETRIES {
+        match command_output_with_timeout(root, program, args, CARGO_PROOF_COMMAND_TIMEOUT) {
+            Err(error)
+                if attempt < CARGO_PROOF_TRANSIENT_RETRIES
+                    && is_transient_windows_linker_initialization_failure(&error) =>
+            {
+                thread::sleep(Duration::from_secs(2));
+            }
+            result => return result,
+        }
+    }
+    unreachable!("bounded Cargo proof retry loop always returns")
+}
+
+fn is_transient_windows_linker_initialization_failure(error: &str) -> bool {
+    error.contains("link.exe") && error.contains("exit code: 0xc0000142")
 }
 
 fn child_report_path(root: &Path, output: &str, prefix: &str) -> Result<PathBuf, String> {
@@ -11614,6 +11668,22 @@ mod tests {
     }
 
     #[test]
+    fn cargo_proof_retry_accepts_only_windows_linker_initialization_failure() {
+        assert!(is_transient_windows_linker_initialization_failure(
+            "error: linking with `link.exe` failed: exit code: 0xc0000142"
+        ));
+        assert!(!is_transient_windows_linker_initialization_failure(
+            "error: linking with `link.exe` failed: exit code: 1"
+        ));
+        assert!(!is_transient_windows_linker_initialization_failure(
+            "error[E0308]: mismatched types"
+        ));
+        assert!(!is_transient_windows_linker_initialization_failure(
+            "test result: FAILED"
+        ));
+    }
+
+    #[test]
     fn slash_normalizes_windows_separator() {
         assert_eq!(
             slash(Path::new(".fforager-artifacts\\cargo-target")),
@@ -12181,6 +12251,28 @@ mod tests {
     }
 
     #[test]
+    fn compiled_fixture_targets_are_isolated_by_source_root() {
+        let first_root = test_root("fixture-target-first");
+        let second_root = test_root("fixture-target-second");
+        fs::create_dir_all(&first_root).unwrap();
+        fs::create_dir_all(&second_root).unwrap();
+
+        let first = isolated_fixture_target_dir(&first_root, "public-invariant-mutations").unwrap();
+        let first_repeat =
+            isolated_fixture_target_dir(&first_root, "public-invariant-mutations").unwrap();
+        let second =
+            isolated_fixture_target_dir(&second_root, "public-invariant-mutations").unwrap();
+
+        assert_eq!(first, first_repeat);
+        assert_ne!(first, second);
+        assert!(first.starts_with(disposable_artifact_root(&first_root)));
+        assert!(second.starts_with(disposable_artifact_root(&second_root)));
+
+        fs::remove_dir_all(&first_root).unwrap();
+        fs::remove_dir_all(&second_root).unwrap();
+    }
+
+    #[test]
     fn isolated_multiline_mutations_are_line_ending_portable() {
         let root = test_root("crlf-mutation-anchor");
         fs::create_dir_all(&root).unwrap();
@@ -12726,6 +12818,9 @@ mod tests {
 
     #[test]
     fn native_exception_shipped_product_reachability_rejects_actual_resolve_graph() {
+        let _execution_guard = ARCHITECTURE_CHECK_EXECUTION_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = architecture_sandbox("native-exception-shipped-product-resolve-graph");
         mutate_shipped_product_native_reachability(&root);
         let policy: ArchitecturePolicy =

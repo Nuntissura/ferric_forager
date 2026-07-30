@@ -1,6 +1,6 @@
 schema_id: ff.id_registry@1
 file_id: FF-GOV-ID-REGISTRY-001
-updated_at: "2026-07-27"
+updated_at: "2026-07-29"
 namespaces:
   FF-PROJ:
     entity_kind: project
@@ -126,11 +126,17 @@ registered_files:
   - id: WP-FF-006-rust-youtube-challenge-spike-v1-CEILING-001
     path: .GOV/work_packets/WP-FF-006-rust-youtube-challenge-spike-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: WP-FF-007-transport-fingerprint-spike-v1
-    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json
+    path: .GOV/archive/work_packets/WP-FF-007-transport-fingerprint-spike/WP-FF-007-transport-fingerprint-spike-v1/packet.json
   - id: WP-FF-007-transport-fingerprint-spike-v1-REFINEMENT-001
-    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/refinement.json
+    path: .GOV/archive/work_packets/WP-FF-007-transport-fingerprint-spike/WP-FF-007-transport-fingerprint-spike-v1/refinement.json
   - id: WP-FF-007-transport-fingerprint-spike-v1-CEILING-001
-    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
+    path: .GOV/archive/work_packets/WP-FF-007-transport-fingerprint-spike/WP-FF-007-transport-fingerprint-spike-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
+  - id: WP-FF-007-transport-fingerprint-spike-v2
+    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v2/packet.json
+  - id: WP-FF-007-transport-fingerprint-spike-v2-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v2/refinement.json
+  - id: WP-FF-007-transport-fingerprint-spike-v2-CEILING-001
+    path: .GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v2/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: WP-FF-008-archive-store-evidence-v1
     path: .GOV/work_packets/WP-FF-008-archive-store-evidence-v1/packet.json
   - id: WP-FF-009-resource-durability-models-v1

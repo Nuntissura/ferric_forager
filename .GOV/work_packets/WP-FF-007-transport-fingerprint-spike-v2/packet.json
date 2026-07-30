@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Revalidate the sanitized pure-Rust transport-spike lineage",
     "created_at_utc": "2026-07-29T17:23:01Z",
-    "updated_at_utc": "2026-07-29T17:31:37Z"
+    "updated_at_utc": "2026-07-30T08:22:47Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -48,15 +48,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "ec14fbd6815949912671e02cac18e29e65516484",
+    "main_containment_status": "PENDING",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Re-execute WP-007's behavior-sensitive corpus, counterfactual, dependency, architecture, runtime-ceiling, deep, and PR gates against the sanitized current-main artifact lineage; record a new closure commit and prove its containment in main.",
+    "next_action": "Back up the merge-pending branch, merge closure commit ec14fbd6815949912671e02cac18e29e65516484 into canonical main, prove containment, record the merge commit, and transition WP-FF-007 v2 to VALIDATED.",
     "supersedes": [
       "WP-FF-007-transport-fingerprint-spike-v1"
     ],
@@ -127,57 +127,78 @@
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-002",
       "requirement": "Every mandatory deterministic transport/fingerprint corpus case emits requested/satisfied/blocked capabilities, connection and wire identity, stable case ID, normalized transcript, result/error, and exact mismatch; all mandatory cases pass or the verdict requires Operator decision.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Fresh report build/reports/wp-ff-007-transport-report-190676-1785397313311674000.json executed all 54 mandatory cases: 54 passed, 0 failed, 31 returned the declared blocked-capability outcomes, and the aggregate verdict remained FAILED_SPIKE_REQUIRES_OPERATOR_DECISION."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-003",
       "requirement": "Redirect, cookie/credential, proxy, DNS/SSRF/rebinding, pool partition, retry, range, decompression, metadata/body bounds, streaming byte credits, cancellation acknowledgement, and pool reuse/discard invariants pass positive, boundary, and negative probes.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The fresh 54-case report exercised redirect, credential/cookie, proxy, DNS/SSRF/rebinding, pool identity, retry, range, bounds, byte-credit, replay, and cancellation rows through the unchanged sanitized candidate boundary.",
+        "FF-GATE-DEEP-001 report build/reports/verify-deep-1785397256393872000-189136.json passed the complete semantic, public-boundary, counterfactual, graph, state-effect, structural, and wire-boundary proof set."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-004",
       "requirement": "No required capability silently downgrades; unavailable address-level SSRF evidence in proxy mode and unavailable fingerprint/wire behavior produce typed blocked-capability outcomes before unsafe execution.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The fresh report retained 12 stable blocked-capability diagnostic codes across 31 mandatory blocked cases and emitted FAILED_SPIKE_REQUIRES_OPERATOR_DECISION rather than silently weakening any request.",
+        "The deep gate independently reran transport_semantic_projection_is_mutation_sensitive and the declaration-preserving counterfactual consumer."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-005",
       "requirement": "Cargo graph, source/build-script, clean-artifact, and linkage/provenance checks prove no BoringSSL, curl/curl-impersonate/curl_cffi, arbitrary external downloader, unapproved FFI/native link, build download, or prebuilt binary was introduced.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "FF-GATE-ARCH-001 report build/reports/architecture-check-1785397672588993700-168476.json passed dependency-policy and 55 exact negative fixtures.",
+        "FF-GATE-PR-001 report build/reports/verify-pr-1785399587234949400-5224.json passed locked graph, source, build-script, license, native-link, and provenance validation without introducing product or dependency changes."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-006",
       "requirement": "Canonical architecture, PR, and triggered deep gates pass and the aggregate machine-readable verdict is PASS_PURE_RUST_PATH or FAILED_SPIKE_REQUIRES_OPERATOR_DECISION; neither verdict claims full network or replacement parity.",
       "proof_class": "integration",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "Fresh reports passed FF-GATE-ARCH-001, FF-GATE-RUNTIME-001, FF-GATE-DEEP-001, and FF-GATE-PR-001.",
+        "The exact current-lineage aggregate verdict is FAILED_SPIKE_REQUIRES_OPERATOR_DECISION; all gate reports preserve the non-product, no-parity ceiling."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-007",
       "requirement": "The no-context model manual documents deterministic/local and opt-in live cases, report fields, transcript sanitization, security boundaries, failure reproduction, cancellation recovery, and the dependency-exception boundary.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "FF-GATE-DEEP-001 revalidated the contract-model-manual check against product/MODEL_MANUAL.md, including deterministic commands, typed blockers, transcript sanitization, bounds, recovery, and future dependency/runtime-proof boundaries."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-008",
       "requirement": "WP-007 owns a versioned mandatory corpus covering fingerprint, wire, SSRF/rebinding, redirects, cookie/credential scope, pooling identity, replay, bounds, byte credits, and cancellation; it reuses WP-004 stable-ID and transcript-normalization conventions without claiming WP-004 supplied those transport semantics.",
       "proof_class": "structural",
-      "status": "PENDING",
-      "evidence": []
+      "status": "PASS",
+      "evidence": [
+        "The fresh report identifies corpus WP-FF-007-transport-corpus-v1 and executes all 54 owned mandatory rows; the deep gate independently validates the canonical manifest and semantic projection while retaining only WP-004 normalization reuse."
+      ]
     },
     {
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-009",
       "requirement": "The sanitized current-main WP-007 artifacts independently re-execute the complete 54-case behavior-sensitive corpus and declaration-preserving counterfactual, retain the exact FAILED_SPIKE_REQUIRES_OPERATOR_DECISION ceiling, pass the applicable canonical gates, and bind all new evidence and containment receipts to the current Git lineage rather than the stale pre-sanitization closure and merge commits.",
       "proof_class": "integration",
       "status": "PENDING",
-      "evidence": []
+      "evidence": [
+        "Current-lineage corpus, counterfactual, architecture, runtime, deep, and PR evidence passed and closure commit ec14fbd6815949912671e02cac18e29e65516484 records the validated source.",
+        "Final PASS remains intentionally pending until that closure commit and this merge-pending evidence commit are mechanically proven contained in canonical main."
+      ]
     }
   ],
   "recovery": {
@@ -209,7 +230,17 @@
     }
   },
   "validation": {
-    "checks": [],
+    "checks": [
+      "Fresh 54-case transport corpus: 54 passed, 0 failed, 31 mandatory typed blockers, FAILED_SPIKE_REQUIRES_OPERATOR_DECISION",
+      "Default-concurrency Rust workspace suite: 113 passed, 0 failed",
+      "Workspace doctests: PASS",
+      "FF-GATE-ARCH-001: build/reports/architecture-check-1785397672588993700-168476.json",
+      "FF-GATE-RUNTIME-001: build/reports/runtime-truth-check-1785397699816413900-189052.json",
+      "FF-GATE-DEEP-001: build/reports/verify-deep-1785397256393872000-189136.json",
+      "FF-GATE-PR-001: build/reports/verify-pr-1785399587234949400-5224.json",
+      "FF-GATE-SECRET-001 staged scan and commit hook: findings=0",
+      "git diff --check: PASS"
+    ],
     "not_proven": [
       "Browser TLS fingerprint parity or HTTP/2 fingerprint parity",
       "HTTP/2 transport, proxy peer-address evidence, integrated compression, or decompression bounds",
@@ -311,7 +342,8 @@
           "Oracle-integrity reviewer Anscombe independently inspected manifest completeness, semantic projection, producer/consumer separation, counterfactual discrimination, and report fabrication paths; the final verdict was PASS.",
           "Transport-security reviewer Halley independently inspected capability visibility, SSRF and redirect behavior, cookie scope, fingerprint downgrade, empty-capability execution, and blocked-capability honesty; the final verdict was PASS.",
           "Resource-architecture reviewer Poincare independently inspected byte credits, allocation preflight, cancellation acknowledgement, worker reaping, timing and limit evidence, report identity, and canonical gate integration; the final verdict was PASS.",
-          "The primary reran the 22-test transport suite, mutation-sensitive report consumer, warnings-denied workspace Clippy, two fresh 54-case corpus runs, architecture gate, runtime-truth gate, and deep gate after all reviewer findings were remediated."
+          "The primary reran the 22-test transport suite, mutation-sensitive report consumer, warnings-denied workspace Clippy, two fresh 54-case corpus runs, architecture gate, runtime-truth gate, and deep gate after all reviewer findings were remediated.",
+          "The v2 lineage revalidation reran the final-source 54-case corpus, 113-test default-concurrency workspace suite, doctests, architecture, runtime-truth, deep, PR, and staged-secret gates; every canonical gate passed without pausing unrelated Cargo workloads."
         ],
         "COUNTERFACTUAL_CHECKS": [
           "The strict consumer independently reconstructs the semantic projection, mutates one accepted semantic fact, and proves the same comparison rejects that altered report.",
@@ -361,6 +393,24 @@
             "finding": "Deep verification executed architecture counterfactual fixtures without declaring counterfactual as a supported proof class in its report.",
             "status": "REMEDIATED",
             "proof_id": "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution"
+          },
+          {
+            "finding_id": "WP-FF-007-V2-FINDING-FIXTURE-TARGET-COLLISION-006",
+            "finding": "Concurrent architecture sandboxes reused fixed Cargo target directories, allowing distinct mutated source roots to collide in shared compiler output; proof targets now include a deterministic hash of the canonical source root.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::compiled_fixture_targets_are_isolated_by_source_root"
+          },
+          {
+            "finding_id": "WP-FF-007-V2-FINDING-WINDOWS-LINKER-INIT-007",
+            "finding": "Under concurrent host compilation, MSVC link.exe intermittently exited with Windows status 0xc0000142 before producing a program diagnostic; Cargo proof execution now retries only that exact linker-initialization signature twice and still fails closed for compiler, linker, and test failures.",
+            "status": "REMEDIATED",
+            "proof_id": "xtask::tests::cargo_proof_retry_accepts_only_windows_linker_initialization_failure"
+          },
+          {
+            "finding_id": "WP-FF-007-V2-FINDING-ARCHITECTURE-CONTENTION-008",
+            "finding": "The Rust harness launched several compiler-heavy architecture mutation suites concurrently and the valid PR suite exceeded its former 15-minute child bound under sustained machine load; test builds now serialize only architecture-check execution and canonical commands retain a bounded 30-minute timeout.",
+            "status": "REMEDIATED",
+            "proof_id": "FF-GATE-PR-001::build/reports/verify-pr-1785399587234949400-5224.json"
           }
         ],
         "RESIDUAL_UNCERTAINTY": [

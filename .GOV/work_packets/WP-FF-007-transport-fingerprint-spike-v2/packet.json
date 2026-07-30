@@ -44,9 +44,9 @@
     "worktree_id": null,
     "remote_backup": {
       "required_for_handoff": true,
-      "branch": null,
-      "head_sha": null,
-      "verified_at_utc": null
+      "branch": "origin/codex/wp-ff-007-revalidation",
+      "head_sha": "b3490457d650d0c03e6220c4542d9a84f7711ec4",
+      "verified_at_utc": "2026-07-30T08:28:26Z"
     },
     "closure_commit": "ec14fbd6815949912671e02cac18e29e65516484",
     "main_containment_status": "PENDING",

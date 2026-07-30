@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Revalidate the sanitized pure-Rust transport-spike lineage",
     "created_at_utc": "2026-07-29T17:23:01Z",
-    "updated_at_utc": "2026-07-30T08:22:47Z"
+    "updated_at_utc": "2026-07-30T08:31:56Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -45,18 +45,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/wp-ff-007-revalidation",
-      "head_sha": "b3490457d650d0c03e6220c4542d9a84f7711ec4",
-      "verified_at_utc": "2026-07-30T08:28:26Z"
+      "head_sha": "30b52dee214c6bc81e9cb393b40486f09047198a",
+      "verified_at_utc": "2026-07-30T08:31:56Z"
     },
-    "closure_commit": "ec14fbd6815949912671e02cac18e29e65516484",
-    "main_containment_status": "PENDING",
-    "merged_main_commit": null
+    "closure_commit": "ec14fbd1fb732ef99dc14a4779b8bec6baf60ebe",
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "6f2612dfb115f0921d32a29db62c5ce661ba624f"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Back up the merge-pending branch, merge closure commit ec14fbd6815949912671e02cac18e29e65516484 into canonical main, prove containment, record the merge commit, and transition WP-FF-007 v2 to VALIDATED.",
+    "next_action": "Await Operator direction before activating another work packet; this revalidation preserves FAILED_SPIKE_REQUIRES_OPERATOR_DECISION and zero product or capability progress.",
     "supersedes": [
       "WP-FF-007-transport-fingerprint-spike-v1"
     ],
@@ -194,10 +194,10 @@
       "id": "WP-FF-007-transport-fingerprint-spike-v2-AC-009",
       "requirement": "The sanitized current-main WP-007 artifacts independently re-execute the complete 54-case behavior-sensitive corpus and declaration-preserving counterfactual, retain the exact FAILED_SPIKE_REQUIRES_OPERATOR_DECISION ceiling, pass the applicable canonical gates, and bind all new evidence and containment receipts to the current Git lineage rather than the stale pre-sanitization closure and merge commits.",
       "proof_class": "integration",
-      "status": "PENDING",
+      "status": "PASS",
       "evidence": [
-        "Current-lineage corpus, counterfactual, architecture, runtime, deep, and PR evidence passed and closure commit ec14fbd6815949912671e02cac18e29e65516484 records the validated source.",
-        "Final PASS remains intentionally pending until that closure commit and this merge-pending evidence commit are mechanically proven contained in canonical main."
+        "Current-lineage corpus, counterfactual, architecture, runtime, deep, and PR evidence passed and closure commit ec14fbd1fb732ef99dc14a4779b8bec6baf60ebe records the validated source.",
+        "git merge-base --is-ancestor proved closure ec14fbd1fb732ef99dc14a4779b8bec6baf60ebe, merge-pending evidence b3490457d650d0c03e6220c4542d9a84f7711ec4, and final branch backup 30b52dee214c6bc81e9cb393b40486f09047198a are contained in canonical main at merge 6f2612dfb115f0921d32a29db62c5ce661ba624f."
       ]
     }
   ],
@@ -239,6 +239,7 @@
       "FF-GATE-DEEP-001: build/reports/verify-deep-1785397256393872000-189136.json",
       "FF-GATE-PR-001: build/reports/verify-pr-1785399587234949400-5224.json",
       "FF-GATE-SECRET-001 staged scan and commit hook: findings=0",
+      "Main containment: closure ec14fbd1fb732ef99dc14a4779b8bec6baf60ebe and evidence head 30b52dee214c6bc81e9cb393b40486f09047198a are ancestors of merge 6f2612dfb115f0921d32a29db62c5ce661ba624f",
       "git diff --check: PASS"
     ],
     "not_proven": [

@@ -1,6 +1,6 @@
 schema_id: ff.id_registry@1
 file_id: FF-GOV-ID-REGISTRY-001
-updated_at: "2026-07-29"
+updated_at: "2026-07-30"
 namespaces:
   FF-PROJ:
     entity_kind: project
@@ -44,7 +44,7 @@ namespaces:
     next_numeric_id: 10
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 18
+    next_numeric_id: 19
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -203,6 +203,10 @@ registered_files:
     path: .GOV/work_packets/WP-FF-017-ordinary-transport-decision-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: FF-DEC-002
     path: .GOV/rules/build-rules.yaml#/exception_authority/canonical_allowlist/1
+  - id: WP-FF-018-governance-state-wording-fix-v1
+    path: .GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/packet.json
+  - id: WP-FF-018-governance-state-wording-fix-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/refinement.json
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001

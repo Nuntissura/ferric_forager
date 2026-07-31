@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Revalidate the sanitized pure-Rust transport-spike lineage",
     "created_at_utc": "2026-07-29T17:23:01Z",
-    "updated_at_utc": "2026-07-30T08:31:56Z"
+    "updated_at_utc": "2026-07-30T17:34:42Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -56,7 +56,7 @@
     "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Await Operator direction before activating another work packet; this revalidation preserves FAILED_SPIKE_REQUIRES_OPERATOR_DECISION and zero product or capability progress.",
+    "next_action": "No WP-007 decision remains open: WP-015 and WP-017 resolved its dependency escalation through FF-DEC-001 and FF-DEC-002. The historical verdict remains FAILED_SPIKE_REQUIRES_OPERATOR_DECISION with zero product or capability progress; activating a later implementation packet is separate Operator-directed work.",
     "supersedes": [
       "WP-FF-007-transport-fingerprint-spike-v1"
     ],

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Correct resolved WP-007 decision wording",
     "created_at_utc": "2026-07-30T17:34:42Z",
-    "updated_at_utc": "2026-07-31T06:10:35Z"
+    "updated_at_utc": "2026-07-31T06:13:56Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -38,15 +38,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "closure_commit": "e24b5c7cd628979a543785b54a7b128e0b3b1735",
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "e24b5c7cd628979a543785b54a7b128e0b3b1735"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "LOW",
     "blockers": [],
-    "next_action": "Commit the validator-accepted correction on main, prove the closure commit is contained in canonical main, then mark WP-018 VALIDATED and clear active focus.",
+    "next_action": "No WP-018 action remains. Await separate Operator direction before activating another work packet; no WP-007 dependency decision remains open.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -93,23 +93,20 @@
       "proof_class": "governance",
       "status": "PASS",
       "evidence": [
-        "The taskboard uses active_wp_id for WP-018 during execution and will return to the statement 'No work packet is active.' at containment closure.",
+        "The taskboard current_focus now states only 'No work packet is active.' with active_wp_id null.",
         "The stale copied WP-007 verdict and next-action projection was removed from current_focus."
       ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-31T06:10:35Z",
+      "recorded_at_utc": "2026-07-31T06:13:56Z",
       "branch": "main",
       "base_sha": "65f24bddf6e496c6bf41e126fb70c5677e1d5c76",
-      "head_sha": "65f24bddf6e496c6bf41e126fb70c5677e1d5c76",
+      "head_sha": "e24b5c7cd628979a543785b54a7b128e0b3b1735",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/packet.json",
-        ".GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/refinement.json",
-        ".GOV/work_packets/WP-FF-007-transport-fingerprint-spike-v2/packet.json",
-        ".GOV/taskboard/taskboard.yaml",
-        ".GOV/id-registry.yaml"
+        ".GOV/taskboard/taskboard.yaml"
       ],
       "checks_run": [
         "powershell -NoProfile -File build/scripts/clean-artifacts.ps1",
@@ -117,10 +114,11 @@
         "JSON parse: WP-018 packet and refinement PASS",
         "git diff --check PASS",
         "cargo test --manifest-path build/Cargo.toml --workspace --all-targets --all-features --locked --no-fail-fast --target-dir .fforager-artifacts/cargo-target: 113 passed, 0 failed",
-        "FF-GATE-DEEP-001 PASS: build/reports/verify-deep-1785478192018816200-212460.json"
+        "FF-GATE-DEEP-001 PASS: build/reports/verify-deep-1785478192018816200-212460.json",
+        "git merge-base --is-ancestor e24b5c7cd628979a543785b54a7b128e0b3b1735 main: exit 0"
       ],
       "blockers": [],
-      "next_action": "Commit the validator-accepted closure and prove that commit is contained in canonical main."
+      "next_action": "Commit the validated containment state and clear active taskboard focus."
     }
   },
   "validation": {
@@ -128,7 +126,8 @@
       "JSON parse: WP-007 packet, WP-018 packet, and WP-018 refinement PASS",
       "git diff --check PASS",
       "Workspace suite: 113 passed, 0 failed",
-      "FF-GATE-DEEP-001: build/reports/verify-deep-1785478192018816200-212460.json PASS"
+      "FF-GATE-DEEP-001: build/reports/verify-deep-1785478192018816200-212460.json PASS",
+      "Main containment: git merge-base --is-ancestor e24b5c7cd628979a543785b54a7b128e0b3b1735 main exited 0"
     ],
     "not_proven": [
       "Any product, transport capability, runtime, packaging, release, or phase progress."

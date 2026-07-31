@@ -1,6 +1,6 @@
 schema_id: ff.id_registry@1
 file_id: FF-GOV-ID-REGISTRY-001
-updated_at: "2026-07-30"
+updated_at: "2026-07-31"
 namespaces:
   FF-PROJ:
     entity_kind: project
@@ -44,7 +44,7 @@ namespaces:
     next_numeric_id: 10
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 19
+    next_numeric_id: 20
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -207,11 +207,23 @@ registered_files:
     path: .GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/packet.json
   - id: WP-FF-018-governance-state-wording-fix-v1-REFINEMENT-001
     path: .GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/refinement.json
+  - id: WP-FF-019-ferforstart-session-bootstrap-v1
+    path: .GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/packet.json
+  - id: WP-FF-019-ferforstart-session-bootstrap-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/refinement.json
+  - id: FF-NODE-SESSION-BOOTSTRAP-001
+    path: .GOV/topology.yaml#/nodes
+  - id: FF-EDGE-SESSION-BOOTSTRAP-INJECTS-START-001
+    path: .GOV/topology.yaml#/edges
+  - id: FF-EDGE-SESSION-BOOTSTRAP-INJECTS-CODEX-001
+    path: .GOV/topology.yaml#/edges
+  - id: FF-EDGE-SESSION-BOOTSTRAP-INJECTS-TOPOLOGY-001
+    path: .GOV/topology.yaml#/edges
 registered_rule_ranges:
   - namespace: FF-BOOT
     first: FF-BOOT-001
-    last: FF-BOOT-006
-    count: 6
+    last: FF-BOOT-007
+    count: 7
     path: AGENTS.md
     mirror_path: CLAUDE.md
   - namespace: FF-CODEX

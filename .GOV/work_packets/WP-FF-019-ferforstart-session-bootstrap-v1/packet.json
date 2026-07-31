@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Add the ferforstart authority-injection session bootstrap",
     "created_at_utc": "2026-07-31T06:25:49Z",
-    "updated_at_utc": "2026-07-31T08:05:00Z"
+    "updated_at_utc": "2026-07-31T08:08:00Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -35,15 +35,15 @@
       "head_sha": null,
       "verified_at_utc": null
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "closure_commit": "b13ca70025fe25009f6bafed98e818102eaca0b1",
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "b9dac4eeb1666e71a881627fdf5fe01c6538fa55"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "MEDIUM",
     "blockers": [],
-    "next_action": "Commit the validated closure, merge it into canonical main, and prove closure-commit containment before setting VALIDATED.",
+    "next_action": "No WP-019 action remains. Await separate Operator direction before activating another work packet.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -122,19 +122,13 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-31T08:05:00Z",
-      "branch": "codex/wp-ff-019-ferforstart",
+      "recorded_at_utc": "2026-07-31T08:08:00Z",
+      "branch": "main",
       "base_sha": "e3dfc1247d4b0a8f64f8ed27596cbdb2153a79b4",
-      "head_sha": "e3dfc1247d4b0a8f64f8ed27596cbdb2153a79b4",
+      "head_sha": "b9dac4eeb1666e71a881627fdf5fe01c6538fa55",
       "dirty_paths": [
-        "ferforstart.cmd",
-        "AGENTS.md",
-        "CLAUDE.md",
-        ".GOV/topology.yaml",
-        ".GOV/id-registry.yaml",
         ".GOV/taskboard/taskboard.yaml",
-        ".GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/packet.json",
-        ".GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/refinement.json"
+        ".GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/packet.json"
       ],
       "checks_run": [
         "powershell -NoProfile -File build/scripts/clean-artifacts.ps1",
@@ -143,10 +137,11 @@
         "ferforstart.cmd three-file missing-authority negative matrix",
         "AGENTS.md and CLAUDE.md byte-identity and FF-BOOT-007 occurrence checks",
         "git diff --check",
-        "FF-GATE-DEEP-001: build/reports/verify-deep-1785485054666582600-223976.json PASS"
+        "FF-GATE-DEEP-001: build/reports/verify-deep-1785485054666582600-223976.json PASS",
+        "git merge-base --is-ancestor b13ca70025fe25009f6bafed98e818102eaca0b1 main: exit 0"
       ],
       "blockers": [],
-      "next_action": "Commit the validated closure, merge it into canonical main, and prove closure-commit containment."
+      "next_action": "Commit the validated containment state and clear active taskboard focus."
     }
   },
   "validation": {
@@ -156,7 +151,8 @@
       "Missing-authority negative matrix for all three required files: PASS",
       "AGENTS.md and CLAUDE.md byte identity with FF-BOOT-007 exactly once: PASS",
       "JSON governance parse and git diff --check: PASS",
-      "FF-GATE-DEEP-001: build/reports/verify-deep-1785485054666582600-223976.json PASS"
+      "FF-GATE-DEEP-001: build/reports/verify-deep-1785485054666582600-223976.json PASS",
+      "Main containment: git merge-base --is-ancestor b13ca70025fe25009f6bafed98e818102eaca0b1 main exited 0"
     ],
     "not_proven": [
       "Automatic compliance by a model that ignores repository authority or does not expose command output in its session.",

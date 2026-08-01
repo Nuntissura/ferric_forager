@@ -8,12 +8,12 @@
     "version": "1",
     "title": "Define and prove resource and durability models",
     "created_at_utc": "2026-07-18T21:13:04Z",
-    "updated_at_utc": "2026-07-18T21:13:04Z"
+    "updated_at_utc": "2026-08-01T22:41:17Z"
   },
   "authorization": {
     "source": "operator_message",
-    "reference": "Operator authorized Phase 0 planning, requested WP-FF-008 through WP-FF-011 as detailed no-context STUB packets linked to the canonical design and readiness topics, and required the stubs to be committed and pushed before WP-FF-003 implementation begins.",
-    "recorded_at_utc": "2026-07-18T21:13:04Z"
+    "reference": "Operator authorized Phase 0 planning and creation of WP-FF-009, then on 2026-08-01 explicitly instructed Codex to start implementing WP-009 with no more than three parallel subagents, independent adversarial review of each large implementation block, artifact cleanup, long-wait tolerance, no interference with unrelated processes, and no dependency on yt-dlp.",
+    "recorded_at_utc": "2026-08-01T22:41:17Z"
   },
   "authority": {
     "bootstrap": "START_HERE.yaml",
@@ -46,10 +46,10 @@
   },
   "source_control": {
     "canonical_branch": "main",
-    "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+    "base_sha": "05eb057d075ed9629743942e53fdece9ace011ee",
     "work_branch": "codex/resource-durability-models",
-    "worktree_policy": "NONE",
-    "worktree_id": null,
+    "worktree_policy": "LINKED_REPO_LOCAL_HELPER",
+    "worktree_id": ".worktrees/WP-FF-009-resource-durability-models-v1",
     "remote_backup": {
       "required_for_handoff": true,
       "branch": null,
@@ -61,19 +61,16 @@
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "IN_PROGRESS",
     "risk": "HIGH",
-    "blockers": [
-      "WP-FF-003 executable gate bootstrap must be VALIDATED before compiled models or tests are added.",
-      "WP-FF-005 must establish versioned identity, cancellation, error, process, and public-contract foundations consumed by these models.",
-      "Supported filesystem capability profiles and exact Phase 0 proof platforms must be frozen at activation."
-    ],
-    "next_action": "After prerequisites pass, refresh current structured-concurrency, resource-admission, crash-consistency, and filesystem research; freeze the state models and proof profiles; promote the STUB; then implement deterministic model/property/fault tests before integrating the models into broad feature code.",
+    "blockers": [],
+    "next_action": "Implement the frozen resource/credit, durability/recovery, and proof/report blocks; adversarially review every large block through independent lenses; remediate findings; run the canonical proof matrix; merge the closure into main; prove containment; and clean .fforager-artifacts.",
     "supersedes": [],
     "superseded_by": null
   },
   "scope": {
     "summary": "Turn the design's atomic resource-vector, byte-credit, cancellation, durability-position, staged-commit, and filesystem-capability rules into versioned contracts and executable models that broad feature work must consume.",
+    "product_impact": "PREREQUISITE",
     "in_scope": [
       "Define the immutable ResourceVector dimensions, per-job/global limits, all-or-nothing central grant, deterministic fairness/tie-break policy, RAII ownership, cancellation, and release semantics.",
       "Define byte-credit acquisition, ownership transfer, simultaneous input/output reservation, spill behavior, item/byte queue occupancy, loss policy, and upstream backpressure for every variable-size stage.",
@@ -93,6 +90,8 @@
     ],
     "allowed_paths": [
       ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json",
+      ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/refinement.json",
+      ".GOV/taskboard/taskboard.yaml",
       "build/Cargo.toml",
       "build/Cargo.lock",
       "build/architecture-policy.toml",
@@ -123,65 +122,76 @@
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-001",
       "requirement": "Versioned resource and byte-credit contracts define every admitted dimension, item/byte bound, ownership transfer, coupled reservation, fairness rule, cancellation outcome, loss policy, and observable occupancy used by the Phase 2 proof slice.",
+      "proof_class": "contract_boundary_and_invariant_tests",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-002",
       "requirement": "Deterministic model/property tests prove all-or-nothing resource grants, no hold-and-wait across scheduler permits, no permit/credit leak on success/error/panic/cancellation, bounded queues and memory, cancellation progress, and the declared starvation/fairness bound.",
+      "proof_class": "resource_model_saturation_and_counterfactual_tests",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-003",
       "requirement": "The durability model separates received, validated-written-contiguous, and durable-contiguous positions; every generated trace resumes at or before durable_contiguous and no success trace precedes output validation plus archive reconciliation.",
+      "proof_class": "durability_state_model_and_prefix_tests",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-004",
       "requirement": "Fault injection covers every PREPARED, RENAMED, ARCHIVED, and CLEANED prefix plus torn, duplicate, reordered, checksum-invalid, cross-volume, stale-lease, collision, partial-cleanup, and interrupted-migration cases with an idempotent declared recovery or fail-closed result.",
+      "proof_class": "fault_injection_and_idempotent_recovery_tests",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-005",
       "requirement": "Supported filesystem profiles state exact atomic-replace, file/directory sync, lease/lock, rooted no-follow path, cross-volume, and degraded-mode guarantees for each tested platform; unsupported security-sensitive confinement fails closed.",
+      "proof_class": "platform_capability_boundary_and_negative_tests",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-006",
       "requirement": "Structured traces and machine-readable reports let a no-context model identify the invariant, state, resource vector, credit owner, queue occupancy, durable prefix, injected fault, recovery action, and residual uncertainty for every failed case.",
+      "proof_class": "diagnostic_report_contract_and_replay_tests",
       "status": "PENDING",
       "evidence": []
     },
     {
       "id": "WP-FF-009-resource-durability-models-v1-AC-007",
       "requirement": "FF-GATE-ARCH-001, FF-GATE-PR-001, triggered model/fault/saturation deep gates, and an independent adversarial review pass on the same source and fixture manifest.",
+      "proof_class": "aggregate_validation_and_independent_adversarial_review",
       "status": "PENDING",
       "evidence": []
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-07-18T21:13:04Z",
-      "branch": "main",
-      "base_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-      "head_sha": "447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
+      "recorded_at_utc": "2026-08-01T22:41:17Z",
+      "branch": "codex/resource-durability-models",
+      "base_sha": "05eb057d075ed9629743942e53fdece9ace011ee",
+      "head_sha": "05eb057d075ed9629743942e53fdece9ace011ee",
       "dirty_paths": [
-        ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json"
+        ".GOV/taskboard/taskboard.yaml",
+        ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json",
+        ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/refinement.json"
       ],
       "checks_run": [
-        "git branch --show-current: main",
-        "git rev-parse HEAD: 447b4dbb0d64df56b3c956d8f311ff24f5b51c50",
-        "git status --porcelain=v2 --branch: main at 447b4dbb0d64df56b3c956d8f311ff24f5b51c50 before packet creation",
-        "git worktree list --porcelain: one main worktree; no packet worktree created"
+        "powershell -NoProfile -File build/scripts/clean-artifacts.ps1: PASS FF-GATE-ARTIFACT-HYGIENE-001; items=0",
+        "powershell -NoProfile -File build/scripts/clean-artifacts.ps1 -VerifyOnly: PASS FF-GATE-ARTIFACT-HYGIENE-001; items=0",
+        "WP-FF-003-executable-gate-bootstrap-v1, WP-FF-003-executable-gate-bootstrap-v2, and WP-FF-005-versioned-core-contracts-v1: VALIDATED and mechanically contained in main",
+        "Current research basis recorded in refinement.json with field implementation, official platform, source-code, benchmark/postmortem, and negative-path sources",
+        "build/scripts/new-worktree.ps1 created the linked repo-local worktree and shared artifact junction",
+        "git branch --show-current: codex/resource-durability-models",
+        "git rev-parse HEAD and merge-base main: 05eb057d075ed9629743942e53fdece9ace011ee",
+        "git config --get core.hooksPath: build/git-hooks"
       ],
-      "blockers": [
-        "Packet is a STUB and does not authorize implementation."
-      ],
-      "next_action": "Wait for prerequisites, freeze proof profiles, and promote before implementing contracts or tests."
+      "blockers": [],
+      "next_action": "Implement the three frozen blocks and their executable proof surfaces, then run independent adversarial review and the complete canonical matrix."
     }
   },
   "validation": {
@@ -189,7 +199,10 @@
       "packet_json_parse: PASS",
       "template_required_sections: PASS",
       "authority_and_readiness_anchor_review: PASS",
-      "allowed_path_review: PASS"
+      "allowed_path_review: PASS",
+      "prerequisite_containment_review: PASS",
+      "research_basis_and_refinement: PASS",
+      "resource_byte_stage_and_proof_profiles_frozen: PASS"
     ],
     "not_proven": [
       "Atomic resource admission or bounded byte flow",
@@ -212,14 +225,191 @@
       "runtime_boundary": "Shipped product execution must require neither .GOV/ nor build/."
     },
     "stub_contract": {
-      "implementation_authorized": false,
+      "implementation_authorized": true,
       "promotion_requirements": [
         "WP-FF-003 and WP-FF-005 prerequisite evidence is accepted.",
         "Current source-level research is recorded for structured concurrency, coupled-resource admission, byte backpressure, crash-consistent journals, and Windows/Unix filesystem guarantees.",
         "The initial fixed fairness policy, resource dimensions, byte stages, filesystem profiles, and finite state models are frozen.",
         "Every model has assumptions, invariant IDs, generated transitions, timeout, failure oracle, and report schema.",
         "No broad feature implementation depends on an unproven model."
-      ]
+      ],
+      "promotion_evidence": [
+        "WP-FF-003 executable-gate bootstrap v1/v2 and WP-FF-005 versioned core contracts are VALIDATED and mechanically contained in canonical main.",
+        "Current source-level research and selected/rejected approaches are recorded in refinement.json.",
+        "The 13 resource dimensions, strict FIFO head-reservation profile, byte-credit stages, three durability positions, model inventory, bounded exploration profile, and exact filesystem proof profiles are frozen in refinement.json.",
+        "The operator explicitly authorized implementation on 2026-08-01."
+      ],
+      "promoted_at_utc": "2026-08-01T22:41:17Z"
+    },
+    "refinement": {
+      "schema_id": "ff.work_packet_refinement@1",
+      "path": ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/refinement.json",
+      "status": "FROZEN_FOR_IMPLEMENTATION",
+      "research_basis_status": "CURRENT_SOURCE_LEVEL_RESEARCH_COMPLETED_2026-08-01"
+    },
+    "non_product_prerequisite": {
+      "schema_id": "ff.non-product-prerequisite@1",
+      "classification": "phase0_supporting_evidence",
+      "design_authority": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md#phase-0b--contracts-and-state-machines",
+      "product_progress": false,
+      "capability_progress": false,
+      "runtime_completion": false,
+      "packaging_or_release_progress": false,
+      "phase_progress": false,
+      "required_future_consumer": "the first shipped Ferric scheduler, durability, and direct-HTTP vertical slice",
+      "required_future_proof": "FF-GATE-RUNTIME-001 through the exact staged Ferric product artifact"
+    },
+    "change_evidence": {
+      "applicable_rule_ids": [
+        "FF-BUILD-010",
+        "FF-BUILD-011",
+        "FF-BUILD-012",
+        "FF-BUILD-013",
+        "FF-BUILD-014",
+        "FF-BUILD-015",
+        "FF-BUILD-017",
+        "FF-BUILD-018",
+        "FF-BUILD-019",
+        "FF-BUILD-020",
+        "FF-BUILD-021",
+        "FF-BUILD-022",
+        "FF-BUILD-023",
+        "FF-BUILD-024",
+        "FF-BUILD-025",
+        "FF-BUILD-026",
+        "FF-BUILD-027",
+        "FF-BUILD-029",
+        "FF-BUILD-030",
+        "FF-BUILD-031",
+        "FF-BUILD-032",
+        "FF-BUILD-033",
+        "FF-BUILD-034",
+        "FF-BUILD-035",
+        "FF-BUILD-048",
+        "FF-BUILD-057",
+        "FF-BUILD-058",
+        "FF-BUILD-059",
+        "FF-BUILD-060",
+        "FF-BUILD-064",
+        "FF-BUILD-066",
+        "FF-BUILD-067",
+        "FF-BUILD-072",
+        "FF-BUILD-077",
+        "FF-BUILD-078",
+        "FF-BUILD-079",
+        "FF-BUILD-080",
+        "FF-BUILD-081",
+        "FF-BUILD-082",
+        "FF-BUILD-083",
+        "FF-BUILD-084",
+        "FF-BUILD-085",
+        "FF-BUILD-086",
+        "FF-BUILD-087",
+        "FF-BUILD-088",
+        "FF-BUILD-089",
+        "FF-BUILD-090",
+        "FF-BUILD-091",
+        "FF-BUILD-092",
+        "FF-BUILD-093",
+        "FF-BUILD-094",
+        "FF-BUILD-095",
+        "FF-BUILD-096",
+        "FF-BUILD-097",
+        "FF-BUILD-098",
+        "FF-BUILD-099"
+      ],
+      "acceptance_or_authority_ids": [
+        "WP-FF-009-resource-durability-models-v1-AC-001",
+        "WP-FF-009-resource-durability-models-v1-AC-002",
+        "WP-FF-009-resource-durability-models-v1-AC-003",
+        "WP-FF-009-resource-durability-models-v1-AC-004",
+        "WP-FF-009-resource-durability-models-v1-AC-005",
+        "WP-FF-009-resource-durability-models-v1-AC-006",
+        "WP-FF-009-resource-durability-models-v1-AC-007"
+      ],
+      "scope_and_risk_matrix": {
+        "required_outcomes": [
+          "Atomic all-or-nothing resource-vector admission with deterministic bounded queue semantics and owned release",
+          "Byte-credit ownership and three monotonic durability positions with no resume beyond durable_contiguous",
+          "Idempotent fail-closed reconciliation for every declared commit prefix and malformed journal class",
+          "Exact platform capability profiles with unsupported confinement and cross-volume behavior rejected or degraded",
+          "Machine-readable deterministic counterexamples and independent review evidence"
+        ],
+        "risk_cases": [
+          "Composite permits are partially held or leaked on cancellation, error, or panic",
+          "Strict queue-head reservation creates an undocumented liveness ceiling",
+          "Simultaneous transform input and output are allocated before coupled byte reservation",
+          "A journal checkpoint outruns data or directory durability",
+          "Torn, duplicate, reordered, or checksum-invalid records are accepted beyond the prior valid prefix",
+          "Windows reparse points, cross-volume paths, or WSL v9fs are treated as stronger filesystems than proven",
+          "A model-only pass is misrepresented as shipped runtime behavior"
+        ]
+      },
+      "reuse_candidates_in_order_with_result": [
+        {
+          "candidate": "existing Ferric contracts, pure ledgers, lifecycle models, fixtures, testkit, and xtask reports",
+          "result": "Selected as the primary implementation substrate; it preserves the Rust-native dependency boundary and makes later product consumers share the proven types."
+        },
+        {
+          "candidate": "Rust core and std ownership, Drop, checked arithmetic, filesystem, and synchronization primitives",
+          "result": "Selected for owned leases, deterministic models, and local capability probes without introducing runtime dependencies."
+        },
+        {
+          "candidate": "Tokio semaphore or queue runtime",
+          "result": "Rejected as a new core dependency; its documented FIFO and owned-permit semantics inform Ferric's pure model only."
+        },
+        {
+          "candidate": "loom, proptest, a database, Python, yt-dlp, or yt-dlp companion processes",
+          "result": "Rejected for this packet; deterministic bounded schedule/fault exploration is implementable with existing Rust code and the product must have no yt-dlp dependency."
+        }
+      ],
+      "artifact_specific_justification": {
+        "contracts_and_core": "Own versioned model inputs, invariant-bearing state, owned leases, and recovery outcomes that later shipped code must consume.",
+        "testkit_and_fixtures": "Provide deterministic schedule, saturation, malformed-input, and crash-prefix counterexamples independent of implementation-local tests.",
+        "xtask_and_reports": "Bind triggered deep gates to exact source/fixture manifests and persist no-context diagnostic evidence.",
+        "model_manual": "Explains purpose, operation, evidence ceilings, failure modes, and recovery to a model with no chat context.",
+        "packet_and_refinement": "Freeze authority, assumptions, product-progress ceiling, exact proof profiles, and later runtime consumer obligations."
+      },
+      "pre_simplification_verdict": "PENDING: implementation and independent review have not yet run.",
+      "simplification_changes": [],
+      "post_simplification_verdict": "PENDING",
+      "complete_post_change_verification": [
+        "cargo fmt --manifest-path build/Cargo.toml --all -- --check",
+        "cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets --all-features -- -D warnings",
+        "cargo test --manifest-path build/Cargo.toml --locked --workspace --all-features --no-fail-fast",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard",
+        "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard",
+        "Parse changed authority and reports, verify allowed paths, run git diff --check and secret scan, prove closure containment in main, then clean and verify .fforager-artifacts"
+      ],
+      "ceilings_exceptions_and_evidence": {
+        "ceiling_id": "WP-FF-009-resource-durability-models-v1-CEILING-001",
+        "current_ceiling": "This packet supplies Phase 0 prerequisite contracts, executable models, and proof infrastructure; it provides zero product, capability, runtime, packaging, release, or phase progress.",
+        "replacement_trigger": "The first shipped Ferric scheduler, durability, and direct-HTTP slice consumes the contracts and models.",
+        "likely_upgrade_path": "Execute representative resource saturation, cancellation, byte-flow, crash-prefix, and filesystem scenarios through the exact staged Ferric product artifact.",
+        "trigger_detection_method": "FF-GATE-RUNTIME-001 changed-path classification and staged-artifact scenarios fail closed when a shipped consumer appears.",
+        "linked_evidence": [
+          ".GOV/work_packets/WP-FF-009-resource-durability-models-v1/refinement.json",
+          "product/crates/fforager-contracts/",
+          "product/crates/fforager-core/",
+          "build/crates/fforager-testkit/",
+          "build/tools/fforager-xtask/"
+        ]
+      },
+      "adversarial_review": {
+        "DIFF_ATTACK_SURFACES": [],
+        "INDEPENDENT_CHECKS_RUN": [],
+        "COUNTERFACTUAL_CHECKS": [],
+        "BOUNDARY_PROBES": [],
+        "NEGATIVE_PATH_CHECKS": [],
+        "INDEPENDENT_FINDINGS": [],
+        "RESIDUAL_UNCERTAINTY": [
+          "Implementation and independent adversarial review are pending.",
+          "WSL2 exposes this repository through v9fs, so it cannot substantiate a native Linux filesystem durability profile.",
+          "No shipped Ferric runtime consumer exists; model evidence cannot raise the immutable zero-product-progress ceiling."
+        ]
+      }
     },
     "documentation_topics": [
       {"source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md", "section": "15.10", "heading": "End-to-end byte credits and durability positions", "lines": "1381-1391", "use": "credit ownership and three durability positions"},

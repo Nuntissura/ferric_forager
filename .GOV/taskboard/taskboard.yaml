@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: No work packet is active.
-  active_wp_id: null
+  statement: WP-FF-009-resource-durability-models-v1 is active for implementation and independent adversarial proof of the Phase 0 resource, credit, durability, recovery, and filesystem-capability models; it remains an immutable zero-product-progress prerequisite until a later shipped Ferric runtime consumes and proves it.
+  active_wp_id: WP-FF-009-resource-durability-models-v1
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json

@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Produce archive-store selection and failure evidence with corrected durability lineage",
     "created_at_utc": "2026-08-02T13:27:34Z",
-    "updated_at_utc": "2026-08-02T23:02:58Z"
+    "updated_at_utc": "2026-08-02T23:13:30Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -43,18 +43,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/archive-store-evidence",
-      "head_sha": "92505bd29112c989bb4fbecf5eb58af96ec458e3",
-      "verified_at_utc": "2026-08-02T23:02:58Z"
+      "head_sha": "92c4d08dd3ea0481a87eb793bc29706838e9e054",
+      "verified_at_utc": "2026-08-02T23:13:30Z"
     },
     "closure_commit": "92505bd29112c989bb4fbecf5eb58af96ec458e3",
-    "main_containment_status": "PENDING_MERGE",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "92c4d08dd3ea0481a87eb793bc29706838e9e054"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit and push the MERGE_PENDING evidence state, merge it to canonical main, prove closure containment, update VALIDATED state, and clean all repository artifacts.",
+    "next_action": "No WP-008 action remains. Await separate Operator direction before activating another work packet.",
     "supersedes": ["WP-FF-008-archive-store-evidence-v1"],
     "superseded_by": null
   },
@@ -179,11 +179,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-02T23:02:58Z",
-      "branch": "codex/archive-store-evidence",
+      "recorded_at_utc": "2026-08-02T23:13:30Z",
+      "branch": "main",
       "base_sha": "7cb53af59268b7838d2b640f32f10b8168ff2acd",
-      "head_sha": "92505bd29112c989bb4fbecf5eb58af96ec458e3",
+      "head_sha": "92c4d08dd3ea0481a87eb793bc29706838e9e054",
       "dirty_paths": [
+        ".GOV/taskboard/taskboard.yaml",
         ".GOV/work_packets/WP-FF-008-archive-store-evidence-v2/packet.json"
       ],
       "checks_run": [
@@ -209,10 +210,14 @@
         "Prerequisite-ceiling report: build/reports/runtime-truth-check-1785711767588503500-62888.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 3 checks, 0 failed",
         "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785710052962996500-47276.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 58 checks, 0 failed",
         "PASS FF-GATE-PR-001: build/reports/verify-pr-1785711440271499700-70288.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 68 checks, 0 failed",
-        "git push origin codex/archive-store-evidence backed up closure commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 after PASS FF-GATE-SECRET-001; findings=0"
+        "git push origin codex/archive-store-evidence backed up closure commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 after PASS FF-GATE-SECRET-001; findings=0",
+        "git push origin codex/archive-store-evidence backed up MERGE_PENDING evidence commit 92c4d08dd3ea0481a87eb793bc29706838e9e054 after PASS FF-GATE-SECRET-001; findings=0",
+        "git merge --ff-only codex/archive-store-evidence advanced canonical main to 92c4d08dd3ea0481a87eb793bc29706838e9e054",
+        "git merge-base --is-ancestor verified closure commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 and evidence commit 92c4d08dd3ea0481a87eb793bc29706838e9e054 are contained in canonical main",
+        "PASS post-merge FF-GATE-ARCH-001: build/reports/architecture-check-1785712404324500400-64616.json"
       ],
       "blockers": [],
-      "next_action": "Commit and push the MERGE_PENDING evidence state, merge it to canonical main, prove closure containment, update VALIDATED state, and clean all repository artifacts."
+      "next_action": "No WP-008 action remains. Await separate Operator direction before activating another work packet."
     }
   },
   "validation": {
@@ -228,7 +233,8 @@
       "PASS FF-GATE-PR-001: build/reports/verify-pr-1785711440271499700-70288.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false; 68 checks, 0 failed",
       "PASS FF-GATE-SECRET-001: findings=0 on closure commit and branch push",
       "PASS: independent contract, storage durability, and proof/report reviews after remediation",
-      "PENDING: merge and main containment"
+      "PASS: closure commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 and MERGE_PENDING evidence commit 92c4d08dd3ea0481a87eb793bc29706838e9e054 are ancestors of canonical main",
+      "PASS post-merge FF-GATE-ARCH-001: build/reports/architecture-check-1785712404324500400-64616.json"
     ],
     "not_proven": [
       "Physical power-loss durability on every supported filesystem",

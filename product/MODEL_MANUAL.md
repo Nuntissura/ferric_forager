@@ -1,7 +1,7 @@
 ---
 file_id: FF-PRODUCT-MODEL-MANUAL-001
 file_kind: model_manual
-updated_at: "2026-07-28"
+updated_at: "2026-08-02"
 ---
 
 <topic id="phase-0-purpose" status="active" version="4" wp="WP-FF-006-rust-youtube-challenge-spike-v1" updated_at="2026-07-26">
@@ -20,6 +20,40 @@ Repository ownership is deterministic:
 - `rust-toolchain.toml` at repository root is the sole rustup selector.
 
 Shipped product runtime must not read or require `.GOV/` or `build/`. Build tooling may read the active governance packet to validate proof.
+
+</topic>
+
+<topic id="phase-0-resource-durability-models" status="active" version="2" wp="WP-FF-009-resource-durability-models-v1" ingestable="true" updated_at="2026-08-02">
+
+## Run the resource, durability, filesystem, and recovery models
+
+WP-FF-009 exercises bounded deterministic prerequisite models for atomic resource admission, FIFO waiter ordering, public owned grant/waiter/credit lifetimes, all nine byte-credit stages and per-owner limits, simultaneous input/output reservations, component attribution and transfer, effect-correlated durability prefixes, strict journal semantics and job identity, serialized commit effects, executed recovery-action retry/convergence, and exact Windows NTFS and WSL2 v9fs filesystem profiles. It does not use Python or yt-dlp.
+
+Run from the repository root with one Cargo job and repository-contained disposable output:
+
+```powershell
+$env:CARGO_BUILD_JOBS = "1"
+$env:CARGO_TARGET_DIR = ".fforager-artifacts/cargo-target"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- resource-durability-models
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- verify-deep --evidence-from-taskboard
+```
+
+The exact input manifest is `build/fixtures/resource-durability-models/manifest.json`. Its source manifest names the public contract/core implementations plus the independent testkit producer and xtask consumer. The standalone command compiles and executes the exact public-boundary corpus test; its durability-effect row calls the foreign-broker acknowledgement boundary itself and records the typed `AcknowledgementBrokerMismatch` result. The command independently reloads and validates all 48 case rows against the current manifest and source hashes, proves that source state did not change during execution, and atomically writes a fresh `ff.resource-durability-model-report@1` JSON file under `build/reports/`. The in-memory typed execution receipt binds the caller-created invocation and freshness boundary to the fresh report path, persisted digest, manifest identity, source identity, and executed-case count; `verify-deep` and `verify-pr` reject an absent, stale, mismatched, fabricated, or comment-only receipt path and include the validated fresh report path in their artifacts.
+
+Every row exposes the exact case and injected fault, invariant and state, full 13-dimensional resource vector, byte-credit owner, current queue occupancy and its item/byte bounds, received/validated-written/durable/resume prefixes, recovery action, compiled boundary, expected and observed result, canonical proof class, proof mechanism, exact cancel attribution when applicable, supplemental wrong-broker execution when applicable, and residual uncertainty. Inspect the manifest case first, then the row with the same `case_id`, then the named public boundary in `product/crates/fforager-contracts/src/resource.rs`, `product/crates/fforager-contracts/src/storage.rs`, `product/crates/fforager-core/src/resource.rs`, or `product/crates/fforager-core/src/lifecycle.rs`.
+
+The two platform rows additionally execute bounded, quiet, read-only probes. The Windows row runs `reg.exe query` for `ProductName`, `EditionID`, and `CurrentBuildNumber`, then `wmic.exe logicaldisk ... get FileSystem /value` for the repository volume; it accepts only derived Windows 11 Home, build 26200, and NTFS. The WSL row runs `wsl.exe --exec cat /etc/os-release`, `uname -r`, `wslpath -a`, and `stat -f -c %T`; it accepts only Ubuntu 24.04, the frozen WSL2 kernel prefix, and repository mount type `v9fs`, which remains an explicitly rejected/degraded profile. Command invocations, parsed observed fields, verdicts, and residual uncertainty are mandatory report data. Missing commands or any identity mismatch fail closed. These rows prove live host/volume or host/mount identity only: no Rust model runs inside WSL, and neither row proves native-Linux behavior, atomic replacement, confinement races, crash behavior, power-loss behavior, or durability behavior.
+
+Failure and recovery:
+
+- `WP009-E-GATE-UNTRIGGERED`, missing exact test registration, or missing report prefix: restore the exact compiled test and deep-gate call; a declaration or stored report is not execution evidence.
+- `WP009-E-UNMAPPED-INPUT`, manifest/source drift, or report identity mismatch: restore the exact manifest-to-row and source-path mapping, or make an authorized corpus change in the producer and independent consumer together.
+- Missing proof fields or queue bounds: restore the complete row; do not infer limits from prose or replace current occupancy with a configured maximum.
+- Durability outrun, wrong-stage authorization, ordinary byte-history replay/restoration, or recovery retry failure: repair the public model so `resume_at <= durable_contiguous <= validated_written_contiguous <= received`, only cumulative `HttpReceive` consumption authorizes received progress, only cumulative `Writer` consumption authorizes validated-written progress, every byte effect uses a strict positive broker-coupled receipt, ordinary replay rejects byte histories, byte restoration consumes matching authoritative broker state, and each recovery action is repeat-safe with a checked next decision; rerun the counterfactual tests.
+- Filesystem profile mismatch: select the exact frozen host profile. WSL2 v9fs intentionally fails closed for security-sensitive confinement and is not native-Linux durability proof.
+- Source-changed or report-write failure: stop using the result, return source state to the intended revision, ensure `build/reports/` is writable, and rerun. A partial or stale report is not accepted.
+
+Evidence ceiling: this corpus executes pure product contract/core models through non-shipped proof tooling. It performs no live crash or power-loss experiment, no native-Linux filesystem proof, no shipped storage/archive adapter, and no Ferric product entrypoint. Its result is prerequisite evidence with `zero_product_progress=true`, never product capability, runtime, packaging, release, or phase completion.
 
 </topic>
 

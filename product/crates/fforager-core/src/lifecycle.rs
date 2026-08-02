@@ -1,5 +1,276 @@
 //! Bounded deterministic lifecycle transition models and trace replay.
 
+use crate::resource::{ByteCreditPosition, CreditError, OwnedByteCreditBroker};
+use fforager_contracts::{
+    CleanupObservation, CollisionObservation, CommitState, IdentityObservation, LeaseObservation,
+    MigrationObservation, RecoveryAction, RecoveryConfinementObservation, RecoveryDecision,
+    RecoveryFailure, RecoveryObservation, VolumeRelationship,
+};
+
+/// Selects one deterministic recovery action from observed durable state.
+///
+/// This is a pure recovery oracle. It models what a later adapter must do and
+/// never claims that a file, journal, directory entry, lease, or archive row was
+/// actually persisted. Use [`apply_recovery_action`] to model acknowledged action
+/// application, repeat safety, and post-action convergence.
+#[must_use]
+pub fn decide_recovery(observation: &RecoveryObservation) -> RecoveryDecision {
+    if observation.durable_prefix == CommitState::Inconsistent {
+        return RecoveryDecision::FailClosed(RecoveryFailure::ExistingInconsistentPrefix);
+    }
+    if observation.collision == CollisionObservation::ConflictingExistingOutput {
+        return RecoveryDecision::FailClosed(RecoveryFailure::ConflictingDestination);
+    }
+
+    if observation.staged_output == IdentityObservation::Mismatched {
+        return RecoveryDecision::FailClosed(RecoveryFailure::MismatchedStagedOutput);
+    }
+    if observation.final_output == IdentityObservation::Mismatched {
+        return RecoveryDecision::FailClosed(RecoveryFailure::MismatchedFinalOutput);
+    }
+    if observation.archive_row == IdentityObservation::Mismatched {
+        return RecoveryDecision::FailClosed(RecoveryFailure::MismatchedArchiveRow);
+    }
+    match observation.confinement {
+        RecoveryConfinementObservation::Unavailable => {
+            return RecoveryDecision::FailClosed(RecoveryFailure::ConfinementUnavailable);
+        }
+        RecoveryConfinementObservation::Mismatched => {
+            return RecoveryDecision::FailClosed(RecoveryFailure::ConfinementMismatched);
+        }
+        RecoveryConfinementObservation::Proven => {}
+    }
+
+    if matches!(
+        observation.cleanup,
+        CleanupObservation::Partial | CleanupObservation::Complete
+    ) && matches!(
+        observation.durable_prefix,
+        CommitState::Collecting | CommitState::Prepared | CommitState::Renamed
+    ) {
+        return RecoveryDecision::FailClosed(RecoveryFailure::CleanupBeforeArchive);
+    }
+
+    if observation.durable_prefix == CommitState::Collecting
+        && (observation.final_output == IdentityObservation::MatchesJournal
+            || observation.archive_row == IdentityObservation::MatchesJournal)
+    {
+        return RecoveryDecision::FailClosed(RecoveryFailure::UnexpectedArtifactBeforePrepared);
+    }
+
+    match observation.lease {
+        LeaseObservation::HeldByOther => {
+            return RecoveryDecision::FailClosed(RecoveryFailure::LeaseHeldByOther);
+        }
+        LeaseObservation::Stale => {
+            return RecoveryDecision::Act(RecoveryAction::ReclaimStaleLease);
+        }
+        LeaseObservation::NotPresent | LeaseObservation::OwnedByJob => {}
+    }
+
+    if observation.migration == MigrationObservation::Interrupted {
+        return RecoveryDecision::Act(RecoveryAction::ResumeInterruptedMigration);
+    }
+
+    if observation.archive_row == IdentityObservation::MatchesJournal
+        && observation.final_output == IdentityObservation::Missing
+    {
+        return if observation.staged_output == IdentityObservation::MatchesJournal {
+            RecoveryDecision::Act(RecoveryAction::RestoreFinalFromStaged)
+        } else {
+            RecoveryDecision::FailClosed(RecoveryFailure::ArchiveWithoutRecoverableOutput)
+        };
+    }
+
+    decide_recovery_prefix(observation)
+}
+
+/// Failure to apply a declared recovery action to an observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecoveryApplicationError {
+    ActionNotApplicable {
+        action: RecoveryAction,
+    },
+    RetryActionMismatch {
+        applied: RecoveryAction,
+        requested: RecoveryAction,
+    },
+}
+
+/// Opaque proof that one oracle-selected recovery action was applied.
+///
+/// Private immutable fields bind the selected action to both its prior and
+/// resulting observations. Callers cannot construct or mutate an application;
+/// they may inspect its lineage or retry the exact action through [`Self::retry`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecoveryApplication {
+    action: RecoveryAction,
+    prior_observation: RecoveryObservation,
+    resulting_observation: RecoveryObservation,
+}
+
+impl RecoveryApplication {
+    #[must_use]
+    pub const fn action(&self) -> RecoveryAction {
+        self.action
+    }
+
+    #[must_use]
+    pub const fn prior_observation(&self) -> &RecoveryObservation {
+        &self.prior_observation
+    }
+
+    #[must_use]
+    pub const fn resulting_observation(&self) -> &RecoveryObservation {
+        &self.resulting_observation
+    }
+
+    #[must_use]
+    pub fn into_result(self) -> RecoveryObservation {
+        self.resulting_observation
+    }
+
+    /// Return the identical stored result for a retry of the exact applied action.
+    ///
+    /// This does not execute the recovery mutation again. The opaque application
+    /// provides the immutable prior/result lineage and this method verifies that
+    /// the requested action is the one that created it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecoveryApplicationError::RetryActionMismatch`] when `action`
+    /// differs from the oracle-selected action bound into this application.
+    pub fn retry(
+        &self,
+        action: RecoveryAction,
+    ) -> Result<&RecoveryObservation, RecoveryApplicationError> {
+        if action != self.action {
+            return Err(RecoveryApplicationError::RetryActionMismatch {
+                applied: self.action,
+                requested: action,
+            });
+        }
+        Ok(&self.resulting_observation)
+    }
+}
+
+/// Applies one successfully acknowledged recovery action to the pure observation model.
+///
+/// Initial application requires the exact action selected by [`decide_recovery`].
+/// Successful application returns an opaque [`RecoveryApplication`] that binds
+/// the selected action, prior observation, and resulting observation. Retry
+/// safety is available only through [`RecoveryApplication::retry`].
+///
+/// # Errors
+///
+/// Returns [`RecoveryApplicationError::ActionNotApplicable`] when the observation
+/// cannot be the before-or-after state of the requested action.
+#[allow(clippy::too_many_lines)]
+pub fn apply_recovery_action(
+    observation: &RecoveryObservation,
+    action: RecoveryAction,
+) -> Result<RecoveryApplication, RecoveryApplicationError> {
+    if decide_recovery(observation) != RecoveryDecision::Act(action) {
+        return Err(RecoveryApplicationError::ActionNotApplicable { action });
+    }
+    let mut next = observation.clone();
+    match action {
+        RecoveryAction::ResumeOrRestartVerifiedData => {}
+        RecoveryAction::ReclaimStaleLease => {
+            next.lease = LeaseObservation::OwnedByJob;
+        }
+        RecoveryAction::ResumeInterruptedMigration => {
+            next.migration = MigrationObservation::Complete;
+        }
+        RecoveryAction::RevalidatePreparedThenRename
+        | RecoveryAction::CopySyncRenameWithinDestination => {
+            next.durable_prefix = CommitState::Renamed;
+            next.staged_output = IdentityObservation::Missing;
+            next.final_output = IdentityObservation::MatchesJournal;
+        }
+        RecoveryAction::VerifyFinalArtifactThenArchive | RecoveryAction::InsertArchiveRow => {
+            next.durable_prefix = CommitState::Archived;
+            next.archive_row = IdentityObservation::MatchesJournal;
+        }
+        RecoveryAction::RestoreFinalFromStaged => {
+            next.final_output = IdentityObservation::MatchesJournal;
+        }
+        RecoveryAction::VerifyArchiveOutputPair => {
+            next.durable_prefix = CommitState::Archived;
+        }
+        RecoveryAction::RepeatCleanup => {
+            next.durable_prefix = CommitState::Cleaned;
+            next.cleanup = CleanupObservation::Complete;
+        }
+    }
+    Ok(RecoveryApplication {
+        action,
+        prior_observation: observation.clone(),
+        resulting_observation: next,
+    })
+}
+
+fn decide_recovery_prefix(observation: &RecoveryObservation) -> RecoveryDecision {
+    match observation.durable_prefix {
+        CommitState::Collecting => {
+            if observation.final_output == IdentityObservation::MatchesJournal
+                || observation.archive_row == IdentityObservation::MatchesJournal
+            {
+                RecoveryDecision::FailClosed(RecoveryFailure::UnexpectedArtifactBeforePrepared)
+            } else {
+                RecoveryDecision::Act(RecoveryAction::ResumeOrRestartVerifiedData)
+            }
+        }
+        CommitState::Prepared => {
+            if observation.archive_row == IdentityObservation::MatchesJournal
+                && observation.final_output == IdentityObservation::MatchesJournal
+            {
+                RecoveryDecision::Act(RecoveryAction::VerifyArchiveOutputPair)
+            } else if observation.final_output == IdentityObservation::MatchesJournal {
+                RecoveryDecision::Act(RecoveryAction::VerifyFinalArtifactThenArchive)
+            } else if observation.staged_output != IdentityObservation::MatchesJournal {
+                RecoveryDecision::FailClosed(RecoveryFailure::PreparedOutputMissing)
+            } else if observation.volume_relationship == VolumeRelationship::CrossVolume {
+                RecoveryDecision::Act(RecoveryAction::CopySyncRenameWithinDestination)
+            } else {
+                RecoveryDecision::Act(RecoveryAction::RevalidatePreparedThenRename)
+            }
+        }
+        CommitState::Renamed => {
+            if observation.final_output != IdentityObservation::MatchesJournal {
+                RecoveryDecision::FailClosed(RecoveryFailure::RenamedOutputMissing)
+            } else if observation.archive_row == IdentityObservation::MatchesJournal {
+                RecoveryDecision::Act(RecoveryAction::VerifyArchiveOutputPair)
+            } else {
+                RecoveryDecision::Act(RecoveryAction::InsertArchiveRow)
+            }
+        }
+        CommitState::Archived => {
+            if observation.archive_row != IdentityObservation::MatchesJournal {
+                RecoveryDecision::FailClosed(RecoveryFailure::ArchiveMissingForDurablePrefix)
+            } else if observation.final_output != IdentityObservation::MatchesJournal {
+                RecoveryDecision::FailClosed(RecoveryFailure::RenamedOutputMissing)
+            } else {
+                RecoveryDecision::Act(RecoveryAction::RepeatCleanup)
+            }
+        }
+        CommitState::Cleaned => {
+            if observation.archive_row != IdentityObservation::MatchesJournal {
+                RecoveryDecision::FailClosed(RecoveryFailure::ArchiveMissingForDurablePrefix)
+            } else if observation.final_output != IdentityObservation::MatchesJournal {
+                RecoveryDecision::FailClosed(RecoveryFailure::RenamedOutputMissing)
+            } else if observation.cleanup == CleanupObservation::Complete {
+                RecoveryDecision::ReconciledSuccess
+            } else {
+                RecoveryDecision::Act(RecoveryAction::RepeatCleanup)
+            }
+        }
+        CommitState::Inconsistent => {
+            RecoveryDecision::FailClosed(RecoveryFailure::ExistingInconsistentPrefix)
+        }
+    }
+}
+
 /// Every lifecycle required by WP-005 has one explicit model identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineKind {
@@ -119,12 +390,23 @@ pub enum State {
     PluginFailed,
     CommitWorking,
     CommitPreparing,
+    CommitDataSynchronizing,
+    CommitPreparedDirectorySynchronizing,
+    CommitPreparedRecordAppending,
+    CommitPreparedJournalSynchronizing,
     CommitPrepared,
     CommitRenaming,
+    CommitRenameDirectorySynchronizing,
+    CommitRenamedRecordAppending,
+    CommitRenamedJournalSynchronizing,
     CommitRenamed,
     CommitArchiving,
+    CommitArchivedRecordAppending,
+    CommitArchivedJournalSynchronizing,
     CommitArchived,
     CommitCleaning,
+    CommitCleanedRecordAppending,
+    CommitCleanedJournalSynchronizing,
     CommitCleaned,
     CommitReconciling,
     CommitVerifyingPrepared,
@@ -242,7 +524,17 @@ pub enum EffectIntent {
     SendPluginRequest,
     ClosePluginChannel,
     ValidateOutput,
+    /// Rename the staged output inside the destination filesystem.
     RenameOutput,
+    /// Synchronize the directory entry that makes a durable prefix discoverable.
+    SynchronizeDirectory,
+    /// Append the transition record for the transient commit phase.
+    ///
+    /// The adapter must make retries identity-aware: an already-present identical
+    /// sequence/hash is acknowledged, while a conflicting record fails closed.
+    AppendTransitionRecord,
+    /// Synchronize the journal only after its transition record was appended.
+    SynchronizeJournal,
     InsertArchiveRow,
     RemoveTemporaryState,
     RevalidatePreparedOutput,
@@ -291,6 +583,12 @@ pub enum TransitionError {
         generation: u64,
         expected: Vec<EffectAcknowledgement>,
     },
+    ByteDurabilityAcknowledgementRequired {
+        effect: EffectIntent,
+    },
+    ByteDurabilityRestorationEvidenceRequired {
+        state: State,
+    },
     InvalidTransition {
         kind: MachineKind,
         state: State,
@@ -302,6 +600,27 @@ pub enum TransitionError {
     ReplayMismatch {
         index: usize,
     },
+}
+
+/// Failure while coupling a byte lifecycle receipt to authoritative credit state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ByteDurabilityEffectError {
+    WrongMachine,
+    UnsupportedEffect { effect: EffectIntent },
+    PositionDoesNotMatchEffect { effect: EffectIntent },
+    Transition(TransitionError),
+    Credit(CreditError),
+}
+
+/// Failure while restoring a byte lifecycle from authoritative credit state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ByteDurabilityRestorationError {
+    PositionDoesNotMatchState {
+        state: State,
+        position: ByteCreditPosition,
+    },
+    Transition(TransitionError),
+    Credit(CreditError),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -328,7 +647,19 @@ struct DeferredEffects {
 }
 
 /// One bounded, deterministic state machine instance.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Mutable lifecycle instances are deliberately non-cloneable so one pending
+/// effect correlation cannot be forked and acknowledged more than once.
+///
+/// ```compile_fail
+/// use fforager_core::lifecycle::{MachineInstanceId, MachineKind, StateMachine};
+///
+/// let instance = MachineInstanceId::new(1).expect("nonzero instance");
+/// let machine = StateMachine::new(MachineKind::ByteCreditDurability, instance, 8);
+/// let fork = machine.clone();
+/// # let _ = fork;
+/// ```
+#[derive(Debug)]
 pub struct StateMachine {
     instance_id: MachineInstanceId,
     kind: MachineKind,
@@ -339,7 +670,36 @@ pub struct StateMachine {
     pending_unsuccessful_effect_outcome: bool,
     deferred_effects: Option<DeferredEffects>,
     next_effect_generation: u64,
+    byte_durability_acknowledgement_authorized: bool,
+    byte_durability_broker: Option<OwnedByteCreditBroker>,
 }
+
+impl PartialEq for StateMachine {
+    fn eq(&self, other: &Self) -> bool {
+        self.instance_id == other.instance_id
+            && self.kind == other.kind
+            && self.state == other.state
+            && self.trace_limit == other.trace_limit
+            && self.trace == other.trace
+            && self.pending_acknowledgements == other.pending_acknowledgements
+            && self.pending_unsuccessful_effect_outcome == other.pending_unsuccessful_effect_outcome
+            && self.deferred_effects == other.deferred_effects
+            && self.next_effect_generation == other.next_effect_generation
+            && self.byte_durability_acknowledgement_authorized
+                == other.byte_durability_acknowledgement_authorized
+            && self.byte_durability_broker.is_some() == other.byte_durability_broker.is_some()
+            && self
+                .byte_durability_broker
+                .as_ref()
+                .map(OwnedByteCreditBroker::position)
+                == other
+                    .byte_durability_broker
+                    .as_ref()
+                    .map(OwnedByteCreditBroker::position)
+    }
+}
+
+impl Eq for StateMachine {}
 
 impl StateMachine {
     #[must_use]
@@ -354,6 +714,8 @@ impl StateMachine {
             pending_unsuccessful_effect_outcome: false,
             deferred_effects: None,
             next_effect_generation: 1,
+            byte_durability_acknowledgement_authorized: false,
+            byte_durability_broker: None,
         }
     }
 
@@ -376,10 +738,79 @@ impl StateMachine {
         if !is_durable_state(kind, state) {
             return Err(TransitionError::StateIsNotDurable { kind, state });
         }
+        if kind == MachineKind::ByteCreditDurability {
+            return Err(TransitionError::ByteDurabilityRestorationEvidenceRequired { state });
+        }
         if next_effect_generation == 0 {
             return Err(TransitionError::InvalidRestorationGeneration);
         }
-        Ok(Self {
+        Ok(Self::restored(
+            kind,
+            state,
+            instance_id,
+            trace_limit,
+            next_effect_generation,
+        ))
+    }
+
+    /// Restore a byte lifecycle only when the authoritative broker position
+    /// substantiates the requested durable phase.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed transition, broker, or position/state mismatch error.
+    pub fn from_byte_durability_state(
+        state: State,
+        broker: &OwnedByteCreditBroker,
+        instance_id: MachineInstanceId,
+        trace_limit: usize,
+        next_effect_generation: u64,
+    ) -> Result<Self, ByteDurabilityRestorationError> {
+        let kind = MachineKind::ByteCreditDurability;
+        if !belongs(kind, state) {
+            return Err(ByteDurabilityRestorationError::Transition(
+                TransitionError::StateDoesNotBelongToMachine { kind, state },
+            ));
+        }
+        if !is_durable_state(kind, state) {
+            return Err(ByteDurabilityRestorationError::Transition(
+                TransitionError::StateIsNotDurable { kind, state },
+            ));
+        }
+        if next_effect_generation == 0 {
+            return Err(ByteDurabilityRestorationError::Transition(
+                TransitionError::InvalidRestorationGeneration,
+            ));
+        }
+        broker
+            .verify()
+            .map_err(ByteDurabilityRestorationError::Credit)?;
+        let position = broker.position();
+        if !byte_position_matches_state(position, state) {
+            return Err(ByteDurabilityRestorationError::PositionDoesNotMatchState {
+                state,
+                position,
+            });
+        }
+        let mut restored = Self::restored(
+            kind,
+            state,
+            instance_id,
+            trace_limit,
+            next_effect_generation,
+        );
+        restored.byte_durability_broker = Some(broker.clone());
+        Ok(restored)
+    }
+
+    fn restored(
+        kind: MachineKind,
+        state: State,
+        instance_id: MachineInstanceId,
+        trace_limit: usize,
+        next_effect_generation: u64,
+    ) -> Self {
+        Self {
             instance_id,
             kind,
             state,
@@ -389,7 +820,9 @@ impl StateMachine {
             pending_unsuccessful_effect_outcome: false,
             deferred_effects: None,
             next_effect_generation,
-        })
+            byte_durability_acknowledgement_authorized: false,
+            byte_durability_broker: None,
+        }
     }
 
     #[must_use]
@@ -410,6 +843,80 @@ impl StateMachine {
     #[must_use]
     pub fn pending_acknowledgements(&self) -> &[EffectAcknowledgement] {
         &self.pending_acknowledgements
+    }
+
+    /// Acknowledge one byte lifecycle effect and advance its authoritative broker position.
+    ///
+    /// The broker-issued acknowledgement is deliberately created inside core effect
+    /// code, consumed exactly once by the same broker, and never exposed to callers.
+    /// Ordinary [`StateMachine::apply`] calls cannot acknowledge these byte effects.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ByteDurabilityEffectError`] for the wrong machine/effect, a position
+    /// delta that does not belong to the acknowledged phase, an invalid correlated
+    /// lifecycle receipt, or a rejected broker position.
+    pub fn acknowledge_byte_durability_effect(
+        &mut self,
+        broker: &OwnedByteCreditBroker,
+        event: Event,
+        next: ByteCreditPosition,
+    ) -> Result<&Transition, ByteDurabilityEffectError> {
+        if self.kind != MachineKind::ByteCreditDurability {
+            return Err(ByteDurabilityEffectError::WrongMachine);
+        }
+        let Event::EffectAcknowledged { effect, .. } = event else {
+            return Err(ByteDurabilityEffectError::Transition(
+                TransitionError::InvalidTransition {
+                    kind: self.kind,
+                    state: self.state,
+                    event,
+                },
+            ));
+        };
+        if !matches!(
+            effect,
+            EffectIntent::AcceptBoundedBytes
+                | EffectIntent::ValidateAndWrite
+                | EffectIntent::SynchronizeData
+        ) {
+            return Err(ByteDurabilityEffectError::UnsupportedEffect { effect });
+        }
+        self.verify_byte_durability_broker(broker)
+            .map_err(ByteDurabilityEffectError::Credit)?;
+        let current = broker.position();
+        if !byte_position_matches_effect(current, next, effect) {
+            return Err(ByteDurabilityEffectError::PositionDoesNotMatchEffect { effect });
+        }
+        let acknowledgement = broker
+            .acknowledge_durability_effects(next)
+            .map_err(ByteDurabilityEffectError::Credit)?;
+        self.byte_durability_acknowledgement_authorized = true;
+        self.apply(event)
+            .map_err(ByteDurabilityEffectError::Transition)?;
+        broker
+            .advance(acknowledgement)
+            .map_err(ByteDurabilityEffectError::Credit)?;
+        if self.byte_durability_broker.is_none() {
+            self.byte_durability_broker = Some(broker.clone());
+        }
+        self.trace
+            .last()
+            .ok_or(ByteDurabilityEffectError::Transition(
+                TransitionError::ReplayMismatch { index: 0 },
+            ))
+    }
+
+    fn verify_byte_durability_broker(
+        &self,
+        broker: &OwnedByteCreditBroker,
+    ) -> Result<(), CreditError> {
+        let Some(authoritative) = &self.byte_durability_broker else {
+            return Ok(());
+        };
+        let identity_receipt =
+            authoritative.acknowledge_durability_effects(authoritative.position())?;
+        broker.advance(identity_receipt)
     }
 
     fn record_transition(
@@ -658,6 +1165,19 @@ impl StateMachine {
     ///
     /// Returns a typed invalid-transition or trace-bound error.
     pub fn apply(&mut self, event: Event) -> Result<&Transition, TransitionError> {
+        if self.kind == MachineKind::ByteCreditDurability
+            && let Event::EffectAcknowledged { effect, .. } = event
+            && matches!(
+                effect,
+                EffectIntent::AcceptBoundedBytes
+                    | EffectIntent::ValidateAndWrite
+                    | EffectIntent::SynchronizeData
+            )
+            && !std::mem::take(&mut self.byte_durability_acknowledgement_authorized)
+        {
+            return Err(TransitionError::ByteDurabilityAcknowledgementRequired { effect });
+        }
+        self.byte_durability_acknowledgement_authorized = false;
         if self.trace.len() >= self.trace_limit {
             return Err(TransitionError::TraceLimitReached {
                 limit: self.trace_limit,
@@ -741,6 +1261,11 @@ impl StateMachine {
 
     /// Replay a recorded trace and require each state/effect record to match.
     ///
+    /// Byte-credit durability acknowledgements are deliberately rejected because
+    /// a transition trace contains no broker-issued durability receipt. Re-execute
+    /// those acknowledgements through [`Self::acknowledge_byte_durability_effect`]
+    /// with authoritative credit state instead of trusting trace shape alone.
+    ///
     /// # Errors
     ///
     /// Returns the first transition, bound, or record mismatch.
@@ -758,6 +1283,52 @@ impl StateMachine {
             }
         }
         Ok(machine)
+    }
+}
+
+fn byte_position_matches_effect(
+    current: ByteCreditPosition,
+    next: ByteCreditPosition,
+    effect: EffectIntent,
+) -> bool {
+    match effect {
+        EffectIntent::AcceptBoundedBytes => {
+            next.received > current.received
+                && next.validated_written_contiguous == current.validated_written_contiguous
+                && next.durable_contiguous == current.durable_contiguous
+        }
+        EffectIntent::ValidateAndWrite => {
+            next.received == current.received
+                && next.validated_written_contiguous > current.validated_written_contiguous
+                && next.durable_contiguous == current.durable_contiguous
+        }
+        EffectIntent::SynchronizeData => {
+            next.received == current.received
+                && next.validated_written_contiguous == current.validated_written_contiguous
+                && next.durable_contiguous > current.durable_contiguous
+                && next.durable_contiguous == next.validated_written_contiguous
+                && next.validated_written_contiguous == next.received
+        }
+        _ => false,
+    }
+}
+
+fn byte_position_matches_state(position: ByteCreditPosition, state: State) -> bool {
+    match state {
+        State::BytesReceived => {
+            position.received > position.validated_written_contiguous
+                && position.validated_written_contiguous >= position.durable_contiguous
+        }
+        State::BytesWritten => {
+            position.received >= position.validated_written_contiguous
+                && position.validated_written_contiguous > position.durable_contiguous
+        }
+        State::BytesDurable => {
+            position.durable_contiguous > 0
+                && position.durable_contiguous == position.validated_written_contiguous
+                && position.validated_written_contiguous == position.received
+        }
+        _ => false,
     }
 }
 
@@ -886,12 +1457,23 @@ fn belongs(kind: MachineKind, state: State) -> bool {
             MachineKind::CommitArchiveReconciliation,
             State::CommitWorking
                 | State::CommitPreparing
+                | State::CommitDataSynchronizing
+                | State::CommitPreparedDirectorySynchronizing
+                | State::CommitPreparedRecordAppending
+                | State::CommitPreparedJournalSynchronizing
                 | State::CommitPrepared
                 | State::CommitRenaming
+                | State::CommitRenameDirectorySynchronizing
+                | State::CommitRenamedRecordAppending
+                | State::CommitRenamedJournalSynchronizing
                 | State::CommitRenamed
                 | State::CommitArchiving
+                | State::CommitArchivedRecordAppending
+                | State::CommitArchivedJournalSynchronizing
                 | State::CommitArchived
                 | State::CommitCleaning
+                | State::CommitCleanedRecordAppending
+                | State::CommitCleanedJournalSynchronizing
                 | State::CommitCleaned
                 | State::CommitReconciling
                 | State::CommitVerifyingPrepared
@@ -980,6 +1562,9 @@ fn is_durable_state(kind: MachineKind, state: State) -> bool {
     durable_states(kind).contains(&state)
 }
 
+const COMMIT_PREPARE_EFFECTS: &[EffectIntent] = &[EffectIntent::ValidateOutput];
+const COMMIT_RENAME_EFFECTS: &[EffectIntent] = &[EffectIntent::RenameOutput];
+
 fn acknowledgement_effects(state: State, emitted: &[EffectIntent]) -> Vec<EffectIntent> {
     let required: &[EffectIntent] = match state {
         State::JobCancelling => &[EffectIntent::RequestCancellation],
@@ -988,7 +1573,9 @@ fn acknowledgement_effects(state: State, emitted: &[EffectIntent]) -> Vec<Effect
         | State::CommitVerifyingArchived
         | State::CommitVerifyingCleaned => &[EffectIntent::VerifyArchiveOutputPair],
         State::BytesWriting => &[EffectIntent::ValidateAndWrite],
-        State::BytesSynchronizing => &[EffectIntent::SynchronizeData],
+        State::BytesSynchronizing | State::CommitDataSynchronizing => {
+            &[EffectIntent::SynchronizeData]
+        }
         State::FfmpegSpawning => &[EffectIntent::SpawnProcess],
         State::FfmpegReaping => &[EffectIntent::ReapProcess],
         State::FfmpegCancelling => &[EffectIntent::TerminateProcess, EffectIntent::ReapProcess],
@@ -1009,8 +1596,19 @@ fn acknowledgement_effects(state: State, emitted: &[EffectIntent]) -> Vec<Effect
         | State::FfmpegFailureReleaseRecovering => &[EffectIntent::PreserveDiagnostics],
         State::JavascriptRecycling => &[EffectIntent::RecycleWorker],
         State::PluginDraining => &[EffectIntent::ClosePluginChannel],
-        State::CommitPreparing => &[EffectIntent::ValidateOutput, EffectIntent::SynchronizeData],
-        State::CommitRenaming => &[EffectIntent::RenameOutput],
+        State::CommitPreparing => COMMIT_PREPARE_EFFECTS,
+        State::CommitPreparedDirectorySynchronizing | State::CommitRenameDirectorySynchronizing => {
+            &[EffectIntent::SynchronizeDirectory]
+        }
+        State::CommitPreparedRecordAppending
+        | State::CommitRenamedRecordAppending
+        | State::CommitArchivedRecordAppending
+        | State::CommitCleanedRecordAppending => &[EffectIntent::AppendTransitionRecord],
+        State::CommitPreparedJournalSynchronizing
+        | State::CommitRenamedJournalSynchronizing
+        | State::CommitArchivedJournalSynchronizing
+        | State::CommitCleanedJournalSynchronizing => &[EffectIntent::SynchronizeJournal],
+        State::CommitRenaming => COMMIT_RENAME_EFFECTS,
         State::CommitArchiving => &[EffectIntent::InsertArchiveRow],
         State::CommitCleaning => &[EffectIntent::RemoveTemporaryState],
         State::CommitVerifyingPrepared => &[EffectIntent::RevalidatePreparedOutput],
@@ -1414,35 +2012,79 @@ fn plugin(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
     match (state, event) {
-        (State::CommitWorking, Event::Prepare) => step(
-            State::CommitPreparing,
-            &[EffectIntent::ValidateOutput, EffectIntent::SynchronizeData],
+        (State::CommitWorking, Event::Prepare) => {
+            step(State::CommitPreparing, COMMIT_PREPARE_EFFECTS)
+        }
+        (State::CommitPreparing, Event::EffectAcknowledged { .. }) => step(
+            State::CommitDataSynchronizing,
+            &[EffectIntent::SynchronizeData],
+        ),
+        (State::CommitDataSynchronizing, Event::EffectAcknowledged { .. }) => step(
+            State::CommitPreparedDirectorySynchronizing,
+            &[EffectIntent::SynchronizeDirectory],
+        ),
+        (State::CommitPreparedDirectorySynchronizing, Event::EffectAcknowledged { .. }) => step(
+            State::CommitPreparedRecordAppending,
+            &[EffectIntent::AppendTransitionRecord],
+        ),
+        (State::CommitPreparedRecordAppending, Event::EffectAcknowledged { .. }) => step(
+            State::CommitPreparedJournalSynchronizing,
+            &[EffectIntent::SynchronizeJournal],
         ),
         (
-            State::CommitPreparing | State::CommitVerifyingPrepared,
+            State::CommitPreparedJournalSynchronizing | State::CommitVerifyingPrepared,
             Event::EffectAcknowledged { .. },
         ) => step(State::CommitPrepared, &[]),
         (State::CommitPrepared, Event::Rename) => {
-            step(State::CommitRenaming, &[EffectIntent::RenameOutput])
+            step(State::CommitRenaming, COMMIT_RENAME_EFFECTS)
         }
+        (State::CommitRenaming, Event::EffectAcknowledged { .. }) => step(
+            State::CommitRenameDirectorySynchronizing,
+            &[EffectIntent::SynchronizeDirectory],
+        ),
+        (State::CommitRenameDirectorySynchronizing, Event::EffectAcknowledged { .. }) => step(
+            State::CommitRenamedRecordAppending,
+            &[EffectIntent::AppendTransitionRecord],
+        ),
+        (State::CommitRenamedRecordAppending, Event::EffectAcknowledged { .. }) => step(
+            State::CommitRenamedJournalSynchronizing,
+            &[EffectIntent::SynchronizeJournal],
+        ),
         (
-            State::CommitRenaming | State::CommitVerifyingRenamed,
+            State::CommitRenamedJournalSynchronizing | State::CommitVerifyingRenamed,
             Event::EffectAcknowledged { .. },
         ) => step(State::CommitRenamed, &[]),
         (State::CommitRenamed, Event::Archive) => {
             step(State::CommitArchiving, &[EffectIntent::InsertArchiveRow])
         }
+        (State::CommitArchiving, Event::EffectAcknowledged { .. }) => step(
+            State::CommitArchivedRecordAppending,
+            &[EffectIntent::AppendTransitionRecord],
+        ),
+        (State::CommitArchivedRecordAppending, Event::EffectAcknowledged { .. }) => step(
+            State::CommitArchivedJournalSynchronizing,
+            &[EffectIntent::SynchronizeJournal],
+        ),
         (
-            State::CommitArchiving | State::CommitVerifyingArchived,
+            State::CommitArchivedJournalSynchronizing | State::CommitVerifyingArchived,
             Event::EffectAcknowledged { .. },
         ) => step(State::CommitArchived, &[]),
         (State::CommitArchived, Event::Cleanup) => {
             step(State::CommitCleaning, &[EffectIntent::RemoveTemporaryState])
         }
+        (State::CommitCleaning, Event::EffectAcknowledged { .. }) => step(
+            State::CommitCleanedRecordAppending,
+            &[EffectIntent::AppendTransitionRecord],
+        ),
+        (State::CommitCleanedRecordAppending, Event::EffectAcknowledged { .. }) => step(
+            State::CommitCleanedJournalSynchronizing,
+            &[EffectIntent::SynchronizeJournal],
+        ),
         (
-            State::CommitCleaning | State::CommitVerifyingCleaned,
+            State::CommitCleanedJournalSynchronizing | State::CommitVerifyingCleaned,
             Event::EffectAcknowledged { .. },
         ) => step(State::CommitCleaned, &[]),
         (State::CommitCleaned, Event::Reconcile) => step(
@@ -1471,12 +2113,23 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (
             State::CommitWorking
             | State::CommitPreparing
+            | State::CommitDataSynchronizing
+            | State::CommitPreparedDirectorySynchronizing
+            | State::CommitPreparedRecordAppending
+            | State::CommitPreparedJournalSynchronizing
             | State::CommitPrepared
             | State::CommitRenaming
+            | State::CommitRenameDirectorySynchronizing
+            | State::CommitRenamedRecordAppending
+            | State::CommitRenamedJournalSynchronizing
             | State::CommitRenamed
             | State::CommitArchiving
+            | State::CommitArchivedRecordAppending
+            | State::CommitArchivedJournalSynchronizing
             | State::CommitArchived
             | State::CommitCleaning
+            | State::CommitCleanedRecordAppending
+            | State::CommitCleanedJournalSynchronizing
             | State::CommitCleaned,
             Event::Fail,
         ) => step(
@@ -1486,12 +2139,23 @@ fn commit(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
         (
             State::CommitWorking
             | State::CommitPreparing
+            | State::CommitDataSynchronizing
+            | State::CommitPreparedDirectorySynchronizing
+            | State::CommitPreparedRecordAppending
+            | State::CommitPreparedJournalSynchronizing
             | State::CommitPrepared
             | State::CommitRenaming
+            | State::CommitRenameDirectorySynchronizing
+            | State::CommitRenamedRecordAppending
+            | State::CommitRenamedJournalSynchronizing
             | State::CommitRenamed
             | State::CommitArchiving
+            | State::CommitArchivedRecordAppending
+            | State::CommitArchivedJournalSynchronizing
             | State::CommitArchived
             | State::CommitCleaning
+            | State::CommitCleanedRecordAppending
+            | State::CommitCleanedJournalSynchronizing
             | State::CommitCleaned
             | State::CommitReconciling
             | State::CommitVerifyingPrepared
@@ -1634,6 +2298,7 @@ fn watcher(state: State, event: Event) -> Option<(State, Vec<EffectIntent>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resource::{ByteCreditComponent, ByteCreditContractV1, ByteCreditStage, OwnerId};
 
     fn instance(value: u64) -> MachineInstanceId {
         MachineInstanceId::new(value).expect("test instance identity must be nonzero")
@@ -1641,6 +2306,125 @@ mod tests {
 
     fn machine(kind: MachineKind, trace_limit: usize) -> StateMachine {
         StateMachine::new(kind, instance(1), trace_limit)
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct StateMachineSnapshot {
+        instance_id: MachineInstanceId,
+        kind: MachineKind,
+        state: State,
+        trace_limit: usize,
+        trace: Vec<Transition>,
+        pending_acknowledgements: Vec<EffectAcknowledgement>,
+        pending_unsuccessful_effect_outcome: bool,
+        deferred_effects: Option<DeferredEffects>,
+        next_effect_generation: u64,
+        byte_durability_acknowledgement_authorized: bool,
+        byte_durability_position: Option<ByteCreditPosition>,
+    }
+
+    fn snapshot(model: &StateMachine) -> StateMachineSnapshot {
+        StateMachineSnapshot {
+            instance_id: model.instance_id,
+            kind: model.kind,
+            state: model.state,
+            trace_limit: model.trace_limit,
+            trace: model.trace.clone(),
+            pending_acknowledgements: model.pending_acknowledgements.clone(),
+            pending_unsuccessful_effect_outcome: model.pending_unsuccessful_effect_outcome,
+            deferred_effects: model.deferred_effects.clone(),
+            next_effect_generation: model.next_effect_generation,
+            byte_durability_acknowledgement_authorized: model
+                .byte_durability_acknowledgement_authorized,
+            byte_durability_position: model
+                .byte_durability_broker
+                .as_ref()
+                .map(OwnedByteCreditBroker::position),
+        }
+    }
+
+    fn fork_for_test(model: &StateMachine) -> StateMachine {
+        StateMachine {
+            instance_id: model.instance_id,
+            kind: model.kind,
+            state: model.state,
+            trace_limit: model.trace_limit,
+            trace: model.trace.clone(),
+            pending_acknowledgements: model.pending_acknowledgements.clone(),
+            pending_unsuccessful_effect_outcome: model.pending_unsuccessful_effect_outcome,
+            deferred_effects: model.deferred_effects.clone(),
+            next_effect_generation: model.next_effect_generation,
+            byte_durability_acknowledgement_authorized: model
+                .byte_durability_acknowledgement_authorized,
+            byte_durability_broker: model.byte_durability_broker.clone(),
+        }
+    }
+
+    fn pending_acknowledgement_event(model: &StateMachine) -> Event {
+        let pending = model.pending_acknowledgements()[0];
+        Event::EffectAcknowledged {
+            instance_id: pending.instance_id,
+            effect: pending.effect,
+            generation: pending.generation,
+        }
+    }
+
+    fn acknowledge_byte_effect(
+        model: &mut StateMachine,
+        broker: &OwnedByteCreditBroker,
+        next: ByteCreditPosition,
+    ) {
+        let event = pending_acknowledgement_event(model);
+        model
+            .acknowledge_byte_durability_effect(broker, event, next)
+            .expect("WP009-REG-DURABLE-EFFECT-ACK-001 correlated effect receipt");
+    }
+
+    fn assert_partial_terminal_durability_rejected(
+        model: &mut StateMachine,
+        broker: &OwnedByteCreditBroker,
+    ) {
+        let synchronize_event = pending_acknowledgement_event(model);
+        assert_eq!(
+            model.acknowledge_byte_durability_effect(
+                broker,
+                synchronize_event,
+                ByteCreditPosition {
+                    received: 8,
+                    validated_written_contiguous: 8,
+                    durable_contiguous: 4,
+                },
+            ),
+            Err(ByteDurabilityEffectError::PositionDoesNotMatchEffect {
+                effect: EffectIntent::SynchronizeData,
+            }),
+            "a terminal BytesDurable acknowledgement must cover the complete written prefix"
+        );
+        assert_eq!(model.state(), State::EffectPending);
+        assert_eq!(broker.position().durable_contiguous, 0);
+    }
+
+    fn received_byte_machine(trace_limit: usize) -> (StateMachine, OwnedByteCreditBroker) {
+        let contract = ByteCreditContractV1::new(8, 2);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid broker");
+        let mut lease = broker
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 4)
+            .expect("HTTP receive claim");
+        lease
+            .consume(ByteCreditComponent::Single, 4)
+            .expect("consume received bytes");
+        let mut model = machine(MachineKind::ByteCreditDurability, trace_limit);
+        model.apply(Event::Receive).expect("receive effect emitted");
+        acknowledge_byte_effect(
+            &mut model,
+            &broker,
+            ByteCreditPosition {
+                received: 4,
+                validated_written_contiguous: 0,
+                durable_contiguous: 0,
+            },
+        );
+        (model, broker)
     }
 
     fn acknowledge_effect(model: &mut StateMachine, effect: EffectIntent) {
@@ -1735,6 +2519,409 @@ mod tests {
         model
     }
 
+    fn recovery_observation(prefix: CommitState) -> RecoveryObservation {
+        let (staged_output, final_output, archive_row, cleanup) = match &prefix {
+            CommitState::Collecting | CommitState::Prepared => (
+                IdentityObservation::MatchesJournal,
+                IdentityObservation::Missing,
+                IdentityObservation::Missing,
+                CleanupObservation::NotStarted,
+            ),
+            CommitState::Renamed => (
+                IdentityObservation::Missing,
+                IdentityObservation::MatchesJournal,
+                IdentityObservation::Missing,
+                CleanupObservation::NotStarted,
+            ),
+            CommitState::Archived => (
+                IdentityObservation::Missing,
+                IdentityObservation::MatchesJournal,
+                IdentityObservation::MatchesJournal,
+                CleanupObservation::NotStarted,
+            ),
+            CommitState::Cleaned => (
+                IdentityObservation::Missing,
+                IdentityObservation::MatchesJournal,
+                IdentityObservation::MatchesJournal,
+                CleanupObservation::Complete,
+            ),
+            CommitState::Inconsistent => (
+                IdentityObservation::Missing,
+                IdentityObservation::Missing,
+                IdentityObservation::Missing,
+                CleanupObservation::NotStarted,
+            ),
+        };
+        RecoveryObservation {
+            durable_prefix: prefix,
+            staged_output,
+            final_output,
+            archive_row,
+            lease: LeaseObservation::OwnedByJob,
+            cleanup,
+            migration: MigrationObservation::Complete,
+            volume_relationship: VolumeRelationship::SameFilesystem,
+            collision: CollisionObservation::None,
+            confinement: RecoveryConfinementObservation::Proven,
+        }
+    }
+
+    #[test]
+    fn recovery_actions_are_repeat_safe_and_converge_from_every_durable_prefix() {
+        let cases = [
+            (
+                CommitState::Collecting,
+                RecoveryDecision::Act(RecoveryAction::ResumeOrRestartVerifiedData),
+            ),
+            (
+                CommitState::Prepared,
+                RecoveryDecision::Act(RecoveryAction::RevalidatePreparedThenRename),
+            ),
+            (
+                CommitState::Renamed,
+                RecoveryDecision::Act(RecoveryAction::InsertArchiveRow),
+            ),
+            (
+                CommitState::Archived,
+                RecoveryDecision::Act(RecoveryAction::RepeatCleanup),
+            ),
+            (CommitState::Cleaned, RecoveryDecision::ReconciledSuccess),
+            (
+                CommitState::Inconsistent,
+                RecoveryDecision::FailClosed(RecoveryFailure::ExistingInconsistentPrefix),
+            ),
+        ];
+
+        for (prefix, expected) in cases {
+            let observation = recovery_observation(prefix);
+            let decision = decide_recovery(&observation);
+            assert_eq!(decision, expected);
+            if let RecoveryDecision::Act(action) = decision {
+                let application = apply_recovery_action(&observation, action)
+                    .expect("WP009-REG-RECOVERY-IDEMPOTENCE-001 action applies");
+                assert_eq!(application.action(), action);
+                assert_eq!(application.prior_observation(), &observation);
+                let after_once = application.resulting_observation();
+                let after_twice = application
+                    .retry(action)
+                    .expect("WP009-REG-RECOVERY-IDEMPOTENCE-001 receipt retries safely");
+                assert_eq!(after_twice, after_once);
+                let next_decision = decide_recovery(after_once);
+                if action != RecoveryAction::ResumeOrRestartVerifiedData {
+                    assert_ne!(next_decision, decision);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_actions_cover_every_declared_mutation_with_repeat_safety() {
+        let mut cases = Vec::new();
+
+        let mut stale = recovery_observation(CommitState::Prepared);
+        stale.lease = LeaseObservation::Stale;
+        cases.push(stale);
+
+        let mut migration = recovery_observation(CommitState::Prepared);
+        migration.migration = MigrationObservation::Interrupted;
+        cases.push(migration);
+
+        let mut cross_volume = recovery_observation(CommitState::Prepared);
+        cross_volume.volume_relationship = VolumeRelationship::CrossVolume;
+        cases.push(cross_volume);
+
+        let mut prepared_with_final = recovery_observation(CommitState::Prepared);
+        prepared_with_final.staged_output = IdentityObservation::Missing;
+        prepared_with_final.final_output = IdentityObservation::MatchesJournal;
+        cases.push(prepared_with_final);
+
+        let mut archive_without_final = recovery_observation(CommitState::Archived);
+        archive_without_final.staged_output = IdentityObservation::MatchesJournal;
+        archive_without_final.final_output = IdentityObservation::Missing;
+        cases.push(archive_without_final);
+
+        let mut prepared_with_pair = recovery_observation(CommitState::Prepared);
+        prepared_with_pair.staged_output = IdentityObservation::Missing;
+        prepared_with_pair.final_output = IdentityObservation::MatchesJournal;
+        prepared_with_pair.archive_row = IdentityObservation::MatchesJournal;
+        cases.push(prepared_with_pair);
+
+        for observation in cases {
+            let RecoveryDecision::Act(action) = decide_recovery(&observation) else {
+                panic!("WP009-REG-RECOVERY-IDEMPOTENCE-001 expected an action");
+            };
+            let application = apply_recovery_action(&observation, action)
+                .expect("WP009-REG-RECOVERY-IDEMPOTENCE-001 action applies");
+            assert_eq!(application.action(), action);
+            assert_eq!(application.prior_observation(), &observation);
+            let after_once = application.resulting_observation();
+            let after_twice = application
+                .retry(action)
+                .expect("WP009-REG-RECOVERY-IDEMPOTENCE-001 receipt retries safely");
+            assert_eq!(after_twice, after_once);
+        }
+    }
+
+    #[test]
+    fn recovery_preconditions_fail_closed_before_mutating_actions() {
+        let mut collecting_archive = recovery_observation(CommitState::Collecting);
+        collecting_archive.archive_row = IdentityObservation::MatchesJournal;
+        assert_eq!(
+            decide_recovery(&collecting_archive),
+            RecoveryDecision::FailClosed(RecoveryFailure::UnexpectedArtifactBeforePrepared),
+            "WP009-REG-COLLECTING-ARCHIVE-001"
+        );
+
+        let mut stale_mismatch = recovery_observation(CommitState::Prepared);
+        stale_mismatch.lease = LeaseObservation::Stale;
+        stale_mismatch.staged_output = IdentityObservation::Mismatched;
+        assert_eq!(
+            decide_recovery(&stale_mismatch),
+            RecoveryDecision::FailClosed(RecoveryFailure::MismatchedStagedOutput),
+            "WP009-REG-RECOVERY-PRECEDENCE-001"
+        );
+        assert_eq!(
+            apply_recovery_action(&stale_mismatch, RecoveryAction::ReclaimStaleLease),
+            Err(RecoveryApplicationError::ActionNotApplicable {
+                action: RecoveryAction::ReclaimStaleLease
+            }),
+            "WP009-REG-RECOVERY-PRECEDENCE-001 fail-closed observations cannot be mutated"
+        );
+
+        let mut migration_collision = recovery_observation(CommitState::Prepared);
+        migration_collision.migration = MigrationObservation::Interrupted;
+        migration_collision.collision = CollisionObservation::ConflictingExistingOutput;
+        assert_eq!(
+            decide_recovery(&migration_collision),
+            RecoveryDecision::FailClosed(RecoveryFailure::ConflictingDestination),
+            "WP009-REG-RECOVERY-PRECEDENCE-001"
+        );
+
+        let mut unsafe_confinement = recovery_observation(CommitState::Prepared);
+        unsafe_confinement.lease = LeaseObservation::Stale;
+        unsafe_confinement.confinement = RecoveryConfinementObservation::Unavailable;
+        assert_eq!(
+            decide_recovery(&unsafe_confinement),
+            RecoveryDecision::FailClosed(RecoveryFailure::ConfinementUnavailable),
+            "WP009-REG-RECOVERY-PRECEDENCE-001"
+        );
+    }
+
+    #[test]
+    fn recovery_executor_rejects_actions_not_selected_by_the_oracle() {
+        let same_filesystem = recovery_observation(CommitState::Prepared);
+        assert_eq!(
+            decide_recovery(&same_filesystem),
+            RecoveryDecision::Act(RecoveryAction::RevalidatePreparedThenRename)
+        );
+        assert_eq!(
+            apply_recovery_action(
+                &same_filesystem,
+                RecoveryAction::CopySyncRenameWithinDestination,
+            ),
+            Err(RecoveryApplicationError::ActionNotApplicable {
+                action: RecoveryAction::CopySyncRenameWithinDestination,
+            })
+        );
+        assert_eq!(
+            apply_recovery_action(&same_filesystem, RecoveryAction::ReclaimStaleLease),
+            Err(RecoveryApplicationError::ActionNotApplicable {
+                action: RecoveryAction::ReclaimStaleLease,
+            }),
+            "WP009-REG-RECOVERY-LINEAGE-001 an observational after-state is not retry authority"
+        );
+
+        let rename_application = apply_recovery_action(
+            &same_filesystem,
+            RecoveryAction::RevalidatePreparedThenRename,
+        )
+        .expect("the exact oracle-selected rename action applies");
+        assert_eq!(
+            rename_application.resulting_observation().durable_prefix,
+            CommitState::Renamed
+        );
+        assert_eq!(
+            rename_application
+                .retry(RecoveryAction::RevalidatePreparedThenRename)
+                .expect("the same receipt action retries without re-execution"),
+            rename_application.resulting_observation()
+        );
+        assert_eq!(
+            rename_application.retry(RecoveryAction::CopySyncRenameWithinDestination),
+            Err(RecoveryApplicationError::RetryActionMismatch {
+                applied: RecoveryAction::RevalidatePreparedThenRename,
+                requested: RecoveryAction::CopySyncRenameWithinDestination,
+            })
+        );
+        assert_eq!(
+            rename_application.clone().into_result(),
+            rename_application.resulting_observation().clone()
+        );
+
+        let mut cross_volume = same_filesystem.clone();
+        cross_volume.volume_relationship = VolumeRelationship::CrossVolume;
+        assert_eq!(
+            decide_recovery(&cross_volume),
+            RecoveryDecision::Act(RecoveryAction::CopySyncRenameWithinDestination)
+        );
+        assert_eq!(
+            apply_recovery_action(&cross_volume, RecoveryAction::RevalidatePreparedThenRename,),
+            Err(RecoveryApplicationError::ActionNotApplicable {
+                action: RecoveryAction::RevalidatePreparedThenRename,
+            })
+        );
+
+        let mut prepared_final = same_filesystem;
+        prepared_final.staged_output = IdentityObservation::Missing;
+        prepared_final.final_output = IdentityObservation::MatchesJournal;
+        assert_eq!(
+            decide_recovery(&prepared_final),
+            RecoveryDecision::Act(RecoveryAction::VerifyFinalArtifactThenArchive)
+        );
+        assert_eq!(
+            apply_recovery_action(&prepared_final, RecoveryAction::InsertArchiveRow),
+            Err(RecoveryApplicationError::ActionNotApplicable {
+                action: RecoveryAction::InsertArchiveRow,
+            })
+        );
+    }
+
+    #[test]
+    fn recovery_oracle_covers_collision_lease_cleanup_migration_and_cross_volume() {
+        let mut cross_volume = recovery_observation(CommitState::Prepared);
+        cross_volume.volume_relationship = VolumeRelationship::CrossVolume;
+        assert_eq!(
+            decide_recovery(&cross_volume),
+            RecoveryDecision::Act(RecoveryAction::CopySyncRenameWithinDestination)
+        );
+
+        let mut stale_lease = recovery_observation(CommitState::Prepared);
+        stale_lease.lease = LeaseObservation::Stale;
+        assert_eq!(
+            decide_recovery(&stale_lease),
+            RecoveryDecision::Act(RecoveryAction::ReclaimStaleLease)
+        );
+        stale_lease.lease = LeaseObservation::HeldByOther;
+        assert_eq!(
+            decide_recovery(&stale_lease),
+            RecoveryDecision::FailClosed(RecoveryFailure::LeaseHeldByOther)
+        );
+
+        let mut collision = recovery_observation(CommitState::Prepared);
+        collision.collision = CollisionObservation::ConflictingExistingOutput;
+        assert_eq!(
+            decide_recovery(&collision),
+            RecoveryDecision::FailClosed(RecoveryFailure::ConflictingDestination)
+        );
+        collision.collision = CollisionObservation::IdenticalExistingOutput;
+        collision.final_output = IdentityObservation::MatchesJournal;
+        assert_eq!(
+            decide_recovery(&collision),
+            RecoveryDecision::Act(RecoveryAction::VerifyFinalArtifactThenArchive)
+        );
+
+        let mut partial_cleanup = recovery_observation(CommitState::Archived);
+        partial_cleanup.cleanup = CleanupObservation::Partial;
+        assert_eq!(
+            decide_recovery(&partial_cleanup),
+            RecoveryDecision::Act(RecoveryAction::RepeatCleanup)
+        );
+        partial_cleanup.durable_prefix = CommitState::Renamed;
+        partial_cleanup.archive_row = IdentityObservation::Missing;
+        assert_eq!(
+            decide_recovery(&partial_cleanup),
+            RecoveryDecision::FailClosed(RecoveryFailure::CleanupBeforeArchive)
+        );
+
+        let mut migration = recovery_observation(CommitState::Archived);
+        migration.migration = MigrationObservation::Interrupted;
+        assert_eq!(
+            decide_recovery(&migration),
+            RecoveryDecision::Act(RecoveryAction::ResumeInterruptedMigration)
+        );
+    }
+
+    #[test]
+    fn archive_without_output_restores_only_from_matching_staged_artifact() {
+        let mut recoverable = recovery_observation(CommitState::Archived);
+        recoverable.final_output = IdentityObservation::Missing;
+        recoverable.staged_output = IdentityObservation::MatchesJournal;
+        assert_eq!(
+            decide_recovery(&recoverable),
+            RecoveryDecision::Act(RecoveryAction::RestoreFinalFromStaged)
+        );
+
+        recoverable.staged_output = IdentityObservation::Missing;
+        assert_eq!(
+            decide_recovery(&recoverable),
+            RecoveryDecision::FailClosed(RecoveryFailure::ArchiveWithoutRecoverableOutput)
+        );
+    }
+
+    #[test]
+    fn identity_mismatches_fail_closed_before_any_recovery_action() {
+        let baseline = recovery_observation(CommitState::Archived);
+        let mut staged = baseline.clone();
+        staged.staged_output = IdentityObservation::Mismatched;
+        let mut final_output = baseline.clone();
+        final_output.final_output = IdentityObservation::Mismatched;
+        let mut archive = baseline;
+        archive.archive_row = IdentityObservation::Mismatched;
+
+        for (observation, expected) in [
+            (
+                staged,
+                RecoveryDecision::FailClosed(RecoveryFailure::MismatchedStagedOutput),
+            ),
+            (
+                final_output,
+                RecoveryDecision::FailClosed(RecoveryFailure::MismatchedFinalOutput),
+            ),
+            (
+                archive,
+                RecoveryDecision::FailClosed(RecoveryFailure::MismatchedArchiveRow),
+            ),
+        ] {
+            assert_eq!(decide_recovery(&observation), expected);
+        }
+    }
+
+    #[test]
+    fn success_counterfactuals_remove_every_required_reconciliation_observation() {
+        let accepted = recovery_observation(CommitState::Cleaned);
+        assert_eq!(
+            decide_recovery(&accepted),
+            RecoveryDecision::ReconciledSuccess
+        );
+
+        let mut mutations = Vec::new();
+        let mut missing_archive = accepted.clone();
+        missing_archive.archive_row = IdentityObservation::Missing;
+        mutations.push(missing_archive);
+        let mut missing_output = accepted.clone();
+        missing_output.final_output = IdentityObservation::Missing;
+        mutations.push(missing_output);
+        let mut partial_cleanup = accepted.clone();
+        partial_cleanup.cleanup = CleanupObservation::Partial;
+        mutations.push(partial_cleanup);
+        let mut interrupted_migration = accepted.clone();
+        interrupted_migration.migration = MigrationObservation::Interrupted;
+        mutations.push(interrupted_migration);
+        let mut conflicting_output = accepted.clone();
+        conflicting_output.collision = CollisionObservation::ConflictingExistingOutput;
+        mutations.push(conflicting_output);
+        let mut held_lease = accepted;
+        held_lease.lease = LeaseObservation::HeldByOther;
+        mutations.push(held_lease);
+
+        for mutation in mutations {
+            assert_ne!(
+                decide_recovery(&mutation),
+                RecoveryDecision::ReconciledSuccess
+            );
+        }
+    }
+
     #[test]
     #[allow(clippy::too_many_lines)]
     fn every_named_lifecycle_has_a_success_path() {
@@ -1771,18 +2958,6 @@ mod tests {
                     Event::Acknowledge,
                 ],
                 State::AdmissionReleased,
-            ),
-            (
-                MachineKind::ByteCreditDurability,
-                &[
-                    Event::Receive,
-                    Event::Acknowledge,
-                    Event::Validate,
-                    Event::Acknowledge,
-                    Event::PersistDurably,
-                    Event::Acknowledge,
-                ],
-                State::BytesDurable,
             ),
             (
                 MachineKind::Live,
@@ -1961,16 +3136,6 @@ mod tests {
                 State::AdmissionCancelled,
             ),
             (
-                MachineKind::ByteCreditDurability,
-                &[
-                    Event::Receive,
-                    Event::Acknowledge,
-                    Event::Cancel,
-                    Event::Acknowledge,
-                ],
-                State::BytesCancelled,
-            ),
-            (
                 MachineKind::Live,
                 &[Event::Cancel, Event::Acknowledge],
                 State::LiveCancelled,
@@ -2083,16 +3248,6 @@ mod tests {
                     Event::Acknowledge,
                 ],
                 State::JobFailed,
-            ),
-            (
-                MachineKind::ByteCreditDurability,
-                &[
-                    Event::Receive,
-                    Event::Acknowledge,
-                    Event::Fail,
-                    Event::Acknowledge,
-                ],
-                State::BytesFailed,
             ),
             (
                 MachineKind::Live,
@@ -2224,7 +3379,7 @@ mod tests {
         complete_pending_effects(&mut job);
         assert_eq!(job.state(), State::JobSucceeded);
 
-        let mut commit = machine(MachineKind::CommitArchiveReconciliation, 11);
+        let mut commit = machine(MachineKind::CommitArchiveReconciliation, 64);
         for (request, acknowledged) in [
             (Event::Prepare, State::CommitPrepared),
             (Event::Rename, State::CommitRenamed),
@@ -2235,27 +3390,13 @@ mod tests {
             assert!(commit.apply(request).is_ok());
             assert_eq!(commit.state(), State::EffectPending);
             assert_ne!(commit.state(), acknowledged);
-            acknowledge_all(&mut commit);
+            complete_pending_effects(&mut commit);
             assert_eq!(commit.state(), acknowledged);
         }
 
-        let mut bytes = machine(MachineKind::ByteCreditDurability, 6);
-        assert!(bytes.apply(Event::Receive).is_ok());
-        assert_eq!(bytes.state(), State::EffectPending);
-        acknowledge_all(&mut bytes);
-        assert_eq!(bytes.state(), State::BytesReceived);
-        assert!(bytes.apply(Event::Validate).is_ok());
-        assert_eq!(bytes.state(), State::EffectPending);
-        acknowledge_all(&mut bytes);
-        assert_eq!(bytes.state(), State::BytesWritten);
-        assert!(bytes.apply(Event::PersistDurably).is_ok());
-        assert_eq!(bytes.state(), State::EffectPending);
-        acknowledge_all(&mut bytes);
-        assert_eq!(bytes.state(), State::BytesDurable);
-
-        let mut cancelling = machine(MachineKind::CommitArchiveReconciliation, 8);
+        let mut cancelling = machine(MachineKind::CommitArchiveReconciliation, 32);
         assert!(cancelling.apply(Event::Prepare).is_ok());
-        acknowledge_all(&mut cancelling);
+        complete_pending_effects(&mut cancelling);
         let cancel = cancelling
             .apply(Event::Cancel)
             .expect("cancel begins draining");
@@ -2275,42 +3416,363 @@ mod tests {
     }
 
     #[test]
-    fn generic_effect_wrapper_blocks_strict_acknowledgement_prefixes() {
-        for mask in 0_u8..4 {
-            let mut commit = machine(MachineKind::CommitArchiveReconciliation, 8);
-            let prepare = commit
-                .apply(Event::Prepare)
-                .expect("prepare requests effects");
-            assert_eq!(prepare.next, State::EffectPending);
-            assert_eq!(
-                prepare.effects,
-                [EffectIntent::ValidateOutput, EffectIntent::SynchronizeData]
-            );
-            for (bit, effect) in [EffectIntent::ValidateOutput, EffectIntent::SynchronizeData]
-                .into_iter()
-                .enumerate()
-            {
-                if mask & (1 << bit) != 0 {
-                    acknowledge_effect(&mut commit, effect);
-                }
-            }
-            if mask == 3 {
-                assert_eq!(commit.state(), State::CommitPrepared);
-            } else {
+    fn byte_durability_positions_require_correlated_effect_acknowledgements() {
+        let contract = ByteCreditContractV1::new(16, 4);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid broker");
+        let mut receive_lease = broker
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 8)
+            .expect("HTTP receive claim");
+        receive_lease
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("HTTP adapter consumed received bytes");
+        let mut model = machine(MachineKind::ByteCreditDurability, 16);
+
+        model.apply(Event::Receive).expect("receive effect emitted");
+        let receive_event = pending_acknowledgement_event(&model);
+        assert!(matches!(
+            model.apply(receive_event),
+            Err(TransitionError::ByteDurabilityAcknowledgementRequired {
+                effect: EffectIntent::AcceptBoundedBytes
+            })
+        ));
+        assert_eq!(broker.position(), ByteCreditPosition::default());
+        assert_eq!(
+            model.acknowledge_byte_durability_effect(
+                &broker,
+                receive_event,
+                ByteCreditPosition::default(),
+            ),
+            Err(ByteDurabilityEffectError::PositionDoesNotMatchEffect {
+                effect: EffectIntent::AcceptBoundedBytes
+            }),
+            "WP009-REG-DURABLE-EFFECT-ACK-001 a no-op receipt cannot advance the lifecycle"
+        );
+        acknowledge_byte_effect(
+            &mut model,
+            &broker,
+            ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 0,
+                durable_contiguous: 0,
+            },
+        );
+        assert_eq!(model.state(), State::BytesReceived);
+        receive_lease
+            .release()
+            .expect("release received bytes so capacity can be reused");
+
+        let mut writer_lease = broker
+            .claim(OwnerId(1), ByteCreditStage::Writer, 8)
+            .expect("writer claim");
+        writer_lease
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("writer consumed validated bytes");
+
+        model.apply(Event::Validate).expect("write effect emitted");
+        let write_event = pending_acknowledgement_event(&model);
+        assert_eq!(
+            model.acknowledge_byte_durability_effect(
+                &broker,
+                write_event,
+                ByteCreditPosition {
+                    received: 9,
+                    validated_written_contiguous: 8,
+                    durable_contiguous: 0,
+                },
+            ),
+            Err(ByteDurabilityEffectError::PositionDoesNotMatchEffect {
+                effect: EffectIntent::ValidateAndWrite
+            })
+        );
+        acknowledge_byte_effect(
+            &mut model,
+            &broker,
+            ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 8,
+                durable_contiguous: 0,
+            },
+        );
+        assert_eq!(model.state(), State::BytesWritten);
+
+        model
+            .apply(Event::PersistDurably)
+            .expect("sync effect emitted");
+        assert_partial_terminal_durability_rejected(&mut model, &broker);
+        acknowledge_byte_effect(
+            &mut model,
+            &broker,
+            ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 8,
+                durable_contiguous: 8,
+            },
+        );
+        assert_eq!(model.state(), State::BytesDurable);
+        assert_eq!(broker.position().durable_contiguous, 8);
+    }
+
+    #[test]
+    fn byte_durability_trace_replay_cannot_replace_broker_proof() {
+        let (model, _broker) = received_byte_machine(4);
+        assert!(
+            matches!(
+                StateMachine::replay(
+                    MachineKind::ByteCreditDurability,
+                    instance(1),
+                    model.trace().len(),
+                    model.trace(),
+                ),
+                Err(TransitionError::ByteDurabilityAcknowledgementRequired {
+                    effect: EffectIntent::AcceptBoundedBytes
+                })
+            ),
+            "WP009-REG-DURABLE-EFFECT-ACK-001 trace shape cannot replace broker proof"
+        );
+    }
+
+    #[test]
+    fn byte_durability_restoration_requires_a_matching_broker_position() {
+        let (_model, broker) = received_byte_machine(4);
+        assert!(matches!(
+            StateMachine::from_state(
+                MachineKind::ByteCreditDurability,
+                State::BytesReceived,
+                instance(2),
+                4,
+                2,
+            ),
+            Err(TransitionError::ByteDurabilityRestorationEvidenceRequired {
+                state: State::BytesReceived
+            })
+        ));
+        assert!(
+            StateMachine::from_byte_durability_state(
+                State::BytesReceived,
+                &broker,
+                instance(2),
+                4,
+                2,
+            )
+            .is_ok()
+        );
+        assert!(matches!(
+            StateMachine::from_byte_durability_state(
+                State::BytesDurable,
+                &broker,
+                instance(2),
+                4,
+                2,
+            ),
+            Err(ByteDurabilityRestorationError::PositionDoesNotMatchState {
+                state: State::BytesDurable,
+                ..
+            })
+        ));
+
+        let partial = OwnedByteCreditBroker::from_contract(&ByteCreditContractV1::new(16, 4))
+            .expect("valid partial broker");
+        let mut receive = partial
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 8)
+            .expect("receive claim");
+        receive
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("receive consumption");
+        let mut writer = partial
+            .claim(OwnerId(1), ByteCreditStage::Writer, 8)
+            .expect("writer claim");
+        writer
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("writer consumption");
+        for position in [
+            ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 0,
+                durable_contiguous: 0,
+            },
+            ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 8,
+                durable_contiguous: 0,
+            },
+            ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 8,
+                durable_contiguous: 4,
+            },
+        ] {
+            let acknowledgement = partial
+                .acknowledge_durability_effects(position)
+                .expect("position is credit-authorized");
+            partial
+                .advance(acknowledgement)
+                .expect("credit-authorized position advances");
+        }
+        assert!(matches!(
+            StateMachine::from_byte_durability_state(
+                State::BytesDurable,
+                &partial,
+                instance(3),
+                4,
+                2,
+            ),
+            Err(ByteDurabilityRestorationError::PositionDoesNotMatchState {
+                state: State::BytesDurable,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn restored_byte_durability_rejects_a_foreign_broker() {
+        let (_first_model, broker) = received_byte_machine(8);
+        let (_foreign_model, foreign) = received_byte_machine(8);
+        let mut broker_writer = broker
+            .claim(OwnerId(1), ByteCreditStage::Writer, 4)
+            .expect("writer claim on authoritative broker");
+        broker_writer
+            .consume(ByteCreditComponent::Single, 4)
+            .expect("authoritative writer consumed bytes");
+        let mut foreign_writer = foreign
+            .claim(OwnerId(1), ByteCreditStage::Writer, 4)
+            .expect("writer claim on foreign broker");
+        foreign_writer
+            .consume(ByteCreditComponent::Single, 4)
+            .expect("foreign writer consumed bytes");
+
+        let mut restored = StateMachine::from_byte_durability_state(
+            State::BytesReceived,
+            &broker,
+            instance(77),
+            8,
+            2,
+        )
+        .expect("matching broker restores the durable state");
+        restored
+            .apply(Event::Validate)
+            .expect("validation effect emitted");
+        let event = pending_acknowledgement_event(&restored);
+        let next = ByteCreditPosition {
+            received: 4,
+            validated_written_contiguous: 4,
+            durable_contiguous: 0,
+        };
+        assert_eq!(
+            restored.acknowledge_byte_durability_effect(&foreign, event, next),
+            Err(ByteDurabilityEffectError::Credit(
+                CreditError::AcknowledgementBrokerMismatch,
+            ))
+        );
+        assert_eq!(restored.state(), State::EffectPending);
+        assert_eq!(foreign.position().validated_written_contiguous, 0);
+        assert!(
+            restored
+                .acknowledge_byte_durability_effect(&broker, event, next)
+                .is_ok()
+        );
+        assert_eq!(restored.state(), State::BytesWritten);
+    }
+
+    #[test]
+    fn byte_durability_cancel_and_failure_complete_after_a_proven_receive() {
+        for (outcome, expected) in [
+            (Event::Cancel, State::BytesCancelled),
+            (Event::Fail, State::BytesFailed),
+        ] {
+            let (mut model, _broker) = received_byte_machine(8);
+            model.apply(outcome).expect("outcome effect emitted");
+            assert_eq!(model.state(), State::EffectPending);
+            acknowledge_all(&mut model);
+            assert_eq!(model.state(), expected);
+        }
+    }
+
+    #[test]
+    fn byte_durability_receipts_are_broker_bound() {
+        let contract = ByteCreditContractV1::new(8, 2);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid broker");
+        let other = OwnedByteCreditBroker::from_contract(&contract).expect("other broker");
+        let foreign = broker
+            .acknowledge_durability_effects(broker.position())
+            .expect("core token");
+        assert_eq!(
+            other.advance(foreign),
+            Err(CreditError::AcknowledgementBrokerMismatch)
+        );
+    }
+
+    #[test]
+    fn byte_durability_authorization_is_cleared_after_trace_limit_error() {
+        let contract = ByteCreditContractV1::new(8, 2);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid broker");
+        let mut lease = broker
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 4)
+            .expect("HTTP receive claim");
+        lease
+            .consume(ByteCreditComponent::Single, 4)
+            .expect("consume credited bytes");
+        let mut model = machine(MachineKind::ByteCreditDurability, 1);
+        model.apply(Event::Receive).expect("fills trace");
+        let event = pending_acknowledgement_event(&model);
+        assert!(matches!(
+            model.acknowledge_byte_durability_effect(
+                &broker,
+                event,
+                ByteCreditPosition {
+                    received: 4,
+                    validated_written_contiguous: 0,
+                    durable_contiguous: 0,
+                },
+            ),
+            Err(ByteDurabilityEffectError::Transition(
+                TransitionError::TraceLimitReached { limit: 1 }
+            ))
+        ));
+        assert!(matches!(
+            model.apply(event),
+            Err(TransitionError::ByteDurabilityAcknowledgementRequired {
+                effect: EffectIntent::AcceptBoundedBytes
+            })
+        ));
+        assert_eq!(broker.position(), ByteCreditPosition::default());
+        assert_eq!(model.state(), State::EffectPending);
+        assert_eq!(model.trace().len(), 1, "WP009-REG-DURABLE-AUTH-SCOPE-001");
+    }
+
+    #[test]
+    fn commit_prepared_requires_serial_prerequisite_and_journal_acknowledgements() {
+        let preparation_effects = [
+            EffectIntent::ValidateOutput,
+            EffectIntent::SynchronizeData,
+            EffectIntent::SynchronizeDirectory,
+            EffectIntent::AppendTransitionRecord,
+            EffectIntent::SynchronizeJournal,
+        ];
+        let mut commit = machine(MachineKind::CommitArchiveReconciliation, 32);
+        let prepare = commit
+            .apply(Event::Prepare)
+            .expect("prepare starts validation");
+        assert_eq!(prepare.effects, [EffectIntent::ValidateOutput]);
+        for (index, effect) in preparation_effects.into_iter().enumerate() {
+            assert_eq!(commit.pending_acknowledgements().len(), 1);
+            assert_eq!(commit.pending_acknowledgements()[0].effect, effect);
+            assert_ne!(commit.state(), State::CommitPrepared);
+            acknowledge_effect(&mut commit, effect);
+            if index + 1 != preparation_effects.len() {
                 assert_eq!(commit.state(), State::EffectPending);
-                assert_ne!(commit.state(), State::CommitPrepared);
-                assert!(matches!(
-                    StateMachine::from_state(
-                        MachineKind::CommitArchiveReconciliation,
-                        State::EffectPending,
-                        instance(9),
-                        1,
-                        1,
-                    ),
-                    Err(TransitionError::StateIsNotDurable { .. })
-                ));
             }
         }
+        assert_eq!(commit.state(), State::CommitPrepared);
+        assert!(matches!(
+            StateMachine::from_state(
+                MachineKind::CommitArchiveReconciliation,
+                State::EffectPending,
+                instance(9),
+                1,
+                1,
+            ),
+            Err(TransitionError::StateIsNotDurable { .. })
+        ));
 
         let mut job = machine(MachineKind::JobCancellation, 8);
         assert!(job.apply(Event::Start).is_ok());
@@ -2331,6 +3793,111 @@ mod tests {
         assert_ne!(job.state(), State::JobCancelled);
         acknowledge_all(&mut job);
         assert_eq!(job.state(), State::JobCancelled);
+    }
+
+    #[test]
+    fn renamed_prefix_enforces_causal_order_and_retries_only_failed_phase() {
+        let mut commit = machine(MachineKind::CommitArchiveReconciliation, 64);
+        assert!(commit.apply(Event::Prepare).is_ok());
+        complete_pending_effects(&mut commit);
+        assert_eq!(commit.state(), State::CommitPrepared);
+
+        let rename = commit
+            .apply(Event::Rename)
+            .expect("rename effects are requested");
+        assert_eq!(
+            rename.effects,
+            [EffectIntent::RenameOutput],
+            "WP009-REG-RENAME-ORDER-001"
+        );
+        let rename_ack = commit.pending_acknowledgements()[0];
+        assert!(matches!(
+            commit.apply(Event::EffectAcknowledged {
+                instance_id: rename_ack.instance_id,
+                effect: EffectIntent::SynchronizeDirectory,
+                generation: rename_ack.generation,
+            }),
+            Err(TransitionError::UnexpectedAcknowledgement { .. })
+        ));
+        acknowledge_effect(&mut commit, EffectIntent::RenameOutput);
+        assert_eq!(commit.state(), State::EffectPending);
+        assert_ne!(commit.state(), State::CommitRenamed);
+        assert_eq!(
+            commit.pending_acknowledgements()[0].effect,
+            EffectIntent::SynchronizeDirectory
+        );
+        acknowledge_effect(&mut commit, EffectIntent::SynchronizeDirectory);
+        assert_eq!(
+            commit.pending_acknowledgements()[0].effect,
+            EffectIntent::AppendTransitionRecord
+        );
+        acknowledge_effect(&mut commit, EffectIntent::AppendTransitionRecord);
+        assert_eq!(
+            commit.pending_acknowledgements()[0].effect,
+            EffectIntent::SynchronizeJournal
+        );
+        acknowledge_effect(&mut commit, EffectIntent::SynchronizeJournal);
+        assert_eq!(commit.state(), State::CommitRenamed);
+
+        let mut failed_sync = machine(MachineKind::CommitArchiveReconciliation, 64);
+        assert!(failed_sync.apply(Event::Prepare).is_ok());
+        complete_pending_effects(&mut failed_sync);
+        assert!(failed_sync.apply(Event::Rename).is_ok());
+        acknowledge_effect(&mut failed_sync, EffectIntent::RenameOutput);
+        let directory_sync = failed_sync
+            .pending_acknowledgements()
+            .iter()
+            .find(|pending| pending.effect == EffectIntent::SynchronizeDirectory)
+            .copied()
+            .expect("directory synchronization must remain pending");
+        assert!(
+            failed_sync
+                .apply(Event::EffectFailed {
+                    instance_id: directory_sync.instance_id,
+                    effect: directory_sync.effect,
+                    generation: directory_sync.generation,
+                })
+                .is_ok()
+        );
+        assert_eq!(failed_sync.state(), State::EffectRecovery);
+        assert_ne!(failed_sync.state(), State::CommitRenamed);
+        let retry = failed_sync
+            .apply(Event::Restart)
+            .expect("failed directory phase is retried without repeating rename");
+        assert_eq!(
+            retry.effects,
+            [EffectIntent::SynchronizeDirectory],
+            "WP009-REG-RENAME-PARTIAL-001"
+        );
+        assert!(!retry.effects.contains(&EffectIntent::RenameOutput));
+    }
+
+    #[test]
+    fn every_commit_prefix_requires_record_append_then_journal_sync() {
+        let mut commit = machine(MachineKind::CommitArchiveReconciliation, 64);
+        for (request, durable) in [
+            (Event::Prepare, State::CommitPrepared),
+            (Event::Rename, State::CommitRenamed),
+            (Event::Archive, State::CommitArchived),
+            (Event::Cleanup, State::CommitCleaned),
+        ] {
+            commit.apply(request).expect("commit phase starts");
+            while commit.pending_acknowledgements()[0].effect
+                != EffectIntent::AppendTransitionRecord
+            {
+                let effect = commit.pending_acknowledgements()[0].effect;
+                acknowledge_effect(&mut commit, effect);
+                assert_ne!(commit.state(), durable, "WP009-REG-JOURNAL-ACK-001");
+            }
+            acknowledge_effect(&mut commit, EffectIntent::AppendTransitionRecord);
+            assert_ne!(commit.state(), durable, "WP009-REG-JOURNAL-ACK-001");
+            assert_eq!(
+                commit.pending_acknowledgements()[0].effect,
+                EffectIntent::SynchronizeJournal
+            );
+            acknowledge_effect(&mut commit, EffectIntent::SynchronizeJournal);
+            assert_eq!(commit.state(), durable);
+        }
     }
 
     #[test]
@@ -2372,11 +3939,22 @@ mod tests {
                 })
             };
             assert!(result.is_ok());
-            assert_eq!(commit.state(), State::EffectPending);
+            assert_eq!(commit.state(), State::EffectRecovery);
             assert!(matches!(
-                commit.apply(Event::Restart),
-                Err(TransitionError::InvalidTransition { .. })
+                StateMachine::from_state(
+                    MachineKind::CommitArchiveReconciliation,
+                    State::EffectRecovery,
+                    instance(9),
+                    1,
+                    1,
+                ),
+                Err(TransitionError::StateIsNotDurable { .. })
             ));
+            let retry = commit
+                .apply(Event::Restart)
+                .expect("restart retries exact work");
+            assert_eq!(retry.next, State::EffectPending);
+            assert_eq!(retry.effects, [EffectIntent::ValidateOutput]);
             let stale = if cancellation {
                 commit.apply(Event::EffectCancelled {
                     instance_id: failed.instance_id,
@@ -2395,26 +3973,6 @@ mod tests {
                 Err(TransitionError::UnexpectedEffectFailure { .. }
                     | TransitionError::UnexpectedEffectCancellation { .. })
             ));
-            complete_pending_effects(&mut commit);
-            assert_eq!(commit.state(), State::EffectRecovery);
-            assert!(matches!(
-                StateMachine::from_state(
-                    MachineKind::CommitArchiveReconciliation,
-                    State::EffectRecovery,
-                    instance(9),
-                    1,
-                    1,
-                ),
-                Err(TransitionError::StateIsNotDurable { .. })
-            ));
-            let retry = commit
-                .apply(Event::Restart)
-                .expect("restart retries exact work");
-            assert_eq!(retry.next, State::EffectPending);
-            assert_eq!(
-                retry.effects,
-                [EffectIntent::ValidateOutput, EffectIntent::SynchronizeData]
-            );
             complete_pending_effects(&mut commit);
             assert_eq!(commit.state(), State::CommitPrepared);
         }
@@ -2483,7 +4041,7 @@ mod tests {
         acknowledge_all(&mut failed);
         assert!(failed.apply(Event::Confine).is_ok());
         let pending = failed.pending_acknowledgements()[0];
-        let before_wrong_failure = failed.clone();
+        let before_wrong_failure = snapshot(&failed);
         assert!(matches!(
             failed.apply(Event::EffectFailed {
                 instance_id: instance(2),
@@ -2492,7 +4050,7 @@ mod tests {
             }),
             Err(TransitionError::UnexpectedEffectFailure { .. })
         ));
-        assert_eq!(failed, before_wrong_failure);
+        assert_eq!(snapshot(&failed), before_wrong_failure);
         assert!(matches!(
             failed.apply(Event::EffectFailed {
                 instance_id: pending.instance_id,
@@ -2542,7 +4100,7 @@ mod tests {
         acknowledge_all(&mut cancelled);
         assert!(cancelled.apply(Event::Confine).is_ok());
         let pending = cancelled.pending_acknowledgements()[0];
-        let before_wrong_cancellation = cancelled.clone();
+        let before_wrong_cancellation = snapshot(&cancelled);
         assert!(matches!(
             cancelled.apply(Event::EffectCancelled {
                 instance_id: instance(2),
@@ -2551,7 +4109,7 @@ mod tests {
             }),
             Err(TransitionError::UnexpectedEffectCancellation { .. })
         ));
-        assert_eq!(cancelled, before_wrong_cancellation);
+        assert_eq!(snapshot(&cancelled), before_wrong_cancellation);
         assert!(matches!(
             cancelled.apply(Event::EffectCancelled {
                 instance_id: pending.instance_id,
@@ -2979,7 +4537,7 @@ mod tests {
             for cancellation in [false, true] {
                 for pending in build().pending_acknowledgements().to_vec() {
                     let mut model = build();
-                    let before_wrong_receipt = model.clone();
+                    let before_wrong_receipt = snapshot(&model);
                     let wrong_instance = if cancellation {
                         model.apply(Event::EffectCancelled {
                             instance_id: instance(99),
@@ -3001,7 +4559,7 @@ mod tests {
                         ),
                         "{label} must reject cross-instance outcome receipts"
                     );
-                    assert_eq!(model, before_wrong_receipt);
+                    assert_eq!(snapshot(&model), before_wrong_receipt);
 
                     let result = if cancellation {
                         model.apply(Event::EffectCancelled {
@@ -3056,7 +4614,7 @@ mod tests {
                         "{label} must reject stale outcome receipts"
                     );
 
-                    let mut acknowledged = model.clone();
+                    let mut acknowledged = fork_for_test(&model);
                     acknowledge_effect(&mut acknowledged, EffectIntent::PreserveDiagnostics);
                     assert_eq!(acknowledged.state(), *recovery);
                     assert!(acknowledged.pending_acknowledgements().is_empty());
@@ -3067,7 +4625,7 @@ mod tests {
                     assert_eq!(restart.effects, *retry_effects);
 
                     for diagnostic_cancellation in [false, true] {
-                        let mut diagnostic_outcome = model.clone();
+                        let mut diagnostic_outcome = fork_for_test(&model);
                         let diagnostic = diagnostic_outcome.pending_acknowledgements()[0];
                         let result = if diagnostic_cancellation {
                             diagnostic_outcome.apply(Event::EffectCancelled {
@@ -3214,12 +4772,12 @@ mod tests {
         assert!(cancelling.apply(unsuccessful_outcome(false, reap)).is_ok());
         assert_eq!(cancelling.state(), State::FfmpegCancelling);
         assert_eq!(cancelling.pending_acknowledgements(), &[terminate]);
-        let before_stale_reap = cancelling.clone();
+        let before_stale_reap = snapshot(&cancelling);
         assert!(matches!(
             cancelling.apply(unsuccessful_outcome(false, reap)),
             Err(TransitionError::UnexpectedEffectFailure { .. })
         ));
-        assert_eq!(cancelling, before_stale_reap);
+        assert_eq!(snapshot(&cancelling), before_stale_reap);
         assert!(matches!(
             cancelling.apply(Event::Restart),
             Err(TransitionError::InvalidTransition { .. })
@@ -3280,12 +4838,12 @@ mod tests {
         assert!(failing.apply(unsuccessful_outcome(false, preserve)).is_ok());
         assert_eq!(failing.state(), State::FfmpegFailing);
         assert_eq!(failing.pending_acknowledgements(), &[terminate]);
-        let before_stale_reap = failing.clone();
+        let before_stale_reap = snapshot(&failing);
         assert!(matches!(
             failing.apply(unsuccessful_outcome(true, reap)),
             Err(TransitionError::UnexpectedEffectCancellation { .. })
         ));
-        assert_eq!(failing, before_stale_reap);
+        assert_eq!(snapshot(&failing), before_stale_reap);
         assert!(matches!(
             failing.apply(Event::Restart),
             Err(TransitionError::InvalidTransition { .. })
@@ -3348,7 +4906,7 @@ mod tests {
             assert!(ffmpeg.apply(Event::Restart).is_ok());
             assert_eq!(ffmpeg.state(), retry_state);
 
-            let before_stale_receipts = ffmpeg.clone();
+            let before_stale_receipts = snapshot(&ffmpeg);
             assert!(matches!(
                 ffmpeg.apply(Event::EffectAcknowledged {
                     instance_id: stale.instance_id,
@@ -3365,7 +4923,7 @@ mod tests {
                 ffmpeg.apply(unsuccessful_outcome(true, stale)),
                 Err(TransitionError::UnexpectedEffectCancellation { .. })
             ));
-            assert_eq!(ffmpeg, before_stale_receipts);
+            assert_eq!(snapshot(&ffmpeg), before_stale_receipts);
         }
 
         for cancellation in [false, true] {
@@ -3381,7 +4939,7 @@ mod tests {
             assert_eq!(filesystem.state(), State::FilesystemProbed);
             assert!(filesystem.apply(Event::Confine).is_ok());
 
-            let before_stale_receipts = filesystem.clone();
+            let before_stale_receipts = snapshot(&filesystem);
             assert!(matches!(
                 filesystem.apply(Event::EffectAcknowledged {
                     instance_id: stale.instance_id,
@@ -3398,7 +4956,7 @@ mod tests {
                 filesystem.apply(unsuccessful_outcome(true, stale)),
                 Err(TransitionError::UnexpectedEffectCancellation { .. })
             ));
-            assert_eq!(filesystem, before_stale_receipts);
+            assert_eq!(snapshot(&filesystem), before_stale_receipts);
         }
     }
 
@@ -3431,23 +4989,29 @@ mod tests {
     #[test]
     fn replay_detects_counterfactual_trace_mutation() {
         let model = run(
-            MachineKind::ByteCreditDurability,
+            MachineKind::SourceRedirect,
             &[
-                Event::Receive,
+                Event::Start,
                 Event::Acknowledge,
-                Event::Validate,
+                Event::Redirect,
                 Event::Acknowledge,
-                Event::PersistDurably,
+                Event::Continue,
                 Event::Acknowledge,
+                Event::Complete,
             ],
-            State::BytesDurable,
+            State::SourceResolved,
         );
         let mut mutated = model.trace().to_vec();
         if let Some(record) = mutated.get_mut(1) {
             record.next = State::BytesDurable;
         }
         assert!(matches!(
-            StateMachine::replay(MachineKind::ByteCreditDurability, instance(1), 5, &mutated,),
+            StateMachine::replay(
+                MachineKind::SourceRedirect,
+                instance(1),
+                model.trace().len(),
+                &mutated,
+            ),
             Err(TransitionError::ReplayMismatch { index: 1 })
         ));
     }
@@ -3546,7 +5110,7 @@ mod tests {
         assert_eq!(first_ack.generation, second_ack.generation);
         assert_ne!(first_ack.instance_id, second_ack.instance_id);
 
-        let prior = second.clone();
+        let prior = snapshot(&second);
         assert!(matches!(
             second.apply(Event::EffectAcknowledged {
                 instance_id: first_ack.instance_id,
@@ -3555,7 +5119,7 @@ mod tests {
             }),
             Err(TransitionError::UnexpectedAcknowledgement { .. })
         ));
-        assert_eq!(second, prior);
+        assert_eq!(snapshot(&second), prior);
     }
 
     #[test]
@@ -3581,7 +5145,20 @@ mod tests {
         for state in [
             State::CommitWorking,
             State::CommitPreparing,
+            State::CommitDataSynchronizing,
+            State::CommitPreparedDirectorySynchronizing,
+            State::CommitPreparedRecordAppending,
+            State::CommitPreparedJournalSynchronizing,
             State::CommitRenaming,
+            State::CommitRenameDirectorySynchronizing,
+            State::CommitRenamedRecordAppending,
+            State::CommitRenamedJournalSynchronizing,
+            State::CommitArchiving,
+            State::CommitArchivedRecordAppending,
+            State::CommitArchivedJournalSynchronizing,
+            State::CommitCleaning,
+            State::CommitCleanedRecordAppending,
+            State::CommitCleanedJournalSynchronizing,
             State::CommitInconsistent,
             State::CommitCancelled,
             State::EffectPending,

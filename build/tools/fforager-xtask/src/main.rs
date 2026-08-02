@@ -27,11 +27,75 @@ const TRANSPORT_SEMANTIC_PROJECTION_SHA256: &str =
     "35bfe562e409375b3a0811456e2eb7820485dc2c71427b891767c90c2af8bfbc";
 const FAILURE_PROOF_CLASS: &str = "structural";
 static COMMAND_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static WP009_INVOCATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
     "tests::public_boundary_counterexamples_reject_audit_failures";
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID: &str =
     "testkit::tests::public_boundary_counterexamples_reject_audit_failures";
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v5:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-journal-record-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes";
+const WP009_MANIFEST_PATH: &str = "build/fixtures/resource-durability-models/manifest.json";
+const WP009_PROOF_TEST: &str = "tests::resource_durability_model_corpus_executes_public_boundaries";
+const WP009_REPORT_PREFIX: &str = "FF-WP009-MODEL-REPORT:";
+const WP009_WINDOWS_PLATFORM_ROW_RESIDUAL: &str = "Live Windows host and repository-volume identity was probed; atomic-replace behavior, confinement races, crash behavior, power-loss behavior, and durability behavior were not executed.";
+const WP009_WSL_PLATFORM_ROW_RESIDUAL: &str = "Live WSL2 host and repository-mount identity was probed; native-Linux behavior, atomic-replace behavior, confinement races, crash behavior, power-loss behavior, and durability behavior were not executed.";
+const WP009_SOURCE_PATHS: &[&str] = &[
+    "product/crates/fforager-contracts/src/resource.rs",
+    "product/crates/fforager-contracts/src/storage.rs",
+    "product/crates/fforager-core/src/resource.rs",
+    "product/crates/fforager-core/src/lifecycle.rs",
+    "build/crates/fforager-testkit/src/lib.rs",
+    "build/tools/fforager-xtask/src/main.rs",
+];
+const WP009_CASE_IDS: &[&str] = &[
+    "wp009-resource-atomic-saturation",
+    "wp009-resource-fifo-head",
+    "wp009-resource-queue-item-bound",
+    "wp009-resource-queue-byte-bound",
+    "wp009-resource-raii-drop",
+    "wp009-resource-public-owned-boundary",
+    "wp009-credit-coupled-reservation",
+    "wp009-credit-owner-attribution",
+    "wp009-credit-stage-bounds-all-nine",
+    "wp009-credit-owner-bounds-all-nine",
+    "wp009-credit-owned-success",
+    "wp009-credit-owned-error",
+    "wp009-credit-owned-panic",
+    "wp009-credit-owned-cancel",
+    "wp009-durability-effect-ack",
+    "wp009-durability-stage-authorization",
+    "wp009-durability-replay-rejected",
+    "wp009-durability-restoration-evidence",
+    "wp009-durability-prefix",
+    "wp009-durability-outrun",
+    "wp009-journal-torn",
+    "wp009-journal-duplicate",
+    "wp009-journal-reordered",
+    "wp009-journal-checksum-invalid",
+    "wp009-journal-false-prepared-sync",
+    "wp009-journal-false-renamed-sync",
+    "wp009-journal-mixed-job",
+    "wp009-journal-archive-uniqueness",
+    "wp009-commit-prepared-effects",
+    "wp009-commit-renamed-effects",
+    "wp009-commit-archived-effects",
+    "wp009-commit-cleaned-effects",
+    "wp009-recovery-prepared",
+    "wp009-recovery-renamed",
+    "wp009-recovery-archived",
+    "wp009-recovery-cleaned",
+    "wp009-recovery-stale-lease",
+    "wp009-recovery-collision",
+    "wp009-recovery-partial-cleanup",
+    "wp009-recovery-interrupted-migration",
+    "wp009-recovery-collecting-artifact",
+    "wp009-recovery-stale-mismatch-precedence",
+    "wp009-recovery-migration-collision-precedence",
+    "wp009-recovery-confinement-unavailable",
+    "wp009-recovery-confinement-mismatched",
+    "wp009-filesystem-windows-ntfs",
+    "wp009-filesystem-wsl-v9fs",
+    "wp009-cross-volume",
+];
 const TOOL_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
 const CARGO_PROOF_COMMAND_TIMEOUT: Duration = Duration::from_mins(5);
 const CARGO_PROOF_TRANSIENT_RETRIES: usize = 2;
@@ -493,6 +557,24 @@ struct ArchitectureResult {
     limitations: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Wp009ExecutionReceipt {
+    invocation_id: String,
+    report_path: String,
+    report_sha256: String,
+    manifest_fingerprint: String,
+    source_content_fingerprint: String,
+    executed_cases: u64,
+}
+
+#[derive(Debug)]
+struct Wp009Invocation {
+    id: String,
+    started_at: SystemTime,
+    manifest_sha256: String,
+    source_content_fingerprint: String,
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -528,6 +610,9 @@ fn run() -> Result<(), String> {
             compatibility::run_live_canaries(&root, &args, rest)
         }
         [command] if command == "transport-corpus" => run_transport_corpus(&root),
+        [command] if command == "resource-durability-models" => {
+            run_resource_durability_models(&root)
+        }
         [command, rest @ ..] if command == "secret-scan" => secret_scan::run(&root, rest),
         [gate, evidence] if gate == "verify-pr" && evidence == "--evidence-from-taskboard" => {
             run_verify_pr(&root, &args)
@@ -545,7 +630,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|secret-scan <--install-hooks|--verify-hooks|--staged|--history|--pre-push REMOTE>|transport-corpus|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|secret-scan <--install-hooks|--verify-hooks|--staged|--history|--pre-push REMOTE>|transport-corpus|resource-durability-models|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -693,16 +778,22 @@ fn isolated_fixture_target_dir(root: &Path, label: &str) -> Result<PathBuf, Stri
             .replace('\\', "/")
             .as_bytes(),
     );
+    digest.update([0]);
+    digest.update(label.as_bytes());
     let bytes = digest.finalize();
-    let mut encoded = String::with_capacity(16);
-    for byte in bytes.iter().take(8) {
+    let mut encoded = String::with_capacity(32);
+    for byte in bytes.iter().take(16) {
         encoded.push(char::from(HEX[usize::from(byte >> 4)]));
         encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
     }
-    Ok(disposable_artifact_root(root)
-        .join("cargo-target/proof-integrity-fixtures")
-        .join(encoded)
-        .join(label))
+    Ok(disposable_artifact_root(root).join("pif").join(encoded))
+}
+
+fn command_working_directory(root: &Path) -> PathBuf {
+    env::current_dir()
+        .ok()
+        .filter(|cwd| canonical_paths_equal(cwd, root).unwrap_or(false))
+        .unwrap_or_else(|| root.to_path_buf())
 }
 
 fn require_repository_root_cwd(root: &Path) -> Result<(), String> {
@@ -768,7 +859,18 @@ fn run_verify_deep(root: &Path, gate_args: &[String]) -> Result<(), String> {
 fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
     let mut transport_report = String::new();
-    let architecture = run_verify_deep_checks(root, &mut checks, &mut transport_report)?;
+    let resource_durability_invocation = begin_wp009_invocation(root)?;
+    let (architecture, resource_durability_receipt) = run_verify_deep_checks(
+        root,
+        &mut checks,
+        &mut transport_report,
+        &resource_durability_invocation,
+    )?;
+    validate_wp009_execution_receipt(
+        root,
+        &resource_durability_receipt,
+        &resource_durability_invocation,
+    )?;
     let executed_proof_classes = executed_proof_classes(&checks, &architecture.fixtures);
     let aggregate_executed_proof_class = aggregate_executed_proof_class(&executed_proof_classes);
     let report = GateReport {
@@ -802,8 +904,10 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
         ],
         artifacts: vec![
             "build/fixtures/contracts/inventory.json".to_owned(),
+            WP009_MANIFEST_PATH.to_owned(),
             "build/reports".to_owned(),
             transport_report,
+            resource_durability_receipt.report_path,
             ".fforager-artifacts/cargo-target".to_owned(),
         ],
     };
@@ -816,10 +920,19 @@ fn run_verify_deep_checks(
     root: &Path,
     checks: &mut Vec<Check>,
     transport_report: &mut String,
-) -> Result<ArchitectureResult, String> {
+    resource_durability_invocation: &Wp009Invocation,
+) -> Result<(ArchitectureResult, Wp009ExecutionReceipt), String> {
     verify_tool_identities(root, checks)?;
     run_rust_verification(root, checks)?;
     execute_public_boundary_counterexample_test(root, checks)?;
+    let resource_durability_receipt = require_wp009_execution_receipt(Some(
+        execute_resource_durability_models(root, checks, resource_durability_invocation)?,
+    ))?;
+    validate_wp009_execution_receipt(
+        root,
+        &resource_durability_receipt,
+        resource_durability_invocation,
+    )?;
     execute_compatibility_replay_boundaries(root, checks)?;
     execute_transport_corpus(root, checks)?.clone_into(transport_report);
     run_doctests(root, checks)?;
@@ -830,15 +943,1993 @@ fn run_verify_deep_checks(
     checks.append(&mut architecture.checks);
     checks.push(pass(
         "deep-proof-surface",
-        "locked workspace, contract inventory, model manual, data-only scan, public-boundary counterexamples, transport corpus, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
+        "locked workspace, contract inventory, WP-009 resource/durability model corpus, model manual, data-only scan, public-boundary counterexamples, transport corpus, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
     ));
-    Ok(architecture)
+    Ok((architecture, resource_durability_receipt))
 }
 
 fn run_transport_corpus(root: &Path) -> Result<(), String> {
     let mut checks = Vec::new();
     let report = execute_transport_corpus(root, &mut checks)?;
     println!("COMPLETE WP-FF-007 transport corpus; report={report}");
+    Ok(())
+}
+
+fn run_resource_durability_models(root: &Path) -> Result<(), String> {
+    let mut checks = Vec::new();
+    let invocation = begin_wp009_invocation(root)?;
+    let receipt = execute_resource_durability_models(root, &mut checks, &invocation)?;
+    validate_wp009_execution_receipt(root, &receipt, &invocation)?;
+    println!(
+        "COMPLETE WP-FF-009 resource/durability model corpus; report={}",
+        receipt.report_path
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn execute_resource_durability_models(
+    root: &Path,
+    checks: &mut Vec<Check>,
+    invocation: &Wp009Invocation,
+) -> Result<Wp009ExecutionReceipt, String> {
+    validate_wp009_owned_api_surface(root)?;
+    let manifest_path = root.join(WP009_MANIFEST_PATH);
+    let manifest_bytes =
+        fs::read(&manifest_path).map_err(|error| format!("WP009-E-MANIFEST-READ: {error}"))?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("WP009-E-MANIFEST-PARSE: {error}"))?;
+    validate_wp009_manifest(&manifest)?;
+    let source_before = source_state(root)?;
+    if encode_sha256(&manifest_bytes) != invocation.manifest_sha256
+        || source_before.content_fingerprint != invocation.source_content_fingerprint
+    {
+        return Err("WP009-E-EXECUTION-INVOCATION-STALE".to_owned());
+    }
+
+    let listed = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "--jobs",
+            "1",
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            "--",
+            "--list",
+        ],
+    )?;
+    let expected_registration = format!("{WP009_PROOF_TEST}: test");
+    if !listed
+        .lines()
+        .any(|line| line.trim() == expected_registration)
+    {
+        return Err("WP009-E-GATE-UNTRIGGERED: exact compiled proof test is absent".to_owned());
+    }
+    let output = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "--jobs",
+            "1",
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            WP009_PROOF_TEST,
+            "--",
+            "--exact",
+            "--nocapture",
+        ],
+    )?;
+    let report = extract_wp009_report(&output)?;
+    validate_wp009_report(root, &manifest_bytes, &manifest, &report)?;
+    let source_after = source_state(root)?;
+    if source_before.git_commit != source_after.git_commit
+        || source_before.dirty != source_after.dirty
+        || source_before.dirty_paths != source_after.dirty_paths
+        || source_before.content_fingerprint != source_after.content_fingerprint
+    {
+        return Err("WP009-E-SOURCE-CHANGED: source changed during model execution".to_owned());
+    }
+    let receipt = write_wp009_report(root, &report, invocation)?;
+
+    for (id, expected_cases) in [
+        (
+            "wp009-resource-saturation-model",
+            "atomic/fifo/item-byte-bound/coupled-credit rows executed",
+        ),
+        (
+            "wp009-fault-counterfactual-model",
+            "queue/durability/journal/filesystem failure rows executed",
+        ),
+        (
+            "wp009-owned-release-boundary",
+            "owned resource and byte-credit success/error/unwind/cancel rows executed",
+        ),
+        (
+            "wp009-recovery-prefix-model",
+            "recovery actions were selected, applied twice, and checked for post-action convergence",
+        ),
+    ] {
+        checks.push(Check {
+            id: id.to_owned(),
+            status: "PASS",
+            proof_class: "semantic",
+            concrete_input: format!(
+                "{WP009_MANIFEST_PATH}; exact source manifest={WP009_SOURCE_PATHS:?}"
+            ),
+            executed_boundary: format!(
+                "cargo test --exact --nocapture -p fforager-testkit {WP009_PROOF_TEST}; independent strict xtask report consumer"
+            ),
+            expected_result: expected_cases.to_owned(),
+            observed_result: format!(
+                "48 mapped behavior rows validated in fresh report {}",
+                receipt.report_path
+            ),
+            skipped_semantic_dependencies: vec![
+                "No shipped Ferric production entrypoint or storage adapter was executed; zero-product-progress prerequisite ceiling applies.".to_owned(),
+            ],
+            detail: "Result-level WP-009 proof came from the compiled public boundary and survived independent report/manifest/source validation.".to_owned(),
+        });
+    }
+    Ok(receipt)
+}
+
+fn require_wp009_execution_receipt(
+    receipt: Option<Wp009ExecutionReceipt>,
+) -> Result<Wp009ExecutionReceipt, String> {
+    receipt.ok_or_else(|| {
+        "WP009-E-GATE-UNTRIGGERED: no invocation-bound execution receipt was produced".to_owned()
+    })
+}
+
+fn validate_wp009_owned_api_surface(root: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(root.join("product/crates/fforager-core/src/resource.rs"))
+        .map_err(|error| format!("WP009-E-OWNED-API-READ:{error}"))?;
+    for required in [
+        "pub(crate) enum Admission",
+        "pub(crate) struct ResourceLedger",
+        "pub(crate) struct ByteCreditLedger",
+        "pub struct OwnedResourceBroker",
+        "pub struct OwnedResourceLease",
+        "pub struct OwnedByteCreditBroker",
+        "pub struct OwnedByteCreditLease",
+        "```compile_fail",
+    ] {
+        if !source.contains(required) {
+            return Err(format!("WP009-E-OWNERSHIP-ESCAPE:{required}"));
+        }
+    }
+    for forbidden in [
+        "pub enum Admission",
+        "pub struct ResourceLedger",
+        "pub struct ByteCreditLedger",
+    ] {
+        if source
+            .lines()
+            .any(|line| line.trim_start().starts_with(forbidden))
+        {
+            return Err(format!("WP009-E-OWNERSHIP-ESCAPE:{forbidden}"));
+        }
+    }
+    Ok(())
+}
+
+fn extract_wp009_report(output: &str) -> Result<Value, String> {
+    let reports = output
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(WP009_REPORT_PREFIX))
+        .collect::<Vec<_>>();
+    if reports.len() != 1 {
+        return Err(format!(
+            "WP009-E-REPORT-COUNT: expected one model report, observed {}",
+            reports.len()
+        ));
+    }
+    serde_json::from_str(reports[0]).map_err(|error| format!("WP009-E-REPORT-PARSE: {error}"))
+}
+
+fn write_wp009_report(
+    root: &Path,
+    report: &Value,
+    invocation: &Wp009Invocation,
+) -> Result<Wp009ExecutionReceipt, String> {
+    let reports = root.join("build/reports");
+    fs::create_dir_all(&reports).map_err(|error| format!("create reports: {error}"))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("WP009-E-REPORT-CLOCK: {error}"))?
+        .as_nanos();
+    let stem = format!(
+        "wp-ff-009-resource-durability-models-{}-{nonce}",
+        std::process::id()
+    );
+    let temporary = reports.join(format!(".{stem}.tmp"));
+    let final_path = reports.join(format!("{stem}.json"));
+    let bytes = serde_json::to_vec_pretty(report)
+        .map_err(|error| format!("WP009-E-REPORT-SERIALIZE: {error}"))?;
+    let result = (|| -> io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(&bytes)?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        file.sync_all()?;
+        fs::rename(&temporary, &final_path)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _result = fs::remove_file(&temporary);
+        return Err(format!("WP009-E-REPORT-WRITE: {error}"));
+    }
+    let persisted_bytes =
+        fs::read(&final_path).map_err(|error| format!("WP009-E-REPORT-REREAD: {error}"))?;
+    let persisted: Value = serde_json::from_slice(&persisted_bytes)
+        .map_err(|error| format!("WP009-E-REPORT-REPARSE: {error}"))?;
+    if persisted != *report {
+        return Err("WP009-E-REPORT-PERSISTENCE: persisted report changed".to_owned());
+    }
+    let report_path = final_path
+        .strip_prefix(root)
+        .map(slash)
+        .map_err(|error| format!("WP009-E-REPORT-PATH: {error}"))?;
+    let manifest_fingerprint = report
+        .get("manifest_fingerprint")
+        .and_then(Value::as_str)
+        .ok_or("WP009-E-REPORT-IDENTITY")?
+        .to_owned();
+    let executed_cases = report
+        .pointer("/summary/executed_cases")
+        .and_then(Value::as_u64)
+        .ok_or("WP009-E-SUMMARY")?;
+    Ok(Wp009ExecutionReceipt {
+        invocation_id: invocation.id.clone(),
+        report_path,
+        report_sha256: encode_sha256(&persisted_bytes),
+        manifest_fingerprint,
+        source_content_fingerprint: invocation.source_content_fingerprint.clone(),
+        executed_cases,
+    })
+}
+
+fn begin_wp009_invocation(root: &Path) -> Result<Wp009Invocation, String> {
+    let started_at = SystemTime::now();
+    let manifest_bytes = fs::read(root.join(WP009_MANIFEST_PATH))
+        .map_err(|error| format!("WP009-E-MANIFEST-READ: {error}"))?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("WP009-E-MANIFEST-PARSE: {error}"))?;
+    validate_wp009_manifest(&manifest)?;
+    let source_content_fingerprint = source_state(root)?.content_fingerprint;
+    let manifest_sha256 = encode_sha256(&manifest_bytes);
+    let sequence = WP009_INVOCATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let started_nanos = started_at
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("WP009-E-INVOCATION-CLOCK: {error}"))?
+        .as_nanos();
+    let identity_material = format!(
+        "{}:{sequence}:{started_nanos}:{manifest_sha256}:{source_content_fingerprint}",
+        std::process::id()
+    );
+    Ok(Wp009Invocation {
+        id: encode_sha256(identity_material.as_bytes()),
+        started_at,
+        manifest_sha256,
+        source_content_fingerprint,
+    })
+}
+
+fn validate_wp009_invocation_binding(
+    receipt: &Wp009ExecutionReceipt,
+    invocation: &Wp009Invocation,
+) -> Result<(), String> {
+    if receipt.invocation_id != invocation.id
+        || receipt.source_content_fingerprint != invocation.source_content_fingerprint
+    {
+        return Err("WP009-E-EXECUTION-RECEIPT-INVOCATION".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_execution_receipt(
+    root: &Path,
+    receipt: &Wp009ExecutionReceipt,
+    invocation: &Wp009Invocation,
+) -> Result<(), String> {
+    validate_wp009_invocation_binding(receipt, invocation)?;
+    let relative = Path::new(&receipt.report_path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+        || relative.parent() != Some(Path::new("build/reports"))
+        || relative
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_none_or(|name| {
+                !name.starts_with("wp-ff-009-resource-durability-models-")
+                    || Path::new(name).extension() != Some(OsStr::new("json"))
+            })
+    {
+        return Err("WP009-E-EXECUTION-RECEIPT-PATH".to_owned());
+    }
+    let path = root.join(relative);
+    let modified = fs::metadata(&path)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| {
+            format!(
+                "WP009-E-EXECUTION-RECEIPT-MISSING:{}:{error}",
+                receipt.report_path
+            )
+        })?;
+    if modified < invocation.started_at {
+        return Err("WP009-E-EXECUTION-RECEIPT-STALE".to_owned());
+    }
+    let bytes = fs::read(&path).map_err(|error| {
+        format!(
+            "WP009-E-EXECUTION-RECEIPT-MISSING:{}:{error}",
+            receipt.report_path
+        )
+    })?;
+    if encode_sha256(&bytes) != receipt.report_sha256 {
+        return Err("WP009-E-EXECUTION-RECEIPT-DIGEST".to_owned());
+    }
+    let report: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("WP009-E-EXECUTION-RECEIPT-PARSE:{error}"))?;
+    let manifest_bytes = fs::read(root.join(WP009_MANIFEST_PATH))
+        .map_err(|error| format!("WP009-E-MANIFEST-READ: {error}"))?;
+    if encode_sha256(&manifest_bytes) != invocation.manifest_sha256 {
+        return Err("WP009-E-EXECUTION-RECEIPT-SOURCE-DRIFT".to_owned());
+    }
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("WP009-E-MANIFEST-PARSE: {error}"))?;
+    validate_wp009_report(root, &manifest_bytes, &manifest, &report)?;
+    if report.get("schema_id").and_then(Value::as_str)
+        != Some("ff.resource-durability-model-report@1")
+        || report.get("manifest_fingerprint").and_then(Value::as_str)
+            != Some(receipt.manifest_fingerprint.as_str())
+        || report
+            .pointer("/summary/executed_cases")
+            .and_then(Value::as_u64)
+            != Some(receipt.executed_cases)
+        || receipt.executed_cases != 48
+        || report
+            .pointer("/summary/zero_product_progress")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        return Err("WP009-E-EXECUTION-RECEIPT-IDENTITY".to_owned());
+    }
+    let current_source = source_state(root)?;
+    if current_source.content_fingerprint != invocation.source_content_fingerprint
+        || current_source.content_fingerprint != receipt.source_content_fingerprint
+    {
+        return Err("WP009-E-EXECUTION-RECEIPT-SOURCE-DRIFT".to_owned());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct Wp009RowExpectation {
+    invariant: &'static str,
+    state: &'static str,
+    owner: &'static str,
+    action: &'static str,
+    boundary: &'static str,
+    proof_mechanism: &'static str,
+    memory_bytes: u64,
+    open_handles: u64,
+    ffmpeg_processes: u64,
+    queue: (u64, u64, u64, u64),
+    durability: (u64, u64, u64, u64),
+}
+
+fn wp009_require_exact_keys(
+    value: &Value,
+    expected: &[&str],
+    diagnostic: &str,
+) -> Result<(), String> {
+    let object = value.as_object().ok_or_else(|| diagnostic.to_owned())?;
+    let observed = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
+    if observed != expected {
+        return Err(format!(
+            "{diagnostic}: expected keys={expected:?}; observed={observed:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn wp009_required_text<'a>(
+    value: &'a Value,
+    key: &str,
+    diagnostic: &str,
+) -> Result<&'a str, String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| format!("{diagnostic}: {key}"))
+}
+
+fn wp009_fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+fn validate_wp009_manifest(manifest: &Value) -> Result<(), String> {
+    wp009_require_exact_keys(
+        manifest,
+        &[
+            "schema_id",
+            "corpus_id",
+            "source_paths",
+            "exploration_bounds",
+            "cases",
+            "residual_uncertainty",
+        ],
+        "WP009-E-MANIFEST-SCHEMA",
+    )?;
+    if manifest.get("schema_id").and_then(Value::as_str)
+        != Some("ff.resource-durability-model-corpus@1")
+        || manifest.get("corpus_id").and_then(Value::as_str)
+            != Some("WP-FF-009-resource-durability-models-v1")
+    {
+        return Err("WP009-E-MANIFEST-IDENTITY".to_owned());
+    }
+    let source_paths = manifest
+        .get("source_paths")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-SOURCE-MANIFEST-DRIFT")?
+        .iter()
+        .map(|value| value.as_str().ok_or("WP009-E-SOURCE-MANIFEST-DRIFT"))
+        .collect::<Result<Vec<_>, _>>()?;
+    if source_paths != WP009_SOURCE_PATHS {
+        return Err("WP009-E-SOURCE-MANIFEST-DRIFT".to_owned());
+    }
+    let bounds = manifest
+        .get("exploration_bounds")
+        .ok_or("WP009-E-BOUNDS-MISSING")?;
+    wp009_require_exact_keys(
+        bounds,
+        &[
+            "maximum_cases",
+            "maximum_transitions_per_case",
+            "maximum_active_grants",
+            "maximum_waiter_items",
+            "maximum_waiter_declared_variable_bytes",
+            "maximum_credit_claim_items",
+            "maximum_credit_bytes",
+        ],
+        "WP009-E-BOUNDS-MISSING",
+    )?;
+    for (key, expected) in [
+        ("maximum_cases", 48),
+        ("maximum_transitions_per_case", 16),
+        ("maximum_active_grants", 2),
+        ("maximum_waiter_items", 2),
+        ("maximum_waiter_declared_variable_bytes", 20),
+        ("maximum_credit_claim_items", 2),
+        ("maximum_credit_bytes", 16),
+    ] {
+        if bounds.get(key).and_then(Value::as_u64) != Some(expected) {
+            return Err(format!("WP009-E-BOUNDS-MISMATCH: {key}"));
+        }
+    }
+    let cases = manifest
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-CASES-MISSING")?;
+    if cases.len() != WP009_CASE_IDS.len() {
+        return Err("WP009-E-UNMAPPED-INPUT".to_owned());
+    }
+    for (case, expected_id) in cases.iter().zip(WP009_CASE_IDS) {
+        wp009_require_exact_keys(
+            case,
+            &["case_id", "model", "scenario", "injected_fault"],
+            "WP009-E-CASE-SCHEMA",
+        )?;
+        if wp009_required_text(case, "case_id", "WP009-E-CASE-ID")? != *expected_id {
+            return Err("WP009-E-UNMAPPED-INPUT".to_owned());
+        }
+        for key in ["model", "scenario", "injected_fault"] {
+            let _text = wp009_required_text(case, key, "WP009-E-CASE-FIELD")?;
+        }
+        validate_wp009_case_declaration(case, expected_id)?;
+    }
+    let uncertainty = manifest
+        .get("residual_uncertainty")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-RESIDUAL-MISSING")?;
+    if uncertainty.len() != 3
+        || uncertainty
+            .iter()
+            .any(|value| value.as_str().is_none_or(str::is_empty))
+    {
+        return Err("WP009-E-RESIDUAL-MISSING".to_owned());
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_wp009_case_declaration(case: &Value, case_id: &str) -> Result<(), String> {
+    let expected = match case_id {
+        "wp009-resource-atomic-saturation" => (
+            "resource_admission",
+            "complete_vector_or_nothing",
+            "capacity_exhaustion",
+        ),
+        "wp009-resource-fifo-head" => (
+            "resource_admission",
+            "strict_fifo_head_reservation",
+            "small_later_waiter_cannot_bypass",
+        ),
+        "wp009-resource-queue-item-bound" => (
+            "resource_admission",
+            "bounded_waiter_items",
+            "one_waiter_beyond_item_limit",
+        ),
+        "wp009-resource-queue-byte-bound" => (
+            "resource_admission",
+            "bounded_waiter_bytes",
+            "one_byte_beyond_declared_byte_limit",
+        ),
+        "wp009-resource-raii-drop" => (
+            "resource_admission",
+            "owned_lease_drop_release",
+            "panic_unwind_equivalent_drop",
+        ),
+        "wp009-resource-public-owned-boundary" => (
+            "resource_admission",
+            "public_api_owns_grants_and_waiters",
+            "raw_ledger_escape_attempt",
+        ),
+        "wp009-credit-coupled-reservation" => (
+            "byte_credit_and_fragment_durability",
+            "simultaneous_input_output_reservation",
+            "combined_claim_exceeds_capacity",
+        ),
+        "wp009-credit-owner-attribution" => (
+            "byte_credit_and_fragment_durability",
+            "consumed_claim_owner_is_immutable",
+            "post_consumption_owner_transfer",
+        ),
+        "wp009-credit-stage-bounds-all-nine" => (
+            "byte_credit_and_fragment_durability",
+            "all_stage_item_and_byte_bounds",
+            "stage_item_and_byte_saturation",
+        ),
+        "wp009-credit-owner-bounds-all-nine" => (
+            "byte_credit_and_fragment_durability",
+            "all_stage_per_owner_item_and_byte_bounds",
+            "owner_item_and_byte_saturation",
+        ),
+        "wp009-credit-owned-success" => (
+            "byte_credit_and_fragment_durability",
+            "owned_credit_explicit_release",
+            "none",
+        ),
+        "wp009-credit-owned-error" => (
+            "byte_credit_and_fragment_durability",
+            "owned_credit_error_retains_credit",
+            "consume_beyond_claim",
+        ),
+        "wp009-credit-owned-panic" => (
+            "byte_credit_and_fragment_durability",
+            "owned_credit_unwind_release",
+            "panic_unwind_equivalent_drop",
+        ),
+        "wp009-credit-owned-cancel" => (
+            "byte_credit_and_fragment_durability",
+            "owned_credit_cancel_release",
+            "cancel_active_claim",
+        ),
+        "wp009-durability-effect-ack" => (
+            "byte_credit_and_fragment_durability",
+            "effect_correlated_durability_advance",
+            "ordinary_ack_wrong_delta_and_wrong_broker",
+        ),
+        "wp009-durability-stage-authorization" => (
+            "byte_credit_and_fragment_durability",
+            "stage_consumption_authorizes_exact_durability_axis",
+            "cross_stage_consumption",
+        ),
+        "wp009-durability-replay-rejected" => (
+            "byte_credit_and_fragment_durability",
+            "ordinary_replay_cannot_authorize_byte_effects",
+            "replay_without_broker_position_evidence",
+        ),
+        "wp009-durability-restoration-evidence" => (
+            "byte_credit_and_fragment_durability",
+            "byte_restoration_requires_matching_broker_position",
+            "generic_and_mismatched_restoration",
+        ),
+        "wp009-durability-prefix" => (
+            "byte_credit_and_fragment_durability",
+            "resume_at_durable_contiguous",
+            "none",
+        ),
+        "wp009-durability-outrun" => (
+            "byte_credit_and_fragment_durability",
+            "durable_contiguous_cannot_outrun_validated",
+            "optimistic_durable_prefix",
+        ),
+        "wp009-journal-torn" => (
+            "commit_archive_reconciliation",
+            "scan_prior_valid_prefix",
+            "torn_record",
+        ),
+        "wp009-journal-duplicate" => (
+            "commit_archive_reconciliation",
+            "scan_prior_valid_prefix",
+            "duplicate_sequence",
+        ),
+        "wp009-journal-reordered" => (
+            "commit_archive_reconciliation",
+            "scan_prior_valid_prefix",
+            "reordered_sequence",
+        ),
+        "wp009-journal-checksum-invalid" => (
+            "commit_archive_reconciliation",
+            "scan_prior_valid_prefix",
+            "checksum_invalid",
+        ),
+        "wp009-journal-false-prepared-sync" => (
+            "commit_archive_reconciliation",
+            "reject_false_durable_transition_record",
+            "prepared_sync_ack_missing",
+        ),
+        "wp009-journal-false-renamed-sync" => (
+            "commit_archive_reconciliation",
+            "reject_false_durable_transition_record",
+            "renamed_directory_sync_ack_missing",
+        ),
+        "wp009-journal-mixed-job" => (
+            "commit_archive_reconciliation",
+            "journal_prefix_bound_to_job_identity",
+            "foreign_job_record",
+        ),
+        "wp009-journal-archive-uniqueness" => (
+            "commit_archive_reconciliation",
+            "archive_transition_requires_uniqueness_evidence",
+            "missing_uniqueness_receipt",
+        ),
+        "wp009-commit-prepared-effects" => (
+            "commit_archive_reconciliation",
+            "durable_prefix_requires_serial_effect_acknowledgements",
+            "prepared_effect_ack_removed",
+        ),
+        "wp009-commit-renamed-effects" => (
+            "commit_archive_reconciliation",
+            "durable_prefix_requires_serial_effect_acknowledgements",
+            "rename_partial_retry",
+        ),
+        "wp009-commit-archived-effects" => (
+            "commit_archive_reconciliation",
+            "durable_prefix_requires_serial_effect_acknowledgements",
+            "archive_effect_ack_removed",
+        ),
+        "wp009-commit-cleaned-effects" => (
+            "commit_archive_reconciliation",
+            "durable_prefix_requires_serial_effect_acknowledgements",
+            "cleanup_effect_ack_removed",
+        ),
+        "wp009-recovery-prepared" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "crash_after_prepared",
+        ),
+        "wp009-recovery-renamed" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "crash_after_renamed",
+        ),
+        "wp009-recovery-archived" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "crash_after_archived",
+        ),
+        "wp009-recovery-cleaned" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "crash_after_cleaned",
+        ),
+        "wp009-recovery-stale-lease" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "stale_lease",
+        ),
+        "wp009-recovery-collision" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "conflicting_destination",
+        ),
+        "wp009-recovery-partial-cleanup" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "partial_cleanup",
+        ),
+        "wp009-recovery-interrupted-migration" => (
+            "commit_archive_reconciliation",
+            "idempotent_prefix_decision",
+            "interrupted_migration",
+        ),
+        "wp009-recovery-collecting-artifact" => (
+            "commit_archive_reconciliation",
+            "recovery_preconditions_precede_mutation",
+            "archive_artifact_before_prepared",
+        ),
+        "wp009-recovery-stale-mismatch-precedence" => (
+            "commit_archive_reconciliation",
+            "recovery_preconditions_precede_mutation",
+            "stale_lease_with_mismatched_stage",
+        ),
+        "wp009-recovery-migration-collision-precedence" => (
+            "commit_archive_reconciliation",
+            "recovery_preconditions_precede_mutation",
+            "interrupted_migration_with_collision",
+        ),
+        "wp009-recovery-confinement-unavailable" => (
+            "commit_archive_reconciliation",
+            "recovery_confinement_fails_closed",
+            "confinement_unavailable",
+        ),
+        "wp009-recovery-confinement-mismatched" => (
+            "commit_archive_reconciliation",
+            "recovery_confinement_fails_closed",
+            "confinement_mismatched",
+        ),
+        "wp009-filesystem-windows-ntfs" => (
+            "filesystem_capability",
+            "exact_supported_local_profile",
+            "none",
+        ),
+        "wp009-filesystem-wsl-v9fs" => (
+            "filesystem_capability",
+            "interop_profile_fails_closed",
+            "unsupported_security_sensitive_confinement",
+        ),
+        "wp009-cross-volume" => (
+            "filesystem_capability",
+            "copy_sync_rename_is_not_cross_volume_atomic",
+            "cross_volume_destination",
+        ),
+        _ => return Err("WP009-E-UNMAPPED-INPUT".to_owned()),
+    };
+    if case.get("model").and_then(Value::as_str) != Some(expected.0)
+        || case.get("scenario").and_then(Value::as_str) != Some(expected.1)
+        || case.get("injected_fault").and_then(Value::as_str) != Some(expected.2)
+    {
+        return Err(format!("WP009-E-CASE-DECLARATION-MISMATCH: {case_id}"));
+    }
+    Ok(())
+}
+
+fn validate_wp009_report(
+    root: &Path,
+    manifest_bytes: &[u8],
+    manifest: &Value,
+    report: &Value,
+) -> Result<(), String> {
+    validate_wp009_manifest(manifest)?;
+    wp009_require_exact_keys(
+        report,
+        &[
+            "schema_id",
+            "schema_version",
+            "corpus_id",
+            "manifest_path",
+            "manifest_fingerprint",
+            "source_manifest",
+            "exploration_bounds",
+            "rows",
+            "summary",
+            "residual_uncertainty",
+        ],
+        "WP009-E-REPORT-SCHEMA",
+    )?;
+    if report.get("schema_id").and_then(Value::as_str)
+        != Some("ff.resource-durability-model-report@1")
+        || report.get("schema_version").and_then(Value::as_str) != Some("1.1.0")
+        || report.get("corpus_id").and_then(Value::as_str)
+            != Some("WP-FF-009-resource-durability-models-v1")
+        || report.get("manifest_path").and_then(Value::as_str) != Some(WP009_MANIFEST_PATH)
+        || report.get("manifest_fingerprint").and_then(Value::as_str)
+            != Some(format!("fnv1a64:{:016x}", wp009_fnv1a64(manifest_bytes)).as_str())
+    {
+        return Err("WP009-E-REPORT-IDENTITY".to_owned());
+    }
+    if report.get("exploration_bounds") != manifest.get("exploration_bounds")
+        || report.get("residual_uncertainty") != manifest.get("residual_uncertainty")
+    {
+        return Err("WP009-E-REPORT-MANIFEST-DRIFT".to_owned());
+    }
+    validate_wp009_source_manifest(root, report)?;
+    let cases = manifest["cases"]
+        .as_array()
+        .ok_or("WP009-E-CASES-MISSING")?;
+    let rows = report
+        .get("rows")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-ROWS-MISSING")?;
+    if rows.len() != WP009_CASE_IDS.len() {
+        return Err("WP009-E-UNMAPPED-INPUT".to_owned());
+    }
+    for ((row, case), expected_id) in rows.iter().zip(cases).zip(WP009_CASE_IDS) {
+        validate_wp009_row(row, case, expected_id)?;
+    }
+    let summary = report.get("summary").ok_or("WP009-E-SUMMARY")?;
+    wp009_require_exact_keys(
+        summary,
+        &[
+            "executed_cases",
+            "failed_cases",
+            "proof_classes",
+            "proof_mechanisms",
+            "zero_product_progress",
+        ],
+        "WP009-E-SUMMARY",
+    )?;
+    let proof_classes = summary
+        .get("proof_classes")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-SUMMARY-CEILING")?
+        .iter()
+        .map(|value| value.as_str().ok_or("WP009-E-SUMMARY-CEILING"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let proof_mechanisms = summary
+        .get("proof_mechanisms")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-SUMMARY-CEILING")?
+        .iter()
+        .map(|value| value.as_str().ok_or("WP009-E-SUMMARY-CEILING"))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if summary.get("executed_cases").and_then(Value::as_u64) != Some(48)
+        || summary.get("failed_cases").and_then(Value::as_u64) != Some(0)
+        || summary
+            .get("zero_product_progress")
+            .and_then(Value::as_bool)
+            != Some(true)
+        || proof_classes != ["semantic"]
+        || proof_mechanisms
+            != BTreeSet::from([
+                "direct_behavior",
+                "negative_counterfactual",
+                "public_boundary",
+            ])
+    {
+        return Err("WP009-E-SUMMARY-CEILING".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_source_manifest(root: &Path, report: &Value) -> Result<(), String> {
+    let sources = report
+        .get("source_manifest")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-SOURCE-MANIFEST-DRIFT")?;
+    if sources.len() != WP009_SOURCE_PATHS.len() {
+        return Err("WP009-E-SOURCE-MANIFEST-DRIFT".to_owned());
+    }
+    for (source, expected_path) in sources.iter().zip(WP009_SOURCE_PATHS) {
+        wp009_require_exact_keys(
+            source,
+            &["path", "fnv1a64"],
+            "WP009-E-SOURCE-MANIFEST-DRIFT",
+        )?;
+        let bytes = fs::read(root.join(expected_path))
+            .map_err(|error| format!("WP009-E-SOURCE-READ:{expected_path}:{error}"))?;
+        if source.get("path").and_then(Value::as_str) != Some(expected_path)
+            || source.get("fnv1a64").and_then(Value::as_str)
+                != Some(format!("{:016x}", wp009_fnv1a64(&bytes)).as_str())
+        {
+            return Err("WP009-E-SOURCE-MANIFEST-DRIFT".to_owned());
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn wp009_row_expectation(case_id: &str) -> Option<Wp009RowExpectation> {
+    macro_rules! expected {
+        ($invariant:expr, $state:expr, $owner:expr, $action:expr, $boundary:expr,
+         $proof:expr, $memory:expr, $handles:expr, $ffmpeg:expr, $queue:expr, $durability:expr) => {
+            Wp009RowExpectation {
+                invariant: $invariant,
+                state: $state,
+                owner: $owner,
+                action: $action,
+                boundary: $boundary,
+                proof_mechanism: match $proof {
+                    "semantic" => "direct_behavior",
+                    "counterfactual" => "negative_counterfactual",
+                    "public_boundary" => "public_boundary",
+                    _ => $proof,
+                },
+                memory_bytes: $memory,
+                open_handles: $handles,
+                ffmpeg_processes: $ffmpeg,
+                queue: $queue,
+                durability: $durability,
+            }
+        };
+    }
+    const ZERO: (u64, u64, u64, u64) = (0, 0, 0, 0);
+    const PASSIVE_QUEUE: (u64, u64, u64, u64) = (0, 0, 1, 1);
+    const RESOURCE_REQUEST: &str = "fforager_core::resource::OwnedResourceBroker::request";
+    const RECOVERY: &str = "fforager_core::lifecycle::decide_recovery then apply_recovery_action, RecoveryApplication::retry, and decide_recovery";
+    const RECOVERY_INVARIANT: &str = "WP009-INV-RECOVERY-IDEMPOTENT-001";
+    Some(match case_id {
+        "wp009-resource-atomic-saturation" => expected!(
+            "WP009-INV-RESOURCE-ATOMIC-001",
+            "capacity_saturated_waiter_queued",
+            "none",
+            "none",
+            RESOURCE_REQUEST,
+            "semantic",
+            10,
+            2,
+            1,
+            (1, 1, 2, 20),
+            ZERO
+        ),
+        "wp009-resource-fifo-head" => expected!(
+            "WP009-INV-FIFO-HEAD-001",
+            "head_issued_later_waiter_retained",
+            "none",
+            "issue_exact_fifo_head",
+            "fforager_core::resource::OwnedResourceLease::release then OwnedResourceWaiter::try_acquire",
+            "semantic",
+            10,
+            0,
+            0,
+            (1, 1, 2, 20),
+            ZERO
+        ),
+        "wp009-resource-queue-item-bound" => expected!(
+            "WP009-INV-QUEUE-ITEM-BOUND-001",
+            "item_limit_rejected_without_mutation",
+            "none",
+            "reject_and_backpressure_upstream",
+            RESOURCE_REQUEST,
+            "counterfactual",
+            10,
+            0,
+            0,
+            (1, 1, 1, 10),
+            ZERO
+        ),
+        "wp009-resource-queue-byte-bound" => expected!(
+            "WP009-INV-QUEUE-BYTE-BOUND-001",
+            "byte_limit_rejected_without_mutation",
+            "none",
+            "reject_and_backpressure_upstream",
+            RESOURCE_REQUEST,
+            "counterfactual",
+            10,
+            0,
+            0,
+            (0, 0, 2, 5),
+            ZERO
+        ),
+        "wp009-resource-raii-drop" => expected!(
+            "WP009-INV-RAII-RELEASE-001",
+            "panic_caught_lease_released",
+            "none",
+            "OwnedResourceLease::drop",
+            "fforager_core::resource::OwnedResourceLease Drop boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 2, 20),
+            ZERO
+        ),
+        "wp009-resource-public-owned-boundary" => expected!(
+            "WP009-INV-PUBLIC-OWNERSHIP-001",
+            "owned_grant_and_waiter_released",
+            "none",
+            "drop_owned_grant_and_waiter",
+            "fforager_core::resource::OwnedResourceBroker public boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 1, 4),
+            ZERO
+        ),
+        "wp009-credit-coupled-reservation" => expected!(
+            "WP009-INV-COUPLED-BYTE-RESERVATION-001",
+            "combined_input_output_rejected_before_allocation",
+            "owner_1",
+            "reserve_complete_input_plus_output_or_nothing",
+            "fforager_core::resource::OwnedByteCreditBroker::claim_coupled",
+            "semantic",
+            0,
+            0,
+            0,
+            (0, 0, 2, 10),
+            ZERO
+        ),
+        "wp009-credit-owner-attribution" => expected!(
+            "WP009-INV-CREDIT-OWNER-001",
+            "consumed_claim_transfer_rejected",
+            "owner_1",
+            "retain_consumed_input_attribution_and_transfer_unconsumed_output",
+            "fforager_core::resource::OwnedByteCreditLease consume, transfer_component, and attribution",
+            "counterfactual",
+            0,
+            0,
+            0,
+            (2, 8, 2, 8),
+            ZERO
+        ),
+        "wp009-credit-stage-bounds-all-nine" => expected!(
+            "WP009-INV-CREDIT-STAGE-BOUNDS-001",
+            "all_nine_stage_bounds_rejected_without_mutation",
+            "nine_stage_inventory",
+            "backpressure_or_spill_per_declared_stage_policy",
+            "fforager_core::resource::OwnedByteCreditBroker::claim across BYTE_CREDIT_STAGES_V1",
+            "counterfactual",
+            0,
+            0,
+            0,
+            (0, 0, 4, 16),
+            ZERO
+        ),
+        "wp009-credit-owner-bounds-all-nine" => expected!(
+            "WP009-INV-CREDIT-OWNER-BOUNDS-001",
+            "all_nine_stage_owner_bounds_rejected_without_mutation",
+            "owner_1",
+            "backpressure_or_spill_per_owner",
+            "fforager_core::resource::OwnedByteCreditBroker::claim across owner and stage scopes",
+            "counterfactual",
+            0,
+            0,
+            0,
+            (0, 0, 4, 16),
+            ZERO
+        ),
+        "wp009-credit-owned-success" => expected!(
+            "WP009-INV-CREDIT-OWNED-SUCCESS-001",
+            "explicit_release_zeroed_occupancy",
+            "owner_1",
+            "consume_then_release",
+            "fforager_core::resource::OwnedByteCreditLease public ownership boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 2, 8),
+            ZERO
+        ),
+        "wp009-credit-owned-error" => expected!(
+            "WP009-INV-CREDIT-OWNED-ERROR-001",
+            "error_retained_then_drop_released_credit",
+            "owner_1",
+            "reject_uncredited_bytes_then_drop",
+            "fforager_core::resource::OwnedByteCreditLease public ownership boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 2, 8),
+            ZERO
+        ),
+        "wp009-credit-owned-panic" => expected!(
+            "WP009-INV-CREDIT-OWNED-PANIC-001",
+            "panic_caught_credit_released",
+            "owner_1",
+            "OwnedByteCreditLease::drop",
+            "fforager_core::resource::OwnedByteCreditLease public ownership boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 2, 8),
+            ZERO
+        ),
+        "wp009-credit-owned-cancel" => expected!(
+            "WP009-INV-CREDIT-OWNED-CANCEL-001",
+            "cancel_released_credit_with_attribution",
+            "owner_1",
+            "OwnedByteCreditLease::cancel",
+            "fforager_core::resource::OwnedByteCreditLease public ownership boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 2, 8),
+            ZERO
+        ),
+        "wp009-durability-effect-ack" => expected!(
+            "WP009-REG-DURABLE-EFFECT-ACK-001",
+            "received_written_and_durable_effects_acknowledged",
+            "owner_1",
+            "accept_then_validate_then_synchronize_with_correlated_receipts",
+            "StateMachine::acknowledge_byte_durability_effect with OwnedByteCreditBroker",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (2, 16, 4, 16),
+            (8, 8, 8, 8)
+        ),
+        "wp009-durability-stage-authorization" => expected!(
+            "WP009-REG-DURABLE-STAGE-AUTH-001",
+            "wrong_stage_consumption_rejected",
+            "owner_1",
+            "reject_cross_stage_consumption_as_durability_authority",
+            "OwnedByteCreditBroker stage consumption plus StateMachine::acknowledge_byte_durability_effect",
+            "counterfactual",
+            0,
+            0,
+            0,
+            (2, 8, 4, 16),
+            (4, 0, 0, 0)
+        ),
+        "wp009-durability-replay-rejected" => expected!(
+            "WP009-REG-DURABLE-REPLAY-001",
+            "ordinary_replay_rejected_byte_effect_history",
+            "owner_1",
+            "reexecute_byte_history_through_broker_coupled_acknowledgements",
+            "StateMachine::replay public boundary for ByteCreditDurability",
+            "counterfactual",
+            0,
+            0,
+            0,
+            (2, 8, 4, 16),
+            (4, 4, 0, 0)
+        ),
+        "wp009-durability-restoration-evidence" => expected!(
+            "WP009-REG-DURABLE-RESTORE-001",
+            "broker_position_authorized_received_restore",
+            "owner_1",
+            "restore_only_through_matching_authoritative_broker_position",
+            "StateMachine::from_state and from_byte_durability_state public boundaries",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (1, 4, 4, 16),
+            (4, 0, 0, 0)
+        ),
+        "wp009-durability-prefix" => expected!(
+            "WP009-INV-DURABLE-PREFIX-001",
+            "received_8_validated_6_durable_4",
+            "none",
+            "resume_at_or_before_durable_contiguous",
+            "fforager_contracts::DurabilityPosition::validate_advance and validate_resume",
+            "semantic",
+            0,
+            0,
+            0,
+            (0, 0, 1, 8),
+            (8, 6, 4, 4)
+        ),
+        "wp009-durability-outrun" => expected!(
+            "WP009-INV-DURABLE-ORDER-001",
+            "optimistic_durable_advance_rejected",
+            "none",
+            "retain_prior_acknowledged_prefix",
+            "fforager_contracts::DurabilityPosition::validate_advance",
+            "counterfactual",
+            0,
+            0,
+            0,
+            (0, 0, 1, 8),
+            (8, 0, 0, 0)
+        ),
+        "wp009-journal-torn"
+        | "wp009-journal-duplicate"
+        | "wp009-journal-reordered"
+        | "wp009-journal-checksum-invalid" => expected!(
+            "WP009-INV-JOURNAL-PRIOR-PREFIX-001",
+            "scan_stopped_at_second_record",
+            "none",
+            "retain_one_record_prior_valid_prefix",
+            "fforager_contracts::scan_observed_journal",
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-journal-false-prepared-sync" => expected!(
+            "WP009-INV-JOURNAL-PREPARED-SYNC-001",
+            "semantic_fault_stopped_at_second_record",
+            "none",
+            "retain_one_record_prior_valid_prefix",
+            "fforager_contracts::scan_observed_journal semantic and job identity validation",
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-journal-false-renamed-sync" => expected!(
+            "WP009-INV-JOURNAL-RENAMED-SYNC-001",
+            "semantic_fault_stopped_at_second_record",
+            "none",
+            "retain_one_record_prior_valid_prefix",
+            "fforager_contracts::scan_observed_journal semantic and job identity validation",
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-journal-mixed-job" => expected!(
+            "WP009-INV-JOURNAL-JOB-IDENTITY-001",
+            "semantic_fault_stopped_at_second_record",
+            "none",
+            "retain_one_record_prior_valid_prefix",
+            "fforager_contracts::scan_observed_journal semantic and job identity validation",
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-journal-archive-uniqueness" => expected!(
+            "WP009-INV-JOURNAL-ARCHIVE-UNIQUENESS-001",
+            "semantic_fault_stopped_at_second_record",
+            "none",
+            "retain_one_record_prior_valid_prefix",
+            "fforager_contracts::scan_observed_journal semantic and job identity validation",
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-commit-prepared-effects" => expected!(
+            "WP009-INV-COMMIT-PREPARED-EFFECTS-001",
+            "prepared_after_five_serial_receipts",
+            "none",
+            "acknowledge_each_effect_in_declared_order",
+            "fforager_core::lifecycle::StateMachine correlated commit effect boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 1, 5),
+            ZERO
+        ),
+        "wp009-commit-renamed-effects" => expected!(
+            "WP009-INV-COMMIT-RENAMED-EFFECTS-001",
+            "renamed_after_four_serial_receipts",
+            "none",
+            "acknowledge_each_effect_in_declared_order",
+            "fforager_core::lifecycle::StateMachine correlated commit effect boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 1, 4),
+            ZERO
+        ),
+        "wp009-commit-archived-effects" => expected!(
+            "WP009-INV-COMMIT-ARCHIVED-EFFECTS-001",
+            "archived_after_three_serial_receipts",
+            "none",
+            "acknowledge_each_effect_in_declared_order",
+            "fforager_core::lifecycle::StateMachine correlated commit effect boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 1, 3),
+            ZERO
+        ),
+        "wp009-commit-cleaned-effects" => expected!(
+            "WP009-INV-COMMIT-CLEANED-EFFECTS-001",
+            "cleaned_after_three_serial_receipts",
+            "none",
+            "acknowledge_each_effect_in_declared_order",
+            "fforager_core::lifecycle::StateMachine correlated commit effect boundary",
+            "public_boundary",
+            0,
+            0,
+            0,
+            (0, 0, 1, 3),
+            ZERO
+        ),
+        "wp009-recovery-prepared" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "Act(RevalidatePreparedThenRename)",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-renamed" => expected!(
+            RECOVERY_INVARIANT,
+            "renamed",
+            "none",
+            "Act(InsertArchiveRow)",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-archived" | "wp009-recovery-partial-cleanup" => expected!(
+            RECOVERY_INVARIANT,
+            "archived",
+            "none",
+            "Act(RepeatCleanup)",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-cleaned" => expected!(
+            RECOVERY_INVARIANT,
+            "cleaned",
+            "none",
+            "ReconciledSuccess",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-stale-lease" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "Act(ReclaimStaleLease)",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-collision" | "wp009-recovery-migration-collision-precedence" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "FailClosed(ConflictingDestination)",
+            RECOVERY,
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-interrupted-migration" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "Act(ResumeInterruptedMigration)",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-collecting-artifact" => expected!(
+            RECOVERY_INVARIANT,
+            "collecting",
+            "none",
+            "FailClosed(UnexpectedArtifactBeforePrepared)",
+            RECOVERY,
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-stale-mismatch-precedence" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "FailClosed(MismatchedStagedOutput)",
+            RECOVERY,
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-confinement-unavailable" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "FailClosed(ConfinementUnavailable)",
+            RECOVERY,
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-recovery-confinement-mismatched" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "FailClosed(ConfinementMismatched)",
+            RECOVERY,
+            "counterfactual",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-filesystem-windows-ntfs" => expected!(
+            "WP009-INV-FILESYSTEM-PROFILE-001",
+            "supported_local_positive_model",
+            "none",
+            "profile=ff-fs-windows-11-26200-ntfs-v1",
+            "fforager_contracts::FilesystemProfileContract exact and secure-write validators",
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-filesystem-wsl-v9fs" => expected!(
+            "WP009-INV-FILESYSTEM-PROFILE-001",
+            "unix_interop_rejected_or_explicitly_degraded",
+            "none",
+            "profile=ff-fs-ubuntu-24.04-wsl2-v9fs-v1",
+            "fforager_contracts::FilesystemProfileContract exact and secure-write validators",
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        "wp009-cross-volume" => expected!(
+            RECOVERY_INVARIANT,
+            "prepared",
+            "none",
+            "Act(CopySyncRenameWithinDestination)",
+            RECOVERY,
+            "semantic",
+            0,
+            0,
+            0,
+            PASSIVE_QUEUE,
+            ZERO
+        ),
+        _ => return None,
+    })
+}
+
+fn validate_wp009_row(row: &Value, case: &Value, expected_id: &str) -> Result<(), String> {
+    wp009_require_exact_keys(
+        row,
+        &[
+            "case_id",
+            "invariant_id",
+            "state",
+            "resource_vector",
+            "credit_owner",
+            "queue_occupancy",
+            "durability_prefix",
+            "injected_fault",
+            "recovery_action",
+            "concrete_input",
+            "boundary",
+            "expected",
+            "observed",
+            "proof_class",
+            "proof_mechanism",
+            "credit_attribution",
+            "supplemental_execution",
+            "residual_uncertainty",
+            "platform_observation",
+        ],
+        "WP009-E-PROOF-FIELDS-MISSING",
+    )?;
+    for key in [
+        "case_id",
+        "invariant_id",
+        "state",
+        "credit_owner",
+        "injected_fault",
+        "recovery_action",
+        "boundary",
+        "expected",
+        "observed",
+        "proof_class",
+        "proof_mechanism",
+        "residual_uncertainty",
+    ] {
+        let _text = wp009_required_text(row, key, "WP009-E-PROOF-FIELDS-MISSING")?;
+    }
+    if row.get("case_id").and_then(Value::as_str) != Some(expected_id)
+        || row.get("concrete_input") != Some(case)
+        || row.get("injected_fault") != case.get("injected_fault")
+    {
+        return Err("WP009-E-UNMAPPED-INPUT".to_owned());
+    }
+    let expected = wp009_row_expectation(expected_id).ok_or("WP009-E-UNMAPPED-INPUT")?;
+    if row.get("invariant_id").and_then(Value::as_str) != Some(expected.invariant)
+        || row.get("state").and_then(Value::as_str) != Some(expected.state)
+        || row.get("credit_owner").and_then(Value::as_str) != Some(expected.owner)
+        || row.get("recovery_action").and_then(Value::as_str) != Some(expected.action)
+        || row.get("boundary").and_then(Value::as_str) != Some(expected.boundary)
+        || row.get("proof_class").and_then(Value::as_str) != Some("semantic")
+        || row.get("proof_mechanism").and_then(Value::as_str) != Some(expected.proof_mechanism)
+    {
+        return Err(format!("WP009-E-FALSE-SEMANTICS: {expected_id}"));
+    }
+    validate_wp009_vector(row, expected)?;
+    validate_wp009_queue(row, expected.queue)?;
+    validate_wp009_durability(row, expected.durability)?;
+    validate_wp009_credit_attribution(row, expected_id)?;
+    validate_wp009_supplemental_execution(row, expected_id)?;
+    validate_wp009_platform_observation(row, expected_id)?;
+    validate_wp009_special_semantics(row, expected_id)
+}
+
+fn validate_wp009_vector(row: &Value, expected: Wp009RowExpectation) -> Result<(), String> {
+    let vector = row
+        .get("resource_vector")
+        .ok_or("WP009-E-RESOURCE-VECTOR")?;
+    wp009_require_exact_keys(
+        vector,
+        &[
+            "memory_bytes",
+            "open_handles",
+            "ffmpeg_processes",
+            "ffmpeg_cpu_threads",
+            "javascript_workers",
+            "media_requests",
+            "metadata_requests",
+            "cpu_light_slots",
+            "cpu_heavy_slots",
+            "disk_read_bytes_in_flight",
+            "disk_write_bytes_in_flight",
+            "archive_writer_slots",
+            "sink_bytes",
+        ],
+        "WP009-E-RESOURCE-VECTOR",
+    )?;
+    for (key, expected_value) in [
+        ("memory_bytes", expected.memory_bytes),
+        ("open_handles", expected.open_handles),
+        ("ffmpeg_processes", expected.ffmpeg_processes),
+        ("ffmpeg_cpu_threads", 0),
+        ("javascript_workers", 0),
+        ("media_requests", 0),
+        ("metadata_requests", 0),
+        ("cpu_light_slots", 0),
+        ("cpu_heavy_slots", 0),
+        ("disk_read_bytes_in_flight", 0),
+        ("disk_write_bytes_in_flight", 0),
+        ("archive_writer_slots", 0),
+        ("sink_bytes", 0),
+    ] {
+        if vector.get(key).and_then(Value::as_u64) != Some(expected_value) {
+            return Err(format!("WP009-E-FALSE-RESOURCE-STATE: {key}"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_wp009_queue(row: &Value, expected: (u64, u64, u64, u64)) -> Result<(), String> {
+    let queue = row
+        .get("queue_occupancy")
+        .ok_or("WP009-E-QUEUE-BOUNDS-MISSING")?;
+    wp009_require_exact_keys(
+        queue,
+        &["items", "bytes", "item_bound", "byte_bound"],
+        "WP009-E-QUEUE-BOUNDS-MISSING",
+    )?;
+    let observed = (
+        queue.get("items").and_then(Value::as_u64),
+        queue.get("bytes").and_then(Value::as_u64),
+        queue.get("item_bound").and_then(Value::as_u64),
+        queue.get("byte_bound").and_then(Value::as_u64),
+    );
+    if observed
+        != (
+            Some(expected.0),
+            Some(expected.1),
+            Some(expected.2),
+            Some(expected.3),
+        )
+        || expected.0 > expected.2
+        || expected.1 > expected.3
+        || expected.2 == 0
+        || expected.3 == 0
+    {
+        return Err("WP009-E-QUEUE-BOUNDS-MISSING".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_durability(row: &Value, expected: (u64, u64, u64, u64)) -> Result<(), String> {
+    let prefix = row
+        .get("durability_prefix")
+        .ok_or("WP009-E-DURABILITY-FIELDS-MISSING")?;
+    wp009_require_exact_keys(
+        prefix,
+        &[
+            "received",
+            "validated_written_contiguous",
+            "durable_contiguous",
+            "resume_at",
+        ],
+        "WP009-E-DURABILITY-FIELDS-MISSING",
+    )?;
+    let observed = (
+        prefix.get("received").and_then(Value::as_u64),
+        prefix
+            .get("validated_written_contiguous")
+            .and_then(Value::as_u64),
+        prefix.get("durable_contiguous").and_then(Value::as_u64),
+        prefix.get("resume_at").and_then(Value::as_u64),
+    );
+    if observed
+        != (
+            Some(expected.0),
+            Some(expected.1),
+            Some(expected.2),
+            Some(expected.3),
+        )
+        || expected.1 > expected.0
+        || expected.2 > expected.1
+        || expected.3 > expected.2
+    {
+        return Err("WP009-E-DURABILITY-OUTRUN".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_credit_attribution(row: &Value, case_id: &str) -> Result<(), String> {
+    let attribution = row
+        .get("credit_attribution")
+        .ok_or("WP009-E-CREDIT-CANCEL-ATTRIBUTION")?;
+    if case_id != "wp009-credit-owned-cancel" {
+        if !attribution.is_null() {
+            return Err("WP009-E-CREDIT-ATTRIBUTION-UNMAPPED".to_owned());
+        }
+        return Ok(());
+    }
+    wp009_require_exact_keys(
+        attribution,
+        &[
+            "component",
+            "owner",
+            "stage",
+            "claimed_bytes",
+            "consumed_bytes",
+            "lease_state",
+            "global_claim_items_after",
+            "global_bytes_after",
+        ],
+        "WP009-E-CREDIT-CANCEL-ATTRIBUTION",
+    )?;
+    if attribution.get("component").and_then(Value::as_str) != Some("single")
+        || attribution.get("owner").and_then(Value::as_u64) != Some(1)
+        || attribution.get("stage").and_then(Value::as_str) != Some("writer")
+        || attribution.get("claimed_bytes").and_then(Value::as_u64) != Some(4)
+        || attribution.get("consumed_bytes").and_then(Value::as_u64) != Some(0)
+        || attribution.get("lease_state").and_then(Value::as_str) != Some("cancelled_and_released")
+        || attribution
+            .get("global_claim_items_after")
+            .and_then(Value::as_u64)
+            != Some(0)
+        || attribution
+            .get("global_bytes_after")
+            .and_then(Value::as_u64)
+            != Some(0)
+    {
+        return Err("WP009-E-CREDIT-CANCEL-ATTRIBUTION".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_supplemental_execution(row: &Value, case_id: &str) -> Result<(), String> {
+    let supplemental = row
+        .get("supplemental_execution")
+        .ok_or("WP009-E-SUPPLEMENTAL-EXECUTION")?;
+    if case_id != "wp009-durability-effect-ack" {
+        if !supplemental.is_null() {
+            return Err("WP009-E-SUPPLEMENTAL-EXECUTION-UNMAPPED".to_owned());
+        }
+        return Ok(());
+    }
+    wp009_require_exact_keys(
+        supplemental,
+        &["boundary", "expected", "observed", "proof_class"],
+        "WP009-E-SUPPLEMENTAL-EXECUTION",
+    )?;
+    let wrong_broker_result = serde_json::json!({
+        "kind": "error",
+        "error_type": "CreditError",
+        "variant": "AcknowledgementBrokerMismatch"
+    });
+    if supplemental.get("boundary").and_then(Value::as_str)
+        != Some(
+            "StateMachine::acknowledge_byte_durability_effect with foreign OwnedByteCreditBroker",
+        )
+        || supplemental.get("expected") != Some(&wrong_broker_result)
+        || supplemental.get("observed") != Some(&wrong_broker_result)
+        || supplemental.get("proof_class").and_then(Value::as_str) != Some("semantic")
+    {
+        return Err("WP009-E-SUPPLEMENTAL-EXECUTION".to_owned());
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_wp009_platform_observation(row: &Value, case_id: &str) -> Result<(), String> {
+    let observation = row
+        .get("platform_observation")
+        .ok_or("WP009-E-PLATFORM-OBSERVATION-MISSING")?;
+    wp009_require_exact_keys(
+        observation,
+        &[
+            "schema_id",
+            "mode",
+            "commands",
+            "observed_fields",
+            "verdict",
+            "residual_uncertainty",
+        ],
+        "WP009-E-PLATFORM-OBSERVATION-SCHEMA",
+    )?;
+    if observation.get("schema_id").and_then(Value::as_str)
+        != Some("ff.wp009-platform-observation@1")
+    {
+        return Err("WP009-E-PLATFORM-OBSERVATION-IDENTITY".to_owned());
+    }
+    match case_id {
+        "wp009-filesystem-windows-ntfs" => {
+            if row.get("residual_uncertainty").and_then(Value::as_str)
+                != Some(WP009_WINDOWS_PLATFORM_ROW_RESIDUAL)
+            {
+                return Err("WP009-E-WINDOWS-ROW-RESIDUAL".to_owned());
+            }
+            validate_wp009_windows_observation(observation)
+        }
+        "wp009-filesystem-wsl-v9fs" => {
+            if row.get("residual_uncertainty").and_then(Value::as_str)
+                != Some(WP009_WSL_PLATFORM_ROW_RESIDUAL)
+            {
+                return Err("WP009-E-WSL-ROW-RESIDUAL".to_owned());
+            }
+            validate_wp009_wsl_observation(observation)
+        }
+        _ => {
+            let expected = serde_json::json!({
+                "schema_id": "ff.wp009-platform-observation@1",
+                "mode": "not_applicable",
+                "commands": [],
+                "observed_fields": {},
+                "verdict": "not_applicable",
+                "residual_uncertainty": []
+            });
+            if observation != &expected {
+                return Err("WP009-E-PLATFORM-OBSERVATION-UNMAPPED".to_owned());
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_wp009_windows_observation(observation: &Value) -> Result<(), String> {
+    if observation.get("mode").and_then(Value::as_str)
+        != Some("live_windows_host_and_repository_volume")
+        || observation.get("verdict").and_then(Value::as_str)
+            != Some("matched_frozen_windows_11_26200_ntfs")
+    {
+        return Err("WP009-E-WINDOWS-PROFILE-MISMATCH".to_owned());
+    }
+    let fields = observation
+        .get("observed_fields")
+        .ok_or("WP009-E-WINDOWS-PROFILE-MISMATCH")?;
+    wp009_require_exact_keys(
+        fields,
+        &[
+            "registry_product_name",
+            "edition_id",
+            "derived_product",
+            "build_number",
+            "repository_volume",
+            "repository_filesystem",
+        ],
+        "WP009-E-WINDOWS-PROFILE-MISMATCH",
+    )?;
+    let _raw_product = wp009_required_text(
+        fields,
+        "registry_product_name",
+        "WP009-E-WINDOWS-PROFILE-MISMATCH",
+    )?;
+    let volume = wp009_required_text(
+        fields,
+        "repository_volume",
+        "WP009-E-WINDOWS-PROFILE-MISMATCH",
+    )?;
+    if fields.get("edition_id").and_then(Value::as_str) != Some("Core")
+        || fields.get("derived_product").and_then(Value::as_str) != Some("Windows 11 Home")
+        || fields.get("build_number").and_then(Value::as_str) != Some("26200")
+        || fields.get("repository_filesystem").and_then(Value::as_str) != Some("NTFS")
+        || volume.len() != 2
+        || !volume.ends_with(':')
+    {
+        return Err("WP009-E-WINDOWS-PROFILE-MISMATCH".to_owned());
+    }
+    let registry_key = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+    let expected_commands = serde_json::json!([
+        {"program":"reg.exe","args":["query",registry_key,"/v","ProductName"]},
+        {"program":"reg.exe","args":["query",registry_key,"/v","EditionID"]},
+        {"program":"reg.exe","args":["query",registry_key,"/v","CurrentBuildNumber"]},
+        {"program":"wmic.exe","args":["logicaldisk","where",format!("DeviceID='{volume}'"),"get","FileSystem","/value"]}
+    ]);
+    let expected_residual = serde_json::json!([
+        "The legacy ProductName registry value may say Windows 10 on Windows 11; the observed build and EditionID derive the product identity.",
+        "This observes host and volume identity only; it is not a crash, power-loss, atomic-replace, confinement-race, or durability experiment."
+    ]);
+    if observation.get("commands") != Some(&expected_commands)
+        || observation.get("residual_uncertainty") != Some(&expected_residual)
+    {
+        return Err("WP009-E-WINDOWS-PROBE-TRANSCRIPT".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_wsl_observation(observation: &Value) -> Result<(), String> {
+    if observation.get("mode").and_then(Value::as_str)
+        != Some("live_wsl_read_only_identity_and_mount")
+        || observation.get("verdict").and_then(Value::as_str)
+            != Some("matched_frozen_wsl2_v9fs_rejected_degraded")
+    {
+        return Err("WP009-E-WSL-PROFILE-MISMATCH".to_owned());
+    }
+    let fields = observation
+        .get("observed_fields")
+        .ok_or("WP009-E-WSL-PROFILE-MISMATCH")?;
+    wp009_require_exact_keys(
+        fields,
+        &[
+            "distribution_id",
+            "distribution_version",
+            "distribution_pretty_name",
+            "kernel_release",
+            "repository_path",
+            "repository_mount_filesystem",
+        ],
+        "WP009-E-WSL-PROFILE-MISMATCH",
+    )?;
+    let kernel = wp009_required_text(fields, "kernel_release", "WP009-E-WSL-PROFILE-MISMATCH")?;
+    let repository_path =
+        wp009_required_text(fields, "repository_path", "WP009-E-WSL-PROFILE-MISMATCH")?;
+    let _pretty_name = wp009_required_text(
+        fields,
+        "distribution_pretty_name",
+        "WP009-E-WSL-PROFILE-MISMATCH",
+    )?;
+    if fields.get("distribution_id").and_then(Value::as_str) != Some("ubuntu")
+        || fields.get("distribution_version").and_then(Value::as_str) != Some("24.04")
+        || !kernel.starts_with("6.6.87.2-")
+        || !repository_path.starts_with("/mnt/")
+        || fields
+            .get("repository_mount_filesystem")
+            .and_then(Value::as_str)
+            != Some("v9fs")
+    {
+        return Err("WP009-E-WSL-PROFILE-MISMATCH".to_owned());
+    }
+    let commands = observation
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or("WP009-E-WSL-PROBE-TRANSCRIPT")?;
+    if commands.len() != 4
+        || commands[0]
+            != serde_json::json!({"program":"wsl.exe","args":["--exec","cat","/etc/os-release"]})
+        || commands[1] != serde_json::json!({"program":"wsl.exe","args":["--exec","uname","-r"]})
+        || commands[2].pointer("/program").and_then(Value::as_str) != Some("wsl.exe")
+        || commands[2].pointer("/args/0").and_then(Value::as_str) != Some("--exec")
+        || commands[2].pointer("/args/1").and_then(Value::as_str) != Some("wslpath")
+        || commands[2].pointer("/args/2").and_then(Value::as_str) != Some("-a")
+        || commands[2]
+            .pointer("/args/3")
+            .and_then(Value::as_str)
+            .is_none()
+        || commands[3]
+            != serde_json::json!({
+                "program":"wsl.exe",
+                "args":["--exec","stat","-f","-c","%T",repository_path]
+            })
+    {
+        return Err("WP009-E-WSL-PROBE-TRANSCRIPT".to_owned());
+    }
+    let expected_residual = serde_json::json!([
+        "Only read-only WSL identity, kernel, path-translation, and filesystem-stat commands executed.",
+        "No Rust code or Ferric model ran inside WSL, and this is not native-Linux, crash, power-loss, confinement-race, or durability proof."
+    ]);
+    if observation.get("residual_uncertainty") != Some(&expected_residual) {
+        return Err("WP009-E-WSL-PROBE-TRANSCRIPT".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp009_special_semantics(row: &Value, case_id: &str) -> Result<(), String> {
+    let observed = wp009_required_text(row, "observed", "WP009-E-PROOF-FIELDS-MISSING")?;
+    if (case_id.starts_with("wp009-recovery-") || case_id == "wp009-cross-volume")
+        && (row.get("expected") != row.get("observed")
+            || row.get("recovery_action") != row.get("observed"))
+    {
+        return Err("WP009-E-RECOVERY-NON-IDEMPOTENT".to_owned());
+    }
+    let journal_fault = match case_id {
+        "wp009-journal-torn" => Some("Some(Torn { index: 1 })"),
+        "wp009-journal-duplicate" => {
+            Some("Some(DuplicateSequence { index: 1, expected: 2, observed: 1 })")
+        }
+        "wp009-journal-reordered" => {
+            Some("Some(ReorderedSequence { index: 1, expected: 2, observed: 3 })")
+        }
+        "wp009-journal-checksum-invalid" => Some("Some(ChecksumInvalid { index: 1 })"),
+        "wp009-journal-false-prepared-sync" => {
+            Some("Some(InvalidRecord { index: 1, error: PreparedDataNotSynchronized })")
+        }
+        "wp009-journal-false-renamed-sync" => {
+            Some("Some(InvalidRecord { index: 1, error: RenamedDirectoryNotSynchronized })")
+        }
+        "wp009-journal-mixed-job" => Some("observed_job_id: JobId(\"job_foreign\") })"),
+        "wp009-journal-archive-uniqueness" => {
+            Some("Some(InvalidRecord { index: 1, error: ArchiveUniquenessReceiptMissing })")
+        }
+        _ => None,
+    };
+    if let Some(fault) = journal_fault
+        && (!observed.starts_with("valid_record_count=1; stopped_by=")
+            || !observed.ends_with(fault))
+    {
+        return Err(format!("WP009-E-FALSE-JOURNAL-PREFIX: {case_id}"));
+    }
     Ok(())
 }
 
@@ -6389,7 +8480,7 @@ fn proof_integrity_fixture_execution(
             root,
             "effect_acknowledgement_subset",
             "FF-ARCH-E-EFFECT-ACK-SUBSET",
-            "state_effect",
+            "semantic",
         ),
         "unrelated_schema_transition" => public_invariant_mutation_fixture_execution(
             root,
@@ -9238,6 +11329,7 @@ fn run_verify_pr(root: &Path, gate_args: &[String]) -> Result<(), String> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
     validate_change_evidence(root, &mut checks)?;
@@ -9261,7 +11353,18 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         detail: "Matched values are never emitted; GitHub secret-scanning push protection supplies the independent remote pre-receive layer.".to_owned(),
     });
     let mut transport_report = String::new();
-    let architecture = run_verify_deep_checks(root, &mut checks, &mut transport_report)?;
+    let resource_durability_invocation = begin_wp009_invocation(root)?;
+    let (architecture, resource_durability_receipt) = run_verify_deep_checks(
+        root,
+        &mut checks,
+        &mut transport_report,
+        &resource_durability_invocation,
+    )?;
+    validate_wp009_execution_receipt(
+        root,
+        &resource_durability_receipt,
+        &resource_durability_invocation,
+    )?;
     run_command_with_env(
         root,
         "docs",
@@ -9309,6 +11412,7 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         ".fforager-artifacts/cargo-target".to_owned(),
         "build/reports".to_owned(),
         transport_report,
+        resource_durability_receipt.report_path,
     ];
     artifacts.extend(runtime.artifacts);
     artifacts.sort();
@@ -10024,6 +12128,15 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-007-FINDING-DEEP-DECLARATION-005" => Some(
             "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution",
         ),
+        "WP-FF-009-FINDING-RESOURCE-CONCURRENCY-001" => Some(
+            "testkit::tests::resource_durability_report_rejects_missing_queue_bounds_and_durability_outrun",
+        ),
+        "WP-FF-009-FINDING-DURABILITY-FILESYSTEM-002" => {
+            Some("testkit::tests::resource_durability_model_corpus_executes_public_boundaries")
+        }
+        "WP-FF-009-FINDING-PROOF-REPORT-003" => {
+            Some("xtask::tests::wp009_report_validator_rejects_missing_fields_and_false_semantics")
+        }
         "WP-FF-015-FINDING-OPERATIONAL-ADMISSION-001" | "WP-FF-015-FINDING-DIAGNOSTICS-010" => {
             Some(
                 "fforager_transport::adjudication::tests::operational_profile_is_blocked_before_network_on_all_missing_semantics",
@@ -10403,6 +12516,7 @@ fn collect_inputs(root: &Path) -> Result<Vec<InputState>, String> {
     for directory in [
         "build/fixtures/architecture",
         "build/fixtures/contracts",
+        "build/fixtures/resource-durability-models",
         "build/fixtures/transport-v1",
         "build/crates/fforager-transport",
         "build/crates/fforager-testkit",
@@ -10442,7 +12556,8 @@ fn active_evidence_inputs(root: &Path) -> Result<Vec<String>, String> {
     )
     .map_err(|error| format!("parse active packet for input collection: {error}"))?;
     let refinement = value
-        .pointer("/extensions/refinement")
+        .pointer("/extensions/refinement/path")
+        .or_else(|| value.pointer("/extensions/refinement"))
         .and_then(Value::as_str)
         .ok_or("active packet has no refinement input path")?;
     require_relative_contained(root, refinement, ".GOV")?;
@@ -10653,8 +12768,12 @@ fn command_status_with_timeout(
     environment: Option<(&str, &str)>,
     timeout: Duration,
 ) -> Result<ExitStatus, String> {
+    let working_directory = command_working_directory(root);
     let mut command = Command::new(program);
-    command.args(args).current_dir(root).stdin(Stdio::null());
+    command
+        .args(args)
+        .current_dir(&working_directory)
+        .stdin(Stdio::null());
     if let Some((key, value)) = environment {
         command.env(key, value);
     }
@@ -10715,10 +12834,11 @@ fn command_output_bytes_with_timeout_and_environment(
             return Err(format!("create stderr capture: {error}"));
         }
     };
+    let working_directory = command_working_directory(root);
     let mut command = Command::new(program);
     command
         .args(args)
-        .current_dir(root)
+        .current_dir(&working_directory)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
@@ -11967,8 +14087,322 @@ mod tests {
             .and_then(|(_, remainder)| remainder.split_once("fn fail_with_report"))
             .map(|(function, _)| function)
             .unwrap();
-        assert!(pr.contains("run_verify_deep_checks(root, &mut checks, &mut transport_report)?;"));
+        assert!(pr.contains("resource_durability_receipt"));
+        assert!(pr.contains("run_verify_deep_checks("));
         assert!(!pr.contains("checks.push(pass(\n        \"verify-deep\""));
+    }
+
+    fn wp009_test_case(case_id: &str, injected_fault: &str) -> Value {
+        serde_json::json!({
+            "case_id": case_id,
+            "model": "resource_admission",
+            "scenario": "complete_vector_or_nothing",
+            "injected_fault": injected_fault
+        })
+    }
+
+    fn wp009_test_row(case: &Value) -> Value {
+        serde_json::json!({
+            "case_id": "wp009-resource-atomic-saturation",
+            "invariant_id": "WP009-INV-RESOURCE-ATOMIC-001",
+            "state": "capacity_saturated_waiter_queued",
+            "resource_vector": {
+                "memory_bytes": 10,
+                "open_handles": 2,
+                "ffmpeg_processes": 1,
+                "ffmpeg_cpu_threads": 0,
+                "javascript_workers": 0,
+                "media_requests": 0,
+                "metadata_requests": 0,
+                "cpu_light_slots": 0,
+                "cpu_heavy_slots": 0,
+                "disk_read_bytes_in_flight": 0,
+                "disk_write_bytes_in_flight": 0,
+                "archive_writer_slots": 0,
+                "sink_bytes": 0
+            },
+            "credit_owner": "none",
+            "queue_occupancy": {"items": 1, "bytes": 1, "item_bound": 2, "byte_bound": 20},
+            "durability_prefix": {
+                "received": 0,
+                "validated_written_contiguous": 0,
+                "durable_contiguous": 0,
+                "resume_at": 0
+            },
+            "injected_fault": "capacity_exhaustion",
+            "recovery_action": "none",
+            "concrete_input": case,
+            "boundary": "fforager_core::resource::OwnedResourceBroker::request",
+            "expected": "complete vector queued",
+            "observed": "complete vector queued without partial grant",
+            "proof_class": "semantic",
+            "proof_mechanism": "direct_behavior",
+            "credit_attribution": null,
+            "supplemental_execution": null,
+            "residual_uncertainty": "pure model only",
+            "platform_observation": {
+                "schema_id": "ff.wp009-platform-observation@1",
+                "mode": "not_applicable",
+                "commands": [],
+                "observed_fields": {},
+                "verdict": "not_applicable",
+                "residual_uncertainty": []
+            }
+        })
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn wp009_report_validator_rejects_missing_fields_and_false_semantics() {
+        let case = wp009_test_case("wp009-resource-atomic-saturation", "capacity_exhaustion");
+        let row = wp009_test_row(&case);
+        validate_wp009_row(&row, &case, "wp009-resource-atomic-saturation")
+            .expect("canonical synthetic row must validate");
+
+        let mut missing = row.clone();
+        let _removed = missing
+            .as_object_mut()
+            .expect("row object")
+            .remove("boundary");
+        assert!(
+            validate_wp009_row(&missing, &case, "wp009-resource-atomic-saturation")
+                .unwrap_err()
+                .contains("WP009-E-PROOF-FIELDS-MISSING")
+        );
+
+        let mut false_semantics = row.clone();
+        false_semantics["state"] = serde_json::json!("declared_without_execution");
+        assert!(
+            validate_wp009_row(&false_semantics, &case, "wp009-resource-atomic-saturation")
+                .unwrap_err()
+                .contains("WP009-E-FALSE-SEMANTICS")
+        );
+
+        let mut noncanonical_class = row.clone();
+        noncanonical_class["proof_class"] = serde_json::json!("counterfactual");
+        assert!(
+            validate_wp009_row(
+                &noncanonical_class,
+                &case,
+                "wp009-resource-atomic-saturation"
+            )
+            .unwrap_err()
+            .contains("WP009-E-FALSE-SEMANTICS")
+        );
+
+        let mut invalid_mechanism = row.clone();
+        invalid_mechanism["proof_mechanism"] = serde_json::json!("semantic");
+        assert!(
+            validate_wp009_row(
+                &invalid_mechanism,
+                &case,
+                "wp009-resource-atomic-saturation"
+            )
+            .unwrap_err()
+            .contains("WP009-E-FALSE-SEMANTICS")
+        );
+
+        let mut cancellation = row.clone();
+        cancellation["credit_attribution"] = serde_json::json!({
+            "component": "single",
+            "owner": 1,
+            "stage": "writer",
+            "claimed_bytes": 4,
+            "consumed_bytes": 0,
+            "lease_state": "cancelled_and_released",
+            "global_claim_items_after": 0,
+            "global_bytes_after": 0
+        });
+        validate_wp009_credit_attribution(&cancellation, "wp009-credit-owned-cancel")
+            .expect("exact cancel attribution must validate");
+        cancellation["credit_attribution"]["owner"] = serde_json::json!(2);
+        assert!(
+            validate_wp009_credit_attribution(&cancellation, "wp009-credit-owned-cancel")
+                .unwrap_err()
+                .contains("WP009-E-CREDIT-CANCEL-ATTRIBUTION")
+        );
+
+        let mut supplemental = row.clone();
+        supplemental["supplemental_execution"] = serde_json::json!({
+            "boundary": "StateMachine::acknowledge_byte_durability_effect with foreign OwnedByteCreditBroker",
+            "expected": {
+                "kind": "error",
+                "error_type": "CreditError",
+                "variant": "AcknowledgementBrokerMismatch"
+            },
+            "observed": {
+                "kind": "error",
+                "error_type": "CreditError",
+                "variant": "AcknowledgementBrokerMismatch"
+            },
+            "proof_class": "semantic"
+        });
+        validate_wp009_supplemental_execution(&supplemental, "wp009-durability-effect-ack")
+            .expect("exact wrong-broker execution must validate");
+        supplemental["supplemental_execution"]["observed"] = serde_json::json!({"kind": "ok"});
+        assert!(
+            validate_wp009_supplemental_execution(&supplemental, "wp009-durability-effect-ack")
+                .unwrap_err()
+                .contains("WP009-E-SUPPLEMENTAL-EXECUTION")
+        );
+        supplemental["supplemental_execution"] = Value::Null;
+        assert!(
+            validate_wp009_supplemental_execution(&supplemental, "wp009-durability-effect-ack")
+                .unwrap_err()
+                .contains("WP009-E-SUPPLEMENTAL-EXECUTION")
+        );
+
+        let mut contradictory_platform = row.clone();
+        contradictory_platform["residual_uncertainty"] =
+            serde_json::json!("Model row only; not a live Windows host/filesystem run.");
+        assert!(
+            validate_wp009_platform_observation(
+                &contradictory_platform,
+                "wp009-filesystem-windows-ntfs"
+            )
+            .unwrap_err()
+            .contains("WP009-E-WINDOWS-ROW-RESIDUAL")
+        );
+
+        let mut forged_platform = row.clone();
+        forged_platform["platform_observation"]["verdict"] =
+            serde_json::json!("matched_without_probe");
+        assert!(
+            validate_wp009_row(&forged_platform, &case, "wp009-resource-atomic-saturation")
+                .unwrap_err()
+                .contains("WP009-E-PLATFORM-OBSERVATION-UNMAPPED")
+        );
+
+        let mut missing_bound = row.clone();
+        let _removed = missing_bound["queue_occupancy"]
+            .as_object_mut()
+            .expect("queue object")
+            .remove("byte_bound");
+        assert!(
+            validate_wp009_row(&missing_bound, &case, "wp009-resource-atomic-saturation")
+                .unwrap_err()
+                .contains("WP009-E-QUEUE-BOUNDS-MISSING")
+        );
+
+        let mut outrun = row.clone();
+        outrun["durability_prefix"]["durable_contiguous"] = serde_json::json!(2);
+        outrun["durability_prefix"]["validated_written_contiguous"] = serde_json::json!(1);
+        assert!(
+            validate_wp009_row(&outrun, &case, "wp009-resource-atomic-saturation")
+                .unwrap_err()
+                .contains("WP009-E-DURABILITY-OUTRUN")
+        );
+
+        let mut unmapped = row;
+        unmapped["concrete_input"]["scenario"] = serde_json::json!("unmapped");
+        assert!(
+            validate_wp009_row(&unmapped, &case, "wp009-resource-atomic-saturation")
+                .unwrap_err()
+                .contains("WP009-E-UNMAPPED-INPUT")
+        );
+
+        let recovery_case = serde_json::json!({
+            "case_id": "wp009-recovery-prepared",
+            "model": "commit_archive_reconciliation",
+            "scenario": "idempotent_prefix_decision",
+            "injected_fault": "crash_after_prepared"
+        });
+        let mut recovery = serde_json::json!({
+            "case_id": "wp009-recovery-prepared",
+            "invariant_id": "WP009-INV-RECOVERY-IDEMPOTENT-001",
+            "state": "prepared",
+            "resource_vector": {
+                "memory_bytes": 0, "open_handles": 0, "ffmpeg_processes": 0,
+                "ffmpeg_cpu_threads": 0, "javascript_workers": 0, "media_requests": 0,
+                "metadata_requests": 0, "cpu_light_slots": 0, "cpu_heavy_slots": 0,
+                "disk_read_bytes_in_flight": 0, "disk_write_bytes_in_flight": 0,
+                "archive_writer_slots": 0, "sink_bytes": 0
+            },
+            "credit_owner": "none",
+            "queue_occupancy": {"items": 0, "bytes": 0, "item_bound": 1, "byte_bound": 1},
+            "durability_prefix": {
+                "received": 0, "validated_written_contiguous": 0,
+                "durable_contiguous": 0, "resume_at": 0
+            },
+            "injected_fault": "crash_after_prepared",
+            "recovery_action": "Act(RevalidatePreparedThenRename)",
+            "concrete_input": recovery_case.clone(),
+            "boundary": "fforager_core::lifecycle::decide_recovery then apply_recovery_action, RecoveryApplication::retry, and decide_recovery",
+            "expected": "Act(RevalidatePreparedThenRename)",
+            "observed": "Act(RevalidatePreparedThenRename)",
+            "proof_class": "semantic",
+            "proof_mechanism": "direct_behavior",
+            "credit_attribution": null,
+            "supplemental_execution": null,
+            "residual_uncertainty": "pure model only",
+            "platform_observation": {
+                "schema_id": "ff.wp009-platform-observation@1",
+                "mode": "not_applicable",
+                "commands": [],
+                "observed_fields": {},
+                "verdict": "not_applicable",
+                "residual_uncertainty": []
+            }
+        });
+        validate_wp009_row(&recovery, &recovery_case, "wp009-recovery-prepared")
+            .expect("canonical recovery row must validate");
+        recovery["observed"] = serde_json::json!("Act(InsertArchiveRow)");
+        assert!(
+            validate_wp009_row(&recovery, &recovery_case, "wp009-recovery-prepared")
+                .unwrap_err()
+                .contains("WP009-E-RECOVERY-NON-IDEMPOTENT")
+        );
+    }
+
+    #[test]
+    fn wp009_deep_gate_and_finding_mappings_fail_closed() {
+        let comment_only = "// execute_resource_durability_models(root, checks) produced a receipt";
+        assert!(comment_only.contains("execute_resource_durability_models"));
+        assert!(
+            require_wp009_execution_receipt(None)
+                .unwrap_err()
+                .contains("WP009-E-GATE-UNTRIGGERED")
+        );
+        let root = repo_root().expect("repository root");
+        let invocation = begin_wp009_invocation(&root).expect("WP-009 invocation");
+        let mut missing_receipt = Wp009ExecutionReceipt {
+            invocation_id: invocation.id.clone(),
+            report_path: "build/reports/wp-ff-009-resource-durability-models-missing.json"
+                .to_owned(),
+            report_sha256: "sha256:missing".to_owned(),
+            manifest_fingerprint: "fnv1a64:missing".to_owned(),
+            source_content_fingerprint: invocation.source_content_fingerprint.clone(),
+            executed_cases: 48,
+        };
+        assert!(
+            validate_wp009_execution_receipt(&root, &missing_receipt, &invocation)
+                .unwrap_err()
+                .contains("WP009-E-EXECUTION-RECEIPT-MISSING")
+        );
+        missing_receipt.invocation_id = "fabricated-stale-invocation".to_owned();
+        assert!(
+            validate_wp009_execution_receipt(&root, &missing_receipt, &invocation)
+                .unwrap_err()
+                .contains("WP009-E-EXECUTION-RECEIPT-INVOCATION")
+        );
+        assert_eq!(
+            expected_adversarial_finding_proof("WP-FF-009-FINDING-RESOURCE-CONCURRENCY-001"),
+            Some(
+                "testkit::tests::resource_durability_report_rejects_missing_queue_bounds_and_durability_outrun"
+            )
+        );
+        assert_eq!(
+            expected_adversarial_finding_proof("WP-FF-009-FINDING-DURABILITY-FILESYSTEM-002"),
+            Some("testkit::tests::resource_durability_model_corpus_executes_public_boundaries")
+        );
+        assert_eq!(
+            expected_adversarial_finding_proof("WP-FF-009-FINDING-PROOF-REPORT-003"),
+            Some("xtask::tests::wp009_report_validator_rejects_missing_fields_and_false_semantics")
+        );
+        assert_eq!(
+            expected_adversarial_finding_proof("WP-FF-009-UNKNOWN"),
+            None
+        );
     }
 
     #[test]
@@ -12260,12 +14694,21 @@ mod tests {
         let first = isolated_fixture_target_dir(&first_root, "public-invariant-mutations").unwrap();
         let first_repeat =
             isolated_fixture_target_dir(&first_root, "public-invariant-mutations").unwrap();
+        let first_other_label =
+            isolated_fixture_target_dir(&first_root, "compiled-testkit").unwrap();
         let second =
             isolated_fixture_target_dir(&second_root, "public-invariant-mutations").unwrap();
 
         assert_eq!(first, first_repeat);
+        assert_ne!(first, first_other_label);
         assert_ne!(first, second);
+        assert_eq!(
+            first.file_name().unwrap().to_string_lossy().len(),
+            32,
+            "isolated target keys retain 128 bits of the SHA-256 digest"
+        );
         assert!(first.starts_with(disposable_artifact_root(&first_root)));
+        assert!(first_other_label.starts_with(disposable_artifact_root(&first_root)));
         assert!(second.starts_with(disposable_artifact_root(&second_root)));
 
         fs::remove_dir_all(&first_root).unwrap();

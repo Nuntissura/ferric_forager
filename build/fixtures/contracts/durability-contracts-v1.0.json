@@ -21,7 +21,11 @@
     "asset_ids": ["asset_1"],
     "derived_output_ids": ["output_1"],
     "output_provenance_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-    "commit_sequence": 1
+    "commit_sequence": 1,
+    "uniqueness": {
+      "claim_key": "canonical-output-key",
+      "constraint_receipt": "unique-index-receipt"
+    }
   },
   "journal_record": {
     "schema": {"major":1,"minor":0},

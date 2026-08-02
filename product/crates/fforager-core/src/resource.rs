@@ -1,113 +1,44 @@
 //! Atomic coupled-resource and byte-credit accounting models.
+//!
+//! Raw ledgers and transition identities are deliberately crate-private. External
+//! consumers must hold the owned boundaries so drop, cancellation, and release
+//! mutate the authoritative model exactly once.
+//!
+//! Regression: `WP009-REG-PUBLIC-OWNERSHIP-ESCAPE-001`.
+//!
+//! ```compile_fail
+//! use fforager_core::resource::{ByteCreditLedger, ResourceLedger};
+//! ```
+//!
+//! Durability positions cannot be advanced without a core-issued effect token.
+//!
+//! ```compile_fail
+//! use fforager_core::resource::{
+//!     ByteCreditPosition, DurabilityAcknowledgement, OwnedByteCreditBroker,
+//! };
+//!
+//! fn forge(broker: &OwnedByteCreditBroker) {
+//!     let token = DurabilityAcknowledgement {
+//!         ledger: std::rc::Weak::new(),
+//!         next: ByteCreditPosition::default(),
+//!     };
+//!     broker.advance(token).unwrap();
+//! }
+//! ```
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    rc::{Rc, Weak},
+};
 
-pub use fforager_contracts::DurabilityPosition;
+pub use fforager_contracts::{
+    ByteCreditComponent, ByteCreditContractV1, ByteCreditPosition, ByteCreditSaturationPolicy,
+    ByteCreditStage, CoupledByteReservation, CoupledByteReservationError, ResourceContractV1,
+    ResourceVector,
+};
 
-/// The complete coupled resource claim for one executable node.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ResourceVector {
-    pub metadata_requests: u32,
-    pub media_requests: u32,
-    pub memory_bytes: u64,
-    pub disk_read_bytes_in_flight: u64,
-    pub disk_write_bytes_in_flight: u64,
-    pub open_handles: u32,
-    pub cpu_light_slots: u32,
-    pub cpu_heavy_slots: u32,
-    pub javascript_workers: u32,
-    pub ffmpeg_processes: u32,
-    pub ffmpeg_cpu_threads: u32,
-    pub archive_writer_slots: u32,
-    pub sink_bytes: u64,
-}
-
-impl ResourceVector {
-    /// Checked component-wise addition. No dimension may wrap.
-    #[must_use]
-    pub fn checked_add(self, rhs: Self) -> Option<Self> {
-        Some(Self {
-            metadata_requests: self.metadata_requests.checked_add(rhs.metadata_requests)?,
-            media_requests: self.media_requests.checked_add(rhs.media_requests)?,
-            memory_bytes: self.memory_bytes.checked_add(rhs.memory_bytes)?,
-            disk_read_bytes_in_flight: self
-                .disk_read_bytes_in_flight
-                .checked_add(rhs.disk_read_bytes_in_flight)?,
-            disk_write_bytes_in_flight: self
-                .disk_write_bytes_in_flight
-                .checked_add(rhs.disk_write_bytes_in_flight)?,
-            open_handles: self.open_handles.checked_add(rhs.open_handles)?,
-            cpu_light_slots: self.cpu_light_slots.checked_add(rhs.cpu_light_slots)?,
-            cpu_heavy_slots: self.cpu_heavy_slots.checked_add(rhs.cpu_heavy_slots)?,
-            javascript_workers: self
-                .javascript_workers
-                .checked_add(rhs.javascript_workers)?,
-            ffmpeg_processes: self.ffmpeg_processes.checked_add(rhs.ffmpeg_processes)?,
-            ffmpeg_cpu_threads: self
-                .ffmpeg_cpu_threads
-                .checked_add(rhs.ffmpeg_cpu_threads)?,
-            archive_writer_slots: self
-                .archive_writer_slots
-                .checked_add(rhs.archive_writer_slots)?,
-            sink_bytes: self.sink_bytes.checked_add(rhs.sink_bytes)?,
-        })
-    }
-
-    /// Checked component-wise subtraction. No dimension may underflow.
-    #[must_use]
-    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
-        Some(Self {
-            metadata_requests: self.metadata_requests.checked_sub(rhs.metadata_requests)?,
-            media_requests: self.media_requests.checked_sub(rhs.media_requests)?,
-            memory_bytes: self.memory_bytes.checked_sub(rhs.memory_bytes)?,
-            disk_read_bytes_in_flight: self
-                .disk_read_bytes_in_flight
-                .checked_sub(rhs.disk_read_bytes_in_flight)?,
-            disk_write_bytes_in_flight: self
-                .disk_write_bytes_in_flight
-                .checked_sub(rhs.disk_write_bytes_in_flight)?,
-            open_handles: self.open_handles.checked_sub(rhs.open_handles)?,
-            cpu_light_slots: self.cpu_light_slots.checked_sub(rhs.cpu_light_slots)?,
-            cpu_heavy_slots: self.cpu_heavy_slots.checked_sub(rhs.cpu_heavy_slots)?,
-            javascript_workers: self
-                .javascript_workers
-                .checked_sub(rhs.javascript_workers)?,
-            ffmpeg_processes: self.ffmpeg_processes.checked_sub(rhs.ffmpeg_processes)?,
-            ffmpeg_cpu_threads: self
-                .ffmpeg_cpu_threads
-                .checked_sub(rhs.ffmpeg_cpu_threads)?,
-            archive_writer_slots: self
-                .archive_writer_slots
-                .checked_sub(rhs.archive_writer_slots)?,
-            sink_bytes: self.sink_bytes.checked_sub(rhs.sink_bytes)?,
-        })
-    }
-
-    #[must_use]
-    pub fn fits_within(self, capacity: Self) -> bool {
-        self.metadata_requests <= capacity.metadata_requests
-            && self.media_requests <= capacity.media_requests
-            && self.memory_bytes <= capacity.memory_bytes
-            && self.disk_read_bytes_in_flight <= capacity.disk_read_bytes_in_flight
-            && self.disk_write_bytes_in_flight <= capacity.disk_write_bytes_in_flight
-            && self.open_handles <= capacity.open_handles
-            && self.cpu_light_slots <= capacity.cpu_light_slots
-            && self.cpu_heavy_slots <= capacity.cpu_heavy_slots
-            && self.javascript_workers <= capacity.javascript_workers
-            && self.ffmpeg_processes <= capacity.ffmpeg_processes
-            && self.ffmpeg_cpu_threads <= capacity.ffmpeg_cpu_threads
-            && self.archive_writer_slots <= capacity.archive_writer_slots
-            && self.sink_bytes <= capacity.sink_bytes
-    }
-
-    fn variable_bytes(self) -> Option<u64> {
-        self.memory_bytes
-            .checked_add(self.disk_read_bytes_in_flight)?
-            .checked_add(self.disk_write_bytes_in_flight)?
-            .checked_add(self.sink_bytes)
-    }
-}
-
+/// Stable identity of the job/owner charged for resources and byte credits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OwnerId(pub u64);
 
@@ -118,20 +49,23 @@ pub struct GrantId(pub u64);
 pub struct WaiterId(pub u64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Grant {
-    pub id: GrantId,
-    pub owner: OwnerId,
-    pub resources: ResourceVector,
+pub(crate) struct Grant {
+    id: GrantId,
+    owner: OwnerId,
+    resources: ResourceVector,
+    /// The queue identity that produced this grant, or `None` for direct admission.
+    source_waiter: Option<WaiterId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Admission {
+pub(crate) enum Admission {
     Granted(Grant),
     Queued(WaiterId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LedgerError {
+    InvalidConfiguration,
     RequestExceedsCapacity,
     QueueItemLimit,
     QueueByteLimit,
@@ -141,6 +75,8 @@ pub enum LedgerError {
     GrantAlreadyReleased(GrantId),
     GrantOwnerMismatch { expected: OwnerId, actual: OwnerId },
     UnknownWaiter(WaiterId),
+    WaiterAlreadyResolved(WaiterId),
+    BrokerDropped,
     InvariantViolation,
 }
 
@@ -154,7 +90,7 @@ struct Waiter {
 
 /// A deterministic FIFO broker with all-or-nothing coupled admission.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResourceLedger {
+pub(crate) struct ResourceLedger {
     capacity: ResourceVector,
     in_use: ResourceVector,
     active: BTreeMap<GrantId, Grant>,
@@ -169,8 +105,9 @@ pub struct ResourceLedger {
 }
 
 impl ResourceLedger {
+    #[cfg(test)]
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         capacity: ResourceVector,
         max_active_grants: usize,
         max_waiters: usize,
@@ -191,13 +128,76 @@ impl ResourceLedger {
         }
     }
 
+    /// Build a ledger with the exact declared per-owner active ceiling.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfiguration` when the active limits are zero or the
+    /// owner ceiling exceeds the total active-grant bound.
+    pub(crate) fn new_with_owner_ceiling(
+        capacity: ResourceVector,
+        max_active_grants: usize,
+        max_active_per_owner: usize,
+        max_waiters: usize,
+        max_waiter_bytes: u64,
+    ) -> Result<Self, LedgerError> {
+        if max_active_grants == 0
+            || max_active_per_owner == 0
+            || max_active_per_owner > max_active_grants
+        {
+            return Err(LedgerError::InvalidConfiguration);
+        }
+        Ok(Self {
+            capacity,
+            in_use: ResourceVector::default(),
+            active: BTreeMap::new(),
+            waiters: VecDeque::new(),
+            max_active_grants,
+            max_active_per_owner,
+            max_waiters,
+            max_waiter_bytes,
+            waiter_bytes: 0,
+            next_grant: 1,
+            next_waiter: 1,
+        })
+    }
+
+    /// Build the pure ledger from a validated versioned v1 contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfiguration` for schema/bound or host-size mismatch.
+    pub(crate) fn from_contract(contract: &ResourceContractV1) -> Result<Self, LedgerError> {
+        contract
+            .validate()
+            .map_err(|_| LedgerError::InvalidConfiguration)?;
+        let max_active_grants = usize::try_from(contract.max_active_grants)
+            .map_err(|_| LedgerError::InvalidConfiguration)?;
+        let max_active_per_owner = usize::try_from(contract.max_active_per_owner)
+            .map_err(|_| LedgerError::InvalidConfiguration)?;
+        let max_waiters = usize::try_from(contract.max_waiter_items)
+            .map_err(|_| LedgerError::InvalidConfiguration)?;
+        Self::new_with_owner_ceiling(
+            contract.capacity,
+            max_active_grants,
+            max_active_per_owner,
+            max_waiters,
+            contract.max_waiter_declared_variable_bytes,
+        )
+    }
+
     #[must_use]
-    pub fn in_use(&self) -> ResourceVector {
+    fn in_use(&self) -> ResourceVector {
         self.in_use
     }
 
     #[must_use]
-    pub fn waiter_occupancy(&self) -> (usize, u64) {
+    fn active_grant_count(&self) -> usize {
+        self.active.len()
+    }
+
+    #[must_use]
+    fn waiter_occupancy(&self) -> (usize, u64) {
         (self.waiters.len(), self.waiter_bytes)
     }
 
@@ -206,7 +206,7 @@ impl ResourceLedger {
     /// # Errors
     ///
     /// Returns a typed capacity, bound, arithmetic, or identity error.
-    pub fn request(
+    fn request(
         &mut self,
         owner: OwnerId,
         resources: ResourceVector,
@@ -219,13 +219,13 @@ impl ResourceLedger {
             && self.owner_active_count(owner) < self.max_active_per_owner
             && self.can_grant(resources)
         {
-            return self.issue(owner, resources).map(Admission::Granted);
+            return self.issue(owner, resources, None).map(Admission::Granted);
         }
         if self.waiters.len() >= self.max_waiters {
             return Err(LedgerError::QueueItemLimit);
         }
         let variable_bytes = resources
-            .variable_bytes()
+            .declared_variable_bytes()
             .ok_or(LedgerError::ArithmeticOverflow)?;
         let new_waiter_bytes = self
             .waiter_bytes
@@ -254,7 +254,7 @@ impl ResourceLedger {
     /// # Errors
     ///
     /// Returns an error for an unknown waiter or broken accounting invariant.
-    pub fn cancel_waiter(&mut self, id: WaiterId) -> Result<Vec<Grant>, LedgerError> {
+    fn cancel_waiter(&mut self, id: WaiterId) -> Result<Vec<Grant>, LedgerError> {
         let mut candidate = self.clone();
         let issued = candidate.cancel_waiter_checked(id)?;
         *self = candidate;
@@ -280,7 +280,7 @@ impl ResourceLedger {
     /// # Errors
     ///
     /// Returns a typed unknown, duplicate, ownership, or invariant error.
-    pub fn release(&mut self, id: GrantId, owner: OwnerId) -> Result<Vec<Grant>, LedgerError> {
+    fn release(&mut self, id: GrantId, owner: OwnerId) -> Result<Vec<Grant>, LedgerError> {
         let mut candidate = self.clone();
         let issued = candidate.release_checked(id, owner)?;
         *self = candidate;
@@ -314,7 +314,7 @@ impl ResourceLedger {
     /// # Errors
     ///
     /// Returns `InvariantViolation` for any mismatch or exceeded bound.
-    pub fn verify(&self) -> Result<(), LedgerError> {
+    fn verify(&self) -> Result<(), LedgerError> {
         let mut sum = ResourceVector::default();
         for grant in self.active.values() {
             sum = sum
@@ -350,7 +350,12 @@ impl ResourceLedger {
         combined.fits_within(self.capacity)
     }
 
-    fn issue(&mut self, owner: OwnerId, resources: ResourceVector) -> Result<Grant, LedgerError> {
+    fn issue(
+        &mut self,
+        owner: OwnerId,
+        resources: ResourceVector,
+        source_waiter: Option<WaiterId>,
+    ) -> Result<Grant, LedgerError> {
         let combined = self
             .in_use
             .checked_add(resources)
@@ -367,6 +372,7 @@ impl ResourceLedger {
             id,
             owner,
             resources,
+            source_waiter,
         };
         self.active.insert(id, grant);
         self.in_use = combined;
@@ -391,7 +397,7 @@ impl ResourceLedger {
                 .waiter_bytes
                 .checked_sub(waiter.variable_bytes)
                 .ok_or(LedgerError::InvariantViolation)?;
-            issued.push(self.issue(waiter.owner, waiter.resources)?);
+            issued.push(self.issue(waiter.owner, waiter.resources, Some(waiter.id))?);
         }
         Ok(issued)
     }
@@ -404,287 +410,938 @@ impl ResourceLedger {
     }
 }
 
+#[derive(Clone, Debug)]
+struct OwnedResourceState {
+    ledger: ResourceLedger,
+    ready: BTreeMap<WaiterId, Grant>,
+}
+
+impl OwnedResourceState {
+    fn record_issued(&mut self, issued: Vec<Grant>) -> Result<Vec<WaiterId>, LedgerError> {
+        let mut ready_ids = Vec::with_capacity(issued.len());
+        let mut staged = Vec::with_capacity(issued.len());
+        let mut seen = BTreeSet::new();
+        for grant in issued {
+            let Some(waiter_id) = grant.source_waiter else {
+                return Err(LedgerError::InvariantViolation);
+            };
+            if self.ready.contains_key(&waiter_id) || !seen.insert(waiter_id) {
+                return Err(LedgerError::InvariantViolation);
+            }
+            ready_ids.push(waiter_id);
+            staged.push((waiter_id, grant));
+        }
+        for (waiter_id, grant) in staged {
+            self.ready.insert(waiter_id, grant);
+        }
+        Ok(ready_ids)
+    }
+
+    fn release_grant(
+        &mut self,
+        grant_id: GrantId,
+        owner: OwnerId,
+    ) -> Result<Vec<WaiterId>, LedgerError> {
+        let mut candidate = self.clone();
+        let issued = candidate.ledger.release(grant_id, owner)?;
+        let ready = candidate.record_issued(issued)?;
+        *self = candidate;
+        Ok(ready)
+    }
+
+    fn cancel_waiter(&mut self, waiter_id: WaiterId) -> Result<Vec<WaiterId>, LedgerError> {
+        let mut candidate = self.clone();
+        let issued = if let Some(grant) = candidate.ready.remove(&waiter_id) {
+            candidate.ledger.release(grant.id, grant.owner)?
+        } else {
+            candidate.ledger.cancel_waiter(waiter_id)?
+        };
+        let ready = candidate.record_issued(issued)?;
+        *self = candidate;
+        Ok(ready)
+    }
+}
+
+/// Single-threaded owner of the pure resource ledger.
+///
+/// Cloning the broker clones only the handle. Grants and waiters remain unique,
+/// non-cloneable identities whose `Drop` paths perform real ledger mutation.
+#[derive(Clone, Debug)]
+pub struct OwnedResourceBroker {
+    state: Rc<RefCell<OwnedResourceState>>,
+}
+
+impl OwnedResourceBroker {
+    #[must_use]
+    fn from_ledger(ledger: ResourceLedger) -> Self {
+        Self {
+            state: Rc::new(RefCell::new(OwnedResourceState {
+                ledger,
+                ready: BTreeMap::new(),
+            })),
+        }
+    }
+
+    /// Build an owned broker from the validated v1 contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfiguration` for a rejected contract or host-size mismatch.
+    pub fn from_contract(contract: &ResourceContractV1) -> Result<Self, LedgerError> {
+        ResourceLedger::from_contract(contract).map(Self::from_ledger)
+    }
+
+    /// Atomically admit or boundedly queue the complete resource vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same typed errors as the pure ledger.
+    pub fn request(
+        &self,
+        owner: OwnerId,
+        resources: ResourceVector,
+    ) -> Result<OwnedAdmission, LedgerError> {
+        let admission = self.state.borrow_mut().ledger.request(owner, resources)?;
+        Ok(match admission {
+            Admission::Granted(grant) => OwnedAdmission::Granted(OwnedResourceLease {
+                state: Rc::downgrade(&self.state),
+                grant,
+                active: true,
+            }),
+            Admission::Queued(waiter_id) => OwnedAdmission::Queued(OwnedResourceWaiter {
+                state: Rc::downgrade(&self.state),
+                waiter_id,
+                active: true,
+            }),
+        })
+    }
+
+    #[must_use]
+    pub fn in_use(&self) -> ResourceVector {
+        self.state.borrow().ledger.in_use()
+    }
+
+    #[must_use]
+    pub fn active_grant_count(&self) -> usize {
+        self.state.borrow().ledger.active_grant_count()
+    }
+
+    #[must_use]
+    pub fn waiter_occupancy(&self) -> (usize, u64) {
+        self.state.borrow().ledger.waiter_occupancy()
+    }
+
+    #[must_use]
+    pub fn ready_waiter_ids(&self) -> Vec<WaiterId> {
+        self.state.borrow().ready.keys().copied().collect()
+    }
+
+    /// Verify both pure-ledger invariants and ready-grant identity mapping.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvariantViolation` for a missing waiter origin or ledger mismatch.
+    pub fn verify(&self) -> Result<(), LedgerError> {
+        let state = self.state.borrow();
+        state.ledger.verify()?;
+        if state.ready.iter().any(|(waiter_id, grant)| {
+            grant.source_waiter != Some(*waiter_id)
+                || state.ledger.active.get(&grant.id) != Some(grant)
+        }) {
+            return Err(LedgerError::InvariantViolation);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "dropping an admission releases or cancels its owned identity"]
+pub enum OwnedAdmission {
+    Granted(OwnedResourceLease),
+    Queued(OwnedResourceWaiter),
+}
+
+/// A non-cloneable owned grant. Drop releases its full vector exactly once.
+#[derive(Debug)]
+#[must_use = "dropping the lease releases its complete resource vector"]
+pub struct OwnedResourceLease {
+    state: Weak<RefCell<OwnedResourceState>>,
+    grant: Grant,
+    active: bool,
+}
+
+impl OwnedResourceLease {
+    #[must_use]
+    pub fn owner(&self) -> OwnerId {
+        self.grant.owner
+    }
+
+    #[must_use]
+    pub fn resources(&self) -> ResourceVector {
+        self.grant.resources
+    }
+
+    /// Explicitly release this lease and report FIFO waiters made ready.
+    ///
+    /// # Errors
+    ///
+    /// Returns a ledger invariant error or `BrokerDropped` when no ledger remains.
+    pub fn release(mut self) -> Result<Vec<WaiterId>, LedgerError> {
+        let Some(state) = self.state.upgrade() else {
+            self.active = false;
+            return Err(LedgerError::BrokerDropped);
+        };
+        let ready = state
+            .borrow_mut()
+            .release_grant(self.grant.id, self.grant.owner)?;
+        self.active = false;
+        Ok(ready)
+    }
+}
+
+impl Drop for OwnedResourceLease {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        if let Some(state) = self.state.upgrade() {
+            let _result = state
+                .borrow_mut()
+                .release_grant(self.grant.id, self.grant.owner);
+        }
+        self.active = false;
+    }
+}
+
+/// A non-cloneable queued request. Drop cancels the exact queue/ready identity.
+#[derive(Debug)]
+#[must_use = "dropping the waiter cancels its exact queued identity"]
+pub struct OwnedResourceWaiter {
+    state: Weak<RefCell<OwnedResourceState>>,
+    waiter_id: WaiterId,
+    active: bool,
+}
+
+impl OwnedResourceWaiter {
+    #[must_use]
+    pub fn id(&self) -> WaiterId {
+        self.waiter_id
+    }
+
+    /// Acquire the grant once this exact FIFO waiter has become ready.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WaiterAlreadyResolved` after cancellation/acquisition and
+    /// `BrokerDropped` when no ledger remains.
+    pub fn try_acquire(&mut self) -> Result<Option<OwnedResourceLease>, LedgerError> {
+        if !self.active {
+            return Err(LedgerError::WaiterAlreadyResolved(self.waiter_id));
+        }
+        let Some(state) = self.state.upgrade() else {
+            self.active = false;
+            return Err(LedgerError::BrokerDropped);
+        };
+        let Some(grant) = state.borrow_mut().ready.remove(&self.waiter_id) else {
+            return Ok(None);
+        };
+        self.active = false;
+        Ok(Some(OwnedResourceLease {
+            state: Rc::downgrade(&state),
+            grant,
+            active: true,
+        }))
+    }
+
+    /// Cancel this exact waiter and report later FIFO waiters made ready.
+    ///
+    /// # Errors
+    ///
+    /// Returns an identity/invariant error or `BrokerDropped`.
+    pub fn cancel(mut self) -> Result<Vec<WaiterId>, LedgerError> {
+        let Some(state) = self.state.upgrade() else {
+            self.active = false;
+            return Err(LedgerError::BrokerDropped);
+        };
+        let ready = state.borrow_mut().cancel_waiter(self.waiter_id)?;
+        self.active = false;
+        Ok(ready)
+    }
+}
+
+impl Drop for OwnedResourceWaiter {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        if let Some(state) = self.state.upgrade() {
+            let _result = state.borrow_mut().cancel_waiter(self.waiter_id);
+        }
+        self.active = false;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreditLimitScope {
+    Global,
+    Owner,
+    Stage,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CreditPressure {
+    pub scope: CreditLimitScope,
+    pub stage: ByteCreditStage,
+    pub requested_items: u64,
+    pub requested_bytes: u64,
+    pub occupied_items: u64,
+    pub occupied_bytes: u64,
+    pub limit_items: u64,
+    pub limit_bytes: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CreditError {
+    InvalidConfiguration,
     ZeroClaim,
-    CapacityExceeded,
-    ClaimItemLimit,
+    Backpressured(CreditPressure),
+    SpillRequired(CreditPressure),
+    RequiredLossRejected {
+        claim_id: u64,
+        component: ByteCreditComponent,
+        stage: ByteCreditStage,
+        bytes: u64,
+    },
     ArithmeticOverflow,
     IdExhausted,
     UnknownClaim(u64),
     ClaimAlreadyReleased(u64),
-    ClaimOwnerMismatch,
-    ConsumedClaimCannotTransfer { consumed: u64 },
-    ReceivedBytesRequireClaim,
+    UnknownComponent {
+        claim_id: u64,
+        component: ByteCreditComponent,
+    },
+    ConsumedComponentCannotTransfer {
+        component: ByteCreditComponent,
+        consumed: u64,
+    },
+    UncreditedBytes {
+        component: ByteCreditComponent,
+        requested: u64,
+        available: u64,
+    },
     PositionRegressed,
+    ReceivedAheadOfConsumed,
+    WrittenAheadOfConsumed,
     WrittenAheadOfReceived,
     DurableAheadOfWritten,
-    UncreditedBytes { received: u64, credited: u64 },
+    AcknowledgementBrokerMismatch,
+    BrokerDropped,
+    InvariantViolation,
 }
 
-/// Bounded byte ownership plus monotonic durable-prefix accounting.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ByteCreditLedger {
-    capacity: u64,
-    in_use: u64,
-    next_claim: u64,
-    max_claims: usize,
-    active: BTreeMap<u64, ByteClaim>,
-    credited_total: u64,
-    position: DurabilityPosition,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ByteCreditOccupancy {
+    pub global_items: u64,
+    pub global_bytes: u64,
+    pub owner_items: u64,
+    pub owner_bytes: u64,
+    pub stage_items: u64,
+    pub stage_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ByteClaim {
+struct ByteComponentClaim {
     owner: OwnerId,
+    stage: ByteCreditStage,
     bytes: u64,
     consumed: u64,
 }
 
-/// Auditable ownership and consumption state for one live byte claim.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ByteClaim {
+    components: BTreeMap<ByteCreditComponent, ByteComponentClaim>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CreditAttribution {
-    pub claim_id: u64,
+pub struct CreditComponentAttribution {
+    pub component: ByteCreditComponent,
     pub owner: OwnerId,
+    pub stage: ByteCreditStage,
     pub bytes: u64,
     pub consumed: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CreditAttribution {
+    pub claim_id: u64,
+    pub components: Vec<CreditComponentAttribution>,
+}
+
+/// A consumed, broker-correlated acknowledgement created only by core effect code.
+#[derive(Debug)]
+#[must_use = "durability does not advance until this effect acknowledgement is consumed"]
+pub struct DurabilityAcknowledgement {
+    ledger: Weak<RefCell<ByteCreditLedger>>,
+    next: ByteCreditPosition,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ByteCreditLedger {
+    contract: ByteCreditContractV1,
+    in_use: u64,
+    next_claim: u64,
+    active: BTreeMap<u64, ByteClaim>,
+    lifetime_consumed_by_stage: BTreeMap<ByteCreditStage, u64>,
+    position: ByteCreditPosition,
+}
+
 impl ByteCreditLedger {
-    #[must_use]
-    pub fn new(capacity: u64, max_claims: usize) -> Self {
-        Self {
-            capacity,
+    fn from_contract(contract: &ByteCreditContractV1) -> Result<Self, CreditError> {
+        contract
+            .validate()
+            .map_err(|_| CreditError::InvalidConfiguration)?;
+        Ok(Self {
+            contract: contract.clone(),
             in_use: 0,
             next_claim: 1,
-            max_claims,
             active: BTreeMap::new(),
-            credited_total: 0,
-            position: DurabilityPosition::default(),
-        }
+            lifetime_consumed_by_stage: BTreeMap::new(),
+            position: ByteCreditPosition::default(),
+        })
     }
 
-    /// Reserve a positive bounded byte claim.
-    ///
-    /// # Errors
-    ///
-    /// Returns a typed item, byte, arithmetic, or identity-bound error.
-    pub fn claim(&mut self, owner: OwnerId, bytes: u64) -> Result<u64, CreditError> {
+    fn stage_policy(
+        &self,
+        stage: ByteCreditStage,
+    ) -> Result<fforager_contracts::ByteCreditStagePolicy, CreditError> {
+        self.contract
+            .stage_policies
+            .iter()
+            .find(|policy| policy.stage == stage)
+            .copied()
+            .ok_or(CreditError::InvalidConfiguration)
+    }
+
+    fn component_count(&self) -> Result<u64, CreditError> {
+        self.active.values().try_fold(0_u64, |total, claim| {
+            total
+                .checked_add(
+                    u64::try_from(claim.components.len())
+                        .map_err(|_| CreditError::ArithmeticOverflow)?,
+                )
+                .ok_or(CreditError::ArithmeticOverflow)
+        })
+    }
+
+    fn occupancy_for(
+        &self,
+        owner: OwnerId,
+        stage: ByteCreditStage,
+    ) -> Result<ByteCreditOccupancy, CreditError> {
+        let mut occupancy = ByteCreditOccupancy {
+            global_items: self.component_count()?,
+            global_bytes: self.in_use,
+            ..ByteCreditOccupancy::default()
+        };
+        for component in self
+            .active
+            .values()
+            .flat_map(|claim| claim.components.values())
+        {
+            if component.owner == owner {
+                occupancy.owner_items = occupancy
+                    .owner_items
+                    .checked_add(1)
+                    .ok_or(CreditError::ArithmeticOverflow)?;
+                occupancy.owner_bytes = occupancy
+                    .owner_bytes
+                    .checked_add(component.bytes)
+                    .ok_or(CreditError::ArithmeticOverflow)?;
+            }
+            if component.stage == stage {
+                occupancy.stage_items = occupancy
+                    .stage_items
+                    .checked_add(1)
+                    .ok_or(CreditError::ArithmeticOverflow)?;
+                occupancy.stage_bytes = occupancy
+                    .stage_bytes
+                    .checked_add(component.bytes)
+                    .ok_or(CreditError::ArithmeticOverflow)?;
+            }
+        }
+        Ok(occupancy)
+    }
+
+    fn pressure_error(
+        &self,
+        stage: ByteCreditStage,
+        pressure: CreditPressure,
+    ) -> Result<CreditError, CreditError> {
+        Ok(match self.stage_policy(stage)?.saturation_policy {
+            ByteCreditSaturationPolicy::Backpressured => CreditError::Backpressured(pressure),
+            ByteCreditSaturationPolicy::SpillRequired => CreditError::SpillRequired(pressure),
+        })
+    }
+
+    fn check_component_admission(
+        &self,
+        owner: OwnerId,
+        stage: ByteCreditStage,
+        requested_items: u64,
+        requested_bytes: u64,
+        prior_requested_items: u64,
+        prior_requested_bytes: u64,
+    ) -> Result<(), CreditError> {
+        let occupancy = self.occupancy_for(owner, stage)?;
+        let global_items = occupancy
+            .global_items
+            .checked_add(prior_requested_items)
+            .and_then(|value| value.checked_add(requested_items))
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        let global_bytes = occupancy
+            .global_bytes
+            .checked_add(prior_requested_bytes)
+            .and_then(|value| value.checked_add(requested_bytes))
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        if global_items > self.contract.max_claim_items
+            || global_bytes > self.contract.capacity_bytes
+        {
+            let occupied_items = occupancy
+                .global_items
+                .checked_add(prior_requested_items)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            let occupied_bytes = occupancy
+                .global_bytes
+                .checked_add(prior_requested_bytes)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            return Err(self.pressure_error(
+                stage,
+                CreditPressure {
+                    scope: CreditLimitScope::Global,
+                    stage,
+                    requested_items,
+                    requested_bytes,
+                    occupied_items,
+                    occupied_bytes,
+                    limit_items: self.contract.max_claim_items,
+                    limit_bytes: self.contract.capacity_bytes,
+                },
+            )?);
+        }
+        let owner_items = occupancy
+            .owner_items
+            .checked_add(prior_requested_items)
+            .and_then(|value| value.checked_add(requested_items))
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        let owner_bytes = occupancy
+            .owner_bytes
+            .checked_add(prior_requested_bytes)
+            .and_then(|value| value.checked_add(requested_bytes))
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        if owner_items > self.contract.max_owner_claim_items
+            || owner_bytes > self.contract.max_owner_bytes
+        {
+            let occupied_items = occupancy
+                .owner_items
+                .checked_add(prior_requested_items)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            let occupied_bytes = occupancy
+                .owner_bytes
+                .checked_add(prior_requested_bytes)
+                .ok_or(CreditError::ArithmeticOverflow)?;
+            return Err(self.pressure_error(
+                stage,
+                CreditPressure {
+                    scope: CreditLimitScope::Owner,
+                    stage,
+                    requested_items,
+                    requested_bytes,
+                    occupied_items,
+                    occupied_bytes,
+                    limit_items: self.contract.max_owner_claim_items,
+                    limit_bytes: self.contract.max_owner_bytes,
+                },
+            )?);
+        }
+        let policy = self.stage_policy(stage)?;
+        let stage_items = occupancy
+            .stage_items
+            .checked_add(requested_items)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        let stage_bytes = occupancy
+            .stage_bytes
+            .checked_add(requested_bytes)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        if stage_items > policy.max_claim_items || stage_bytes > policy.max_bytes {
+            return Err(self.pressure_error(
+                stage,
+                CreditPressure {
+                    scope: CreditLimitScope::Stage,
+                    stage,
+                    requested_items,
+                    requested_bytes,
+                    occupied_items: occupancy.stage_items,
+                    occupied_bytes: occupancy.stage_bytes,
+                    limit_items: policy.max_claim_items,
+                    limit_bytes: policy.max_bytes,
+                },
+            )?);
+        }
+        Ok(())
+    }
+
+    fn claim_single(
+        &mut self,
+        owner: OwnerId,
+        stage: ByteCreditStage,
+        bytes: u64,
+    ) -> Result<u64, CreditError> {
         if bytes == 0 {
             return Err(CreditError::ZeroClaim);
         }
-        if self.active.len() >= self.max_claims {
-            return Err(CreditError::ClaimItemLimit);
-        }
-        let combined = self
-            .in_use
-            .checked_add(bytes)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        if combined > self.capacity {
-            return Err(CreditError::CapacityExceeded);
-        }
-        let credited_total = self
-            .credited_total
-            .checked_add(bytes)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        let id = self.next_claim;
-        self.next_claim = self
-            .next_claim
-            .checked_add(1)
-            .ok_or(CreditError::IdExhausted)?;
-        self.active.insert(
-            id,
-            ByteClaim {
+        self.check_component_admission(owner, stage, 1, bytes, 0, 0)?;
+        let mut components = BTreeMap::new();
+        components.insert(
+            ByteCreditComponent::Single,
+            ByteComponentClaim {
                 owner,
+                stage,
                 bytes,
                 consumed: 0,
             },
         );
+        self.insert_claim(components, bytes)
+    }
+
+    fn claim_coupled(
+        &mut self,
+        owner: OwnerId,
+        reservation: CoupledByteReservation,
+    ) -> Result<u64, CreditError> {
+        let total = reservation.total_bytes().map_err(|error| match error {
+            CoupledByteReservationError::ZeroInput | CoupledByteReservationError::ZeroOutput => {
+                CreditError::ZeroClaim
+            }
+            CoupledByteReservationError::ArithmeticOverflow => CreditError::ArithmeticOverflow,
+        })?;
+        self.check_component_admission(
+            owner,
+            reservation.input_stage,
+            1,
+            reservation.input_bytes,
+            0,
+            0,
+        )?;
+        let same_stage = reservation.output_stage == reservation.input_stage;
+        self.check_component_admission(
+            owner,
+            reservation.output_stage,
+            1,
+            reservation.output_bytes,
+            1,
+            reservation.input_bytes,
+        )?;
+        if same_stage {
+            let occupancy = self.occupancy_for(owner, reservation.input_stage)?;
+            let policy = self.stage_policy(reservation.input_stage)?;
+            if occupancy
+                .stage_items
+                .checked_add(2)
+                .ok_or(CreditError::ArithmeticOverflow)?
+                > policy.max_claim_items
+                || occupancy
+                    .stage_bytes
+                    .checked_add(total)
+                    .ok_or(CreditError::ArithmeticOverflow)?
+                    > policy.max_bytes
+            {
+                return Err(self.pressure_error(
+                    reservation.input_stage,
+                    CreditPressure {
+                        scope: CreditLimitScope::Stage,
+                        stage: reservation.input_stage,
+                        requested_items: 2,
+                        requested_bytes: total,
+                        occupied_items: occupancy.stage_items,
+                        occupied_bytes: occupancy.stage_bytes,
+                        limit_items: policy.max_claim_items,
+                        limit_bytes: policy.max_bytes,
+                    },
+                )?);
+            }
+        }
+        let mut components = BTreeMap::new();
+        components.insert(
+            ByteCreditComponent::Input,
+            ByteComponentClaim {
+                owner,
+                stage: reservation.input_stage,
+                bytes: reservation.input_bytes,
+                consumed: 0,
+            },
+        );
+        components.insert(
+            ByteCreditComponent::Output,
+            ByteComponentClaim {
+                owner,
+                stage: reservation.output_stage,
+                bytes: reservation.output_bytes,
+                consumed: 0,
+            },
+        );
+        self.insert_claim(components, total)
+    }
+
+    fn insert_claim(
+        &mut self,
+        components: BTreeMap<ByteCreditComponent, ByteComponentClaim>,
+        bytes: u64,
+    ) -> Result<u64, CreditError> {
+        let combined = self
+            .in_use
+            .checked_add(bytes)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        let id = self.next_claim;
+        let next_claim = id.checked_add(1).ok_or(CreditError::IdExhausted)?;
+        self.active.insert(id, ByteClaim { components });
         self.in_use = combined;
-        self.credited_total = credited_total;
+        self.next_claim = next_claim;
         Ok(id)
     }
 
-    /// Transfer an unconsumed claim without changing the conserved byte total.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for an unknown, released, differently owned, or already
-    /// consumed claim. Rejecting consumed transfers preserves receive-time
-    /// attribution to exactly one owner.
-    pub fn transfer(&mut self, id: u64, from: OwnerId, to: OwnerId) -> Result<(), CreditError> {
-        let Some(claim) = self.active.get(&id).copied() else {
-            return self.missing_claim(id);
-        };
-        if claim.owner != from {
-            return Err(CreditError::ClaimOwnerMismatch);
-        }
-        if claim.consumed != 0 {
-            return Err(CreditError::ConsumedClaimCannotTransfer {
-                consumed: claim.consumed,
-            });
-        }
-        self.active.insert(id, ByteClaim { owner: to, ..claim });
-        Ok(())
-    }
-
-    /// Release exactly one byte claim and return its final attribution receipt.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for an unknown, duplicate, or differently owned claim.
-    pub fn release(&mut self, id: u64, owner: OwnerId) -> Result<CreditAttribution, CreditError> {
-        let Some(claim) = self.active.get(&id).copied() else {
-            return self.missing_claim(id);
-        };
-        if owner != claim.owner {
-            return Err(CreditError::ClaimOwnerMismatch);
-        }
-        self.in_use = self
-            .in_use
-            .checked_sub(claim.bytes)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        let unused = claim
-            .bytes
-            .checked_sub(claim.consumed)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        self.credited_total = self
-            .credited_total
-            .checked_sub(unused)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        self.active.remove(&id);
-        Ok(CreditAttribution {
-            claim_id: id,
-            owner: claim.owner,
-            bytes: claim.bytes,
-            consumed: claim.consumed,
-        })
-    }
-
-    /// Consume received bytes from exactly one owned claim.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for an unknown, released, differently owned, regressing,
-    /// or insufficient claim. Failure does not mutate accounting.
-    pub fn receive(
+    fn transfer_component(
         &mut self,
         id: u64,
-        owner: OwnerId,
-        received_bytes: u64,
+        component: ByteCreditComponent,
+        to: OwnerId,
     ) -> Result<(), CreditError> {
-        if received_bytes < self.position.received_bytes {
-            return Err(CreditError::PositionRegressed);
-        }
-        let Some(claim) = self.active.get(&id).copied() else {
-            return self.missing_claim(id);
+        let mut candidate = self.clone();
+        let Some(existing) = candidate
+            .active
+            .get(&id)
+            .and_then(|claim| claim.components.get(&component))
+            .copied()
+        else {
+            return candidate.missing_component(id, component);
         };
-        if claim.owner != owner {
-            return Err(CreditError::ClaimOwnerMismatch);
-        }
-        let newly_received = received_bytes
-            .checked_sub(self.position.received_bytes)
-            .ok_or(CreditError::PositionRegressed)?;
-        let available = claim
-            .bytes
-            .checked_sub(claim.consumed)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        if newly_received > available {
-            let credited = self
-                .position
-                .received_bytes
-                .checked_add(available)
-                .ok_or(CreditError::ArithmeticOverflow)?;
-            return Err(CreditError::UncreditedBytes {
-                received: received_bytes,
-                credited,
+        if existing.consumed != 0 {
+            return Err(CreditError::ConsumedComponentCannotTransfer {
+                component,
+                consumed: existing.consumed,
             });
         }
-        let consumed = claim
-            .consumed
-            .checked_add(newly_received)
-            .ok_or(CreditError::ArithmeticOverflow)?;
-        self.active.insert(id, ByteClaim { consumed, ..claim });
-        self.position.received_bytes = received_bytes;
+        if existing.owner != to {
+            candidate.check_owner_transfer(to, existing)?;
+            let Some(claim) = candidate.active.get_mut(&id) else {
+                return Err(CreditError::InvariantViolation);
+            };
+            let Some(target) = claim.components.get_mut(&component) else {
+                return Err(CreditError::InvariantViolation);
+            };
+            target.owner = to;
+        }
+        *self = candidate;
         Ok(())
     }
 
-    /// Advance validated and durable prefixes monotonically after owned receive.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for regression, written-ahead, or durable-ahead state.
-    pub fn advance(&mut self, next: DurabilityPosition) -> Result<(), CreditError> {
-        if next.received_bytes < self.position.received_bytes
-            || next.validated_bytes < self.position.validated_bytes
-            || next.durable_bytes < self.position.durable_bytes
+    fn check_owner_transfer(
+        &self,
+        to: OwnerId,
+        component: ByteComponentClaim,
+    ) -> Result<(), CreditError> {
+        let occupancy = self.occupancy_for(to, component.stage)?;
+        if occupancy
+            .owner_items
+            .checked_add(1)
+            .ok_or(CreditError::ArithmeticOverflow)?
+            > self.contract.max_owner_claim_items
+            || occupancy
+                .owner_bytes
+                .checked_add(component.bytes)
+                .ok_or(CreditError::ArithmeticOverflow)?
+                > self.contract.max_owner_bytes
+        {
+            return Err(self.pressure_error(
+                component.stage,
+                CreditPressure {
+                    scope: CreditLimitScope::Owner,
+                    stage: component.stage,
+                    requested_items: 1,
+                    requested_bytes: component.bytes,
+                    occupied_items: occupancy.owner_items,
+                    occupied_bytes: occupancy.owner_bytes,
+                    limit_items: self.contract.max_owner_claim_items,
+                    limit_bytes: self.contract.max_owner_bytes,
+                },
+            )?);
+        }
+        Ok(())
+    }
+
+    fn consume_component(
+        &mut self,
+        id: u64,
+        component: ByteCreditComponent,
+        bytes: u64,
+    ) -> Result<(), CreditError> {
+        let mut candidate = self.clone();
+        let Some(target) = candidate
+            .active
+            .get_mut(&id)
+            .and_then(|claim| claim.components.get_mut(&component))
+        else {
+            return candidate.missing_component(id, component);
+        };
+        let available = target
+            .bytes
+            .checked_sub(target.consumed)
+            .ok_or(CreditError::InvariantViolation)?;
+        if bytes > available {
+            return Err(CreditError::UncreditedBytes {
+                component,
+                requested: bytes,
+                available,
+            });
+        }
+        target.consumed = target
+            .consumed
+            .checked_add(bytes)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        let stage = target.stage;
+        let stage_consumed = candidate
+            .lifetime_consumed_by_stage
+            .get(&stage)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(bytes)
+            .ok_or(CreditError::ArithmeticOverflow)?;
+        candidate
+            .lifetime_consumed_by_stage
+            .insert(stage, stage_consumed);
+        *self = candidate;
+        Ok(())
+    }
+
+    fn release(&mut self, id: u64) -> Result<CreditAttribution, CreditError> {
+        let mut candidate = self.clone();
+        let attribution = candidate.release_checked(id)?;
+        *self = candidate;
+        Ok(attribution)
+    }
+
+    fn release_checked(&mut self, id: u64) -> Result<CreditAttribution, CreditError> {
+        let Some(claim) = self.active.remove(&id) else {
+            return self.missing_claim(id);
+        };
+        let bytes = claim
+            .components
+            .values()
+            .try_fold(0_u64, |total, component| {
+                total
+                    .checked_add(component.bytes)
+                    .ok_or(CreditError::ArithmeticOverflow)
+            })?;
+        self.in_use = self
+            .in_use
+            .checked_sub(bytes)
+            .ok_or(CreditError::InvariantViolation)?;
+        Ok(Self::attribution_from_claim(id, &claim))
+    }
+
+    fn attribution(&self, id: u64) -> Result<CreditAttribution, CreditError> {
+        let Some(claim) = self.active.get(&id) else {
+            return self.missing_claim(id);
+        };
+        Ok(Self::attribution_from_claim(id, claim))
+    }
+
+    fn attribution_from_claim(id: u64, claim: &ByteClaim) -> CreditAttribution {
+        CreditAttribution {
+            claim_id: id,
+            components: claim
+                .components
+                .iter()
+                .map(|(component, claim)| CreditComponentAttribution {
+                    component: *component,
+                    owner: claim.owner,
+                    stage: claim.stage,
+                    bytes: claim.bytes,
+                    consumed: claim.consumed,
+                })
+                .collect(),
+        }
+    }
+
+    fn validate_next_position(&self, next: ByteCreditPosition) -> Result<(), CreditError> {
+        if next.received < self.position.received
+            || next.validated_written_contiguous < self.position.validated_written_contiguous
+            || next.durable_contiguous < self.position.durable_contiguous
         {
             return Err(CreditError::PositionRegressed);
         }
-        if next.received_bytes != self.position.received_bytes {
-            return Err(CreditError::ReceivedBytesRequireClaim);
+        if next.received > self.consumed_for_stage(ByteCreditStage::HttpReceive) {
+            return Err(CreditError::ReceivedAheadOfConsumed);
         }
-        if next.validated_bytes > next.received_bytes {
+        if next.validated_written_contiguous > self.consumed_for_stage(ByteCreditStage::Writer) {
+            return Err(CreditError::WrittenAheadOfConsumed);
+        }
+        if next.validated_written_contiguous > next.received {
             return Err(CreditError::WrittenAheadOfReceived);
         }
-        if next.durable_bytes > next.validated_bytes {
+        if next.durable_contiguous > next.validated_written_contiguous {
             return Err(CreditError::DurableAheadOfWritten);
         }
+        Ok(())
+    }
+
+    fn consumed_for_stage(&self, stage: ByteCreditStage) -> u64 {
+        self.lifetime_consumed_by_stage
+            .get(&stage)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn advance_acknowledged(&mut self, next: ByteCreditPosition) -> Result<(), CreditError> {
+        self.validate_next_position(next)?;
         self.position = next;
         Ok(())
     }
 
-    /// Return the live claim attribution used to audit owner-bound consumption.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for an unknown or released claim.
-    pub fn attribution(&self, id: u64) -> Result<CreditAttribution, CreditError> {
-        let Some(claim) = self.active.get(&id).copied() else {
-            return self.missing_claim(id);
-        };
-        Ok(CreditAttribution {
-            claim_id: id,
-            owner: claim.owner,
-            bytes: claim.bytes,
-            consumed: claim.consumed,
-        })
-    }
-
-    #[must_use]
-    pub fn in_use(&self) -> u64 {
-        self.in_use
-    }
-
-    #[must_use]
-    pub fn position(&self) -> DurabilityPosition {
-        self.position
-    }
-
-    /// Verify byte conservation, item bounds, and durability ordering.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when any accounting invariant is false.
-    pub fn verify(&self) -> Result<(), CreditError> {
-        let total = self
+    fn verify(&self) -> Result<(), CreditError> {
+        let total = self.active.values().try_fold(0_u64, |sum, claim| {
+            claim.components.values().try_fold(sum, |sum, component| {
+                if component.consumed > component.bytes {
+                    return Err(CreditError::InvariantViolation);
+                }
+                sum.checked_add(component.bytes)
+                    .ok_or(CreditError::ArithmeticOverflow)
+            })
+        })?;
+        if total != self.in_use || self.in_use > self.contract.capacity_bytes {
+            return Err(CreditError::InvariantViolation);
+        }
+        self.validate_next_position(self.position)?;
+        for stage in self.contract.stages {
+            let policy = self.stage_policy(stage)?;
+            let occupancy = self.occupancy_for(OwnerId(u64::MAX), stage)?;
+            if occupancy.stage_items > policy.max_claim_items
+                || occupancy.stage_bytes > policy.max_bytes
+            {
+                return Err(CreditError::InvariantViolation);
+            }
+        }
+        for owner in self
             .active
             .values()
-            .try_fold(0_u64, |sum, claim| sum.checked_add(claim.bytes));
-        let available = self.active.values().try_fold(0_u64, |sum, claim| {
-            let remaining = claim.bytes.checked_sub(claim.consumed)?;
-            sum.checked_add(remaining)
-        });
-        if total != Some(self.in_use)
-            || self.in_use > self.capacity
-            || self.active.len() > self.max_claims
-            || self.position.validated_bytes > self.position.received_bytes
-            || self.position.durable_bytes > self.position.validated_bytes
-            || self.position.received_bytes > self.credited_total
-            || available.and_then(|available| self.position.received_bytes.checked_add(available))
-                != Some(self.credited_total)
+            .flat_map(|claim| claim.components.values().map(|component| component.owner))
+            .collect::<BTreeSet<_>>()
         {
-            return Err(CreditError::ArithmeticOverflow);
+            let occupancy = self.occupancy_for(owner, ByteCreditStage::HttpReceive)?;
+            if occupancy.owner_items > self.contract.max_owner_claim_items
+                || occupancy.owner_bytes > self.contract.max_owner_bytes
+            {
+                return Err(CreditError::InvariantViolation);
+            }
         }
         Ok(())
     }
@@ -695,6 +1352,276 @@ impl ByteCreditLedger {
         } else {
             Err(CreditError::UnknownClaim(id))
         }
+    }
+
+    fn missing_component<T>(
+        &self,
+        id: u64,
+        component: ByteCreditComponent,
+    ) -> Result<T, CreditError> {
+        if self.active.contains_key(&id) {
+            Err(CreditError::UnknownComponent {
+                claim_id: id,
+                component,
+            })
+        } else {
+            self.missing_claim(id)
+        }
+    }
+}
+
+/// Single-threaded owned boundary for validated byte-credit contracts.
+#[derive(Clone, Debug)]
+pub struct OwnedByteCreditBroker {
+    ledger: Rc<RefCell<ByteCreditLedger>>,
+}
+
+impl OwnedByteCreditBroker {
+    /// Build the owned broker from a validated closed byte-credit contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfiguration` when the contract is not the exact valid v1 profile.
+    pub fn from_contract(contract: &ByteCreditContractV1) -> Result<Self, CreditError> {
+        Ok(Self {
+            ledger: Rc::new(RefCell::new(ByteCreditLedger::from_contract(contract)?)),
+        })
+    }
+
+    /// Claim one stage-bound byte component for an owner.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed pressure, arithmetic, identity, or configuration error.
+    pub fn claim(
+        &self,
+        owner: OwnerId,
+        stage: ByteCreditStage,
+        bytes: u64,
+    ) -> Result<OwnedByteCreditLease, CreditError> {
+        let claim_id = self.ledger.borrow_mut().claim_single(owner, stage, bytes)?;
+        Ok(OwnedByteCreditLease {
+            ledger: Rc::downgrade(&self.ledger),
+            claim_id,
+            active: true,
+        })
+    }
+
+    /// Claim linked input and output components atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed pressure or reservation error without partially claiming either component.
+    pub fn claim_coupled(
+        &self,
+        owner: OwnerId,
+        reservation: CoupledByteReservation,
+    ) -> Result<OwnedByteCreditLease, CreditError> {
+        let claim_id = self.ledger.borrow_mut().claim_coupled(owner, reservation)?;
+        Ok(OwnedByteCreditLease {
+            ledger: Rc::downgrade(&self.ledger),
+            claim_id,
+            active: true,
+        })
+    }
+
+    /// Return exact global component and byte occupancy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArithmeticOverflow` if the internal component count cannot be represented.
+    pub fn global_occupancy(&self) -> Result<(u64, u64), CreditError> {
+        let ledger = self.ledger.borrow();
+        Ok((ledger.component_count()?, ledger.in_use))
+    }
+
+    /// Return global, owner, and stage occupancy in one snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArithmeticOverflow` if exact occupancy cannot be represented.
+    pub fn occupancy(
+        &self,
+        owner: OwnerId,
+        stage: ByteCreditStage,
+    ) -> Result<ByteCreditOccupancy, CreditError> {
+        self.ledger.borrow().occupancy_for(owner, stage)
+    }
+
+    #[must_use]
+    pub fn position(&self) -> ByteCreditPosition {
+        self.ledger.borrow().position
+    }
+
+    pub(crate) fn acknowledge_durability_effects(
+        &self,
+        next: ByteCreditPosition,
+    ) -> Result<DurabilityAcknowledgement, CreditError> {
+        self.ledger.borrow().validate_next_position(next)?;
+        Ok(DurabilityAcknowledgement {
+            ledger: Rc::downgrade(&self.ledger),
+            next,
+        })
+    }
+
+    /// Consume an effect-produced acknowledgement and advance its exact broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns a broker-identity or durability-ordering error without advancing state.
+    pub fn advance(&self, acknowledgement: DurabilityAcknowledgement) -> Result<(), CreditError> {
+        let DurabilityAcknowledgement { ledger, next } = acknowledgement;
+        let Some(acknowledged_ledger) = ledger.upgrade() else {
+            return Err(CreditError::BrokerDropped);
+        };
+        if !Rc::ptr_eq(&acknowledged_ledger, &self.ledger) {
+            return Err(CreditError::AcknowledgementBrokerMismatch);
+        }
+        self.ledger.borrow_mut().advance_acknowledged(next)
+    }
+
+    /// Verify all global, owner, stage, attribution, and durability invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed invariant, arithmetic, configuration, or position error.
+    pub fn verify(&self) -> Result<(), CreditError> {
+        self.ledger.borrow().verify()
+    }
+}
+
+/// A non-cloneable owned byte claim. Drop releases every linked component once.
+#[derive(Debug)]
+#[must_use = "dropping the lease releases its complete linked reservation"]
+pub struct OwnedByteCreditLease {
+    ledger: Weak<RefCell<ByteCreditLedger>>,
+    claim_id: u64,
+    active: bool,
+}
+
+impl OwnedByteCreditLease {
+    #[must_use]
+    pub fn claim_id(&self) -> u64 {
+        self.claim_id
+    }
+
+    /// Transfer one exact unconsumed linked component to another owner.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed identity, pressure, consumed-component, or broker error atomically.
+    pub fn transfer_component(
+        &mut self,
+        component: ByteCreditComponent,
+        to: OwnerId,
+    ) -> Result<(), CreditError> {
+        let Some(ledger) = self.ledger.upgrade() else {
+            return Err(CreditError::BrokerDropped);
+        };
+        ledger
+            .borrow_mut()
+            .transfer_component(self.claim_id, component, to)
+    }
+
+    /// Attribute consumed bytes to one exact component.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed identity, capacity, arithmetic, or broker error atomically.
+    pub fn consume(
+        &mut self,
+        component: ByteCreditComponent,
+        bytes: u64,
+    ) -> Result<(), CreditError> {
+        let Some(ledger) = self.ledger.upgrade() else {
+            return Err(CreditError::BrokerDropped);
+        };
+        ledger
+            .borrow_mut()
+            .consume_component(self.claim_id, component, bytes)
+    }
+
+    /// Reject any attempted loss of required credited bytes with stage attribution.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RequiredLossRejected` for non-zero loss, or an identity/broker error.
+    pub fn attempt_required_loss(
+        &self,
+        component: ByteCreditComponent,
+        bytes: u64,
+    ) -> Result<(), CreditError> {
+        if bytes == 0 {
+            return Ok(());
+        }
+        let Some(ledger) = self.ledger.upgrade() else {
+            return Err(CreditError::BrokerDropped);
+        };
+        let attribution = ledger.borrow().attribution(self.claim_id)?;
+        let Some(component_attribution) = attribution
+            .components
+            .iter()
+            .find(|attribution| attribution.component == component)
+        else {
+            return Err(CreditError::UnknownComponent {
+                claim_id: self.claim_id,
+                component,
+            });
+        };
+        Err(CreditError::RequiredLossRejected {
+            claim_id: self.claim_id,
+            component,
+            stage: component_attribution.stage,
+            bytes,
+        })
+    }
+
+    /// Snapshot the immutable component identities and current ownership/consumption.
+    ///
+    /// # Errors
+    ///
+    /// Returns an identity or broker error when the live claim cannot be resolved.
+    pub fn attribution(&self) -> Result<CreditAttribution, CreditError> {
+        let Some(ledger) = self.ledger.upgrade() else {
+            return Err(CreditError::BrokerDropped);
+        };
+        ledger.borrow().attribution(self.claim_id)
+    }
+
+    /// Explicitly release every component in this linked claim exactly once.
+    ///
+    /// # Errors
+    ///
+    /// Returns an identity, invariant, arithmetic, or broker error.
+    pub fn release(mut self) -> Result<CreditAttribution, CreditError> {
+        let Some(ledger) = self.ledger.upgrade() else {
+            self.active = false;
+            return Err(CreditError::BrokerDropped);
+        };
+        let attribution = ledger.borrow_mut().release(self.claim_id)?;
+        self.active = false;
+        Ok(attribution)
+    }
+
+    /// Cancel every component in this linked claim exactly once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same typed errors as explicit release.
+    pub fn cancel(self) -> Result<CreditAttribution, CreditError> {
+        self.release()
+    }
+}
+
+impl Drop for OwnedByteCreditLease {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        if let Some(ledger) = self.ledger.upgrade() {
+            let _result = ledger.borrow_mut().release(self.claim_id);
+        }
+        self.active = false;
     }
 }
 
@@ -798,219 +1725,286 @@ mod tests {
     }
 
     #[test]
-    fn byte_credit_conserves_capacity_and_transfer_identity() -> Result<(), String> {
-        let mut credits = ByteCreditLedger::new(10, 2);
-        assert!(matches!(
-            credits.claim(OwnerId(1), 0),
-            Err(CreditError::ZeroClaim)
-        ));
-        let claim = credits.claim(OwnerId(1), 10);
-        let Ok(claim) = claim else {
-            return Err("exact byte capacity must be granted".to_owned());
-        };
-        assert!(matches!(
-            credits.claim(OwnerId(2), 1),
-            Err(CreditError::CapacityExceeded)
-        ));
-        assert!(credits.transfer(claim, OwnerId(1), OwnerId(2)).is_ok());
-        assert!(matches!(
-            credits.release(claim, OwnerId(1)),
-            Err(CreditError::ClaimOwnerMismatch)
-        ));
-        assert!(credits.release(claim, OwnerId(2)).is_ok());
-        assert_eq!(credits.in_use(), 0);
-        assert!(credits.verify().is_ok());
-        assert!(matches!(
-            credits.release(claim, OwnerId(2)),
-            Err(CreditError::ClaimAlreadyReleased(_))
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn durable_position_is_monotonic_and_never_ahead_of_written() {
-        let mut credits = ByteCreditLedger::new(u64::MAX, 1);
-        let claim = credits
-            .claim(OwnerId(1), u64::MAX)
-            .expect("maximum claim must fit");
-        assert!(credits.receive(claim, OwnerId(1), u64::MAX).is_ok());
-        assert!(
-            credits
-                .advance(DurabilityPosition {
-                    received_bytes: u64::MAX,
-                    validated_bytes: u64::MAX - 1,
-                    durable_bytes: u64::MAX - 2,
-                })
-                .is_ok()
-        );
-        assert!(matches!(
-            credits.advance(DurabilityPosition {
-                received_bytes: u64::MAX,
-                validated_bytes: u64::MAX,
-                durable_bytes: u64::MAX,
-            }),
-            Ok(())
-        ));
-        assert!(matches!(
-            credits.advance(DurabilityPosition {
-                received_bytes: u64::MAX,
-                validated_bytes: u64::MAX - 1,
-                durable_bytes: u64::MAX - 1,
-            }),
-            Err(CreditError::PositionRegressed)
-        ));
-        let mut invalid = ByteCreditLedger::new(1, 1);
-        let claim = invalid.claim(OwnerId(1), 1).expect("claim must fit");
-        assert!(invalid.receive(claim, OwnerId(1), 1).is_ok());
-        assert!(matches!(
-            invalid.advance(DurabilityPosition {
-                received_bytes: 1,
-                validated_bytes: 1,
-                durable_bytes: 2,
-            }),
-            Err(CreditError::DurableAheadOfWritten)
-        ));
-        assert!(matches!(
-            invalid.advance(DurabilityPosition {
-                received_bytes: 1,
-                validated_bytes: 2,
-                durable_bytes: 1,
-            }),
-            Err(CreditError::WrittenAheadOfReceived)
-        ));
-    }
-
-    #[test]
-    fn durability_rejects_bytes_that_were_never_credited() {
-        let mut credits = ByteCreditLedger::new(1, 1);
-        let claim = credits.claim(OwnerId(1), 1).expect("claim must fit");
-        assert!(matches!(
-            credits.receive(claim, OwnerId(1), u64::MAX),
-            Err(CreditError::UncreditedBytes {
-                received: u64::MAX,
-                credited: 1
-            })
-        ));
-        assert_eq!(credits.position(), DurabilityPosition::default());
-    }
-
-    #[test]
-    fn released_unused_credit_cannot_authorize_receive() {
-        let mut credits = ByteCreditLedger::new(10, 1);
-        let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
+    // WP009-REG-BYTE-STAGE-BOUNDARY-001
+    fn byte_credit_stage_and_owner_bounds_return_closed_pressure_outcomes() {
+        let mut contract = ByteCreditContractV1::new(20, 8);
+        contract.max_owner_bytes = 6;
+        contract.max_owner_claim_items = 2;
+        for policy in &mut contract.stage_policies {
+            policy.max_bytes = 10;
+            policy.max_claim_items = 4;
+            if matches!(
+                policy.stage,
+                ByteCreditStage::HttpReceive | ByteCreditStage::SpillAndSink
+            ) {
+                policy.max_bytes = 4;
+                policy.max_claim_items = 1;
+            }
+        }
+        assert!(contract.validate().is_ok());
         assert_eq!(
-            credits.release(claim, OwnerId(1)),
-            Ok(CreditAttribution {
-                claim_id: claim,
-                owner: OwnerId(1),
-                bytes: 10,
-                consumed: 0,
-            })
+            contract
+                .stage_policies
+                .iter()
+                .map(|policy| policy.stage)
+                .collect::<Vec<_>>(),
+            contract.stages
         );
-        assert!(matches!(
-            credits.receive(claim, OwnerId(1), 1),
-            Err(CreditError::ClaimAlreadyReleased(id)) if id == claim
-        ));
-        assert!(credits.verify().is_ok());
-    }
 
-    #[test]
-    fn consumed_credit_survives_release_but_unused_remainder_does_not() {
-        let mut credits = ByteCreditLedger::new(10, 1);
-        let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
-        assert!(credits.receive(claim, OwnerId(1), 4).is_ok());
-        assert!(
-            credits
-                .advance(DurabilityPosition {
-                    received_bytes: 4,
-                    validated_bytes: 4,
-                    durable_bytes: 4,
-                })
-                .is_ok()
-        );
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid contract");
+        let http = broker
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 4)
+            .expect("exact stage bound");
+        assert!(matches!(
+            broker.claim(OwnerId(2), ByteCreditStage::HttpReceive, 1),
+            Err(CreditError::Backpressured(CreditPressure {
+                scope: CreditLimitScope::Stage,
+                stage: ByteCreditStage::HttpReceive,
+                occupied_items: 1,
+                occupied_bytes: 4,
+                limit_items: 1,
+                limit_bytes: 4,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            broker.claim(OwnerId(1), ByteCreditStage::Decompression, 3),
+            Err(CreditError::Backpressured(CreditPressure {
+                scope: CreditLimitScope::Owner,
+                occupied_items: 1,
+                occupied_bytes: 4,
+                limit_items: 2,
+                limit_bytes: 6,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            broker.claim(OwnerId(2), ByteCreditStage::SpillAndSink, 5),
+            Err(CreditError::SpillRequired(CreditPressure {
+                scope: CreditLimitScope::Stage,
+                stage: ByteCreditStage::SpillAndSink,
+                limit_items: 1,
+                limit_bytes: 4,
+                ..
+            }))
+        ));
+        let occupancy = broker
+            .occupancy(OwnerId(1), ByteCreditStage::HttpReceive)
+            .expect("bounded occupancy");
         assert_eq!(
-            credits.release(claim, OwnerId(1)),
-            Ok(CreditAttribution {
-                claim_id: claim,
-                owner: OwnerId(1),
-                bytes: 10,
-                consumed: 4,
-            })
-        );
-        assert!(
-            credits
-                .advance(DurabilityPosition {
-                    received_bytes: 4,
-                    validated_bytes: 4,
-                    durable_bytes: 4,
-                })
-                .is_ok()
+            occupancy,
+            ByteCreditOccupancy {
+                global_items: 1,
+                global_bytes: 4,
+                owner_items: 1,
+                owner_bytes: 4,
+                stage_items: 1,
+                stage_bytes: 4,
+            }
         );
         assert!(matches!(
-            credits.advance(DurabilityPosition {
-                received_bytes: 5,
-                validated_bytes: 4,
-                durable_bytes: 4,
-            }),
-            Err(CreditError::ReceivedBytesRequireClaim)
+            http.attempt_required_loss(ByteCreditComponent::Single, 1),
+            Err(CreditError::RequiredLossRejected {
+                stage: ByteCreditStage::HttpReceive,
+                bytes: 1,
+                ..
+            })
         ));
-        assert!(credits.verify().is_ok());
+        assert_eq!(broker.global_occupancy(), Ok((1, 4)));
+        drop(http);
+        assert_eq!(broker.global_occupancy(), Ok((0, 0)));
+        assert!(broker.verify().is_ok());
     }
 
     #[test]
     fn receive_requires_exact_claim_owner_and_records_attribution() {
-        let mut credits = ByteCreditLedger::new(10, 2);
-        let first = credits.claim(OwnerId(1), 5).expect("first claim");
-        let second = credits.claim(OwnerId(2), 5).expect("second claim");
-        let before = credits.clone();
-        assert!(matches!(
-            credits.receive(first, OwnerId(2), 3),
-            Err(CreditError::ClaimOwnerMismatch)
-        ));
-        assert_eq!(credits, before, "wrong-owner receive must be atomic");
-        assert!(credits.receive(second, OwnerId(2), 3).is_ok());
+        let broker = OwnedByteCreditBroker::from_contract(&ByteCreditContractV1::new(10, 2))
+            .expect("valid byte-credit contract");
+        let first = broker
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 5)
+            .expect("first owned claim");
+        let mut second = broker
+            .claim(OwnerId(2), ByteCreditStage::HttpReceive, 5)
+            .expect("second owned claim");
+
+        second
+            .consume(ByteCreditComponent::Single, 3)
+            .expect("receive is attributed through the exact owned claim");
+        let first_attribution = first.attribution().expect("first attribution");
+        assert_eq!(first_attribution.components.len(), 1);
         assert_eq!(
-            credits.attribution(first),
-            Ok(CreditAttribution {
-                claim_id: first,
+            first_attribution.components[0],
+            CreditComponentAttribution {
+                component: ByteCreditComponent::Single,
                 owner: OwnerId(1),
+                stage: ByteCreditStage::HttpReceive,
                 bytes: 5,
                 consumed: 0,
-            })
+            }
         );
+        let consumed_attribution = second.attribution().expect("second attribution");
+        assert_eq!(consumed_attribution.components.len(), 1);
         assert_eq!(
-            credits.attribution(second),
-            Ok(CreditAttribution {
-                claim_id: second,
+            consumed_attribution.components[0],
+            CreditComponentAttribution {
+                component: ByteCreditComponent::Single,
                 owner: OwnerId(2),
+                stage: ByteCreditStage::HttpReceive,
                 bytes: 5,
+                consumed: 3,
+            }
+        );
+
+        assert_eq!(
+            second.transfer_component(ByteCreditComponent::Single, OwnerId(1)),
+            Err(CreditError::ConsumedComponentCannotTransfer {
+                component: ByteCreditComponent::Single,
                 consumed: 3,
             })
         );
-        assert!(credits.verify().is_ok());
+        assert_eq!(
+            second.attribution(),
+            Ok(consumed_attribution),
+            "rejected owner transfer must not rewrite receive attribution"
+        );
+        assert!(broker.verify().is_ok());
     }
 
     #[test]
-    fn consumed_claim_transfer_is_rejected_without_rewriting_attribution() {
-        let mut credits = ByteCreditLedger::new(10, 1);
-        let claim = credits.claim(OwnerId(1), 10).expect("claim must fit");
-        assert!(credits.receive(claim, OwnerId(1), 4).is_ok());
-        let before = credits.clone();
+    // WP009-REG-COUPLED-TRANSFER-001
+    fn coupled_components_keep_stage_identity_and_transfer_only_unconsumed_output() {
+        let contract = ByteCreditContractV1::new(10, 2);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid contract");
+        let mut lease = broker
+            .claim_coupled(
+                OwnerId(1),
+                CoupledByteReservation {
+                    input_stage: ByteCreditStage::DecryptOrPackInput,
+                    input_bytes: 4,
+                    output_stage: ByteCreditStage::DecryptOrPackOutput,
+                    output_bytes: 6,
+                },
+            )
+            .expect("coupled exact-capacity claim");
+        lease
+            .consume(ByteCreditComponent::Input, 4)
+            .expect("consume credited input");
+        lease
+            .transfer_component(ByteCreditComponent::Output, OwnerId(2))
+            .expect("unconsumed output transfer");
         assert_eq!(
-            credits.transfer(claim, OwnerId(1), OwnerId(2)),
-            Err(CreditError::ConsumedClaimCannotTransfer { consumed: 4 })
-        );
-        assert_eq!(credits, before, "rejected transfer must be atomic");
-        assert_eq!(
-            credits.attribution(claim),
-            Ok(CreditAttribution {
-                claim_id: claim,
-                owner: OwnerId(1),
-                bytes: 10,
+            lease.transfer_component(ByteCreditComponent::Input, OwnerId(2)),
+            Err(CreditError::ConsumedComponentCannotTransfer {
+                component: ByteCreditComponent::Input,
                 consumed: 4,
             })
         );
-        assert!(credits.verify().is_ok());
+        let attribution = lease.attribution().expect("linked attribution");
+        assert_eq!(attribution.components.len(), 2);
+        assert_eq!(
+            attribution.components[0],
+            CreditComponentAttribution {
+                component: ByteCreditComponent::Input,
+                owner: OwnerId(1),
+                stage: ByteCreditStage::DecryptOrPackInput,
+                bytes: 4,
+                consumed: 4,
+            }
+        );
+        assert_eq!(
+            attribution.components[1],
+            CreditComponentAttribution {
+                component: ByteCreditComponent::Output,
+                owner: OwnerId(2),
+                stage: ByteCreditStage::DecryptOrPackOutput,
+                bytes: 6,
+                consumed: 0,
+            }
+        );
+        assert!(broker.verify().is_ok());
+    }
+
+    #[test]
+    // WP009-REG-DURABLE-EFFECT-ACK-001
+    fn durability_requires_consumed_bytes_and_exact_broker_effect_acknowledgement() {
+        let contract = ByteCreditContractV1::new(8, 2);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid contract");
+        let other = OwnedByteCreditBroker::from_contract(&contract).expect("valid contract");
+        let unrelated = OwnedByteCreditBroker::from_contract(&contract).expect("valid contract");
+        let mut unrelated_lease = unrelated
+            .claim(OwnerId(9), ByteCreditStage::Decompression, 8)
+            .expect("unrelated-stage credit claim");
+        unrelated_lease
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("unrelated-stage consumption");
+        drop(unrelated_lease);
+        assert!(matches!(
+            unrelated.acknowledge_durability_effects(ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 0,
+                durable_contiguous: 0,
+            }),
+            Err(CreditError::ReceivedAheadOfConsumed)
+        ));
+
+        let mut receive_lease = broker
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 8)
+            .expect("receive-stage credit claim");
+        receive_lease
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("receive-stage effect consumption");
+        drop(receive_lease);
+        let mut writer_lease = broker
+            .claim(OwnerId(1), ByteCreditStage::Writer, 8)
+            .expect("writer-stage credit claim");
+        writer_lease
+            .consume(ByteCreditComponent::Single, 8)
+            .expect("writer-stage effect consumption");
+        drop(writer_lease);
+        assert_eq!(broker.global_occupancy(), Ok((0, 0)));
+
+        let next = ByteCreditPosition {
+            received: 8,
+            validated_written_contiguous: 7,
+            durable_contiguous: 6,
+        };
+        let wrong_broker_token = broker
+            .acknowledge_durability_effects(next)
+            .expect("core effect acknowledgement");
+        assert_eq!(
+            other.advance(wrong_broker_token),
+            Err(CreditError::AcknowledgementBrokerMismatch)
+        );
+        let token = broker
+            .acknowledge_durability_effects(next)
+            .expect("core effect acknowledgement");
+        assert!(broker.advance(token).is_ok());
+        assert_eq!(broker.position(), next);
+        assert!(matches!(
+            broker.acknowledge_durability_effects(ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 6,
+                durable_contiguous: 6,
+            }),
+            Err(CreditError::PositionRegressed)
+        ));
+        assert!(matches!(
+            broker.acknowledge_durability_effects(ByteCreditPosition {
+                received: 9,
+                validated_written_contiguous: 7,
+                durable_contiguous: 6,
+            }),
+            Err(CreditError::ReceivedAheadOfConsumed)
+        ));
+        assert!(matches!(
+            broker.acknowledge_durability_effects(ByteCreditPosition {
+                received: 8,
+                validated_written_contiguous: 9,
+                durable_contiguous: 6,
+            }),
+            Err(CreditError::WrittenAheadOfConsumed)
+        ));
+        assert!(broker.verify().is_ok());
     }
 
     #[test]
@@ -1049,11 +2043,17 @@ mod tests {
         ));
         assert_eq!(ledger.waiter_occupancy(), (1, 0));
 
-        let mut credits = ByteCreditLedger::new(u64::MAX, 1);
-        assert!(credits.claim(OwnerId(1), 1).is_ok());
+        let credits = OwnedByteCreditBroker::from_contract(&ByteCreditContractV1::new(2, 1))
+            .expect("valid contract");
+        let _lease = credits
+            .claim(OwnerId(1), ByteCreditStage::HttpReceive, 1)
+            .expect("first claim");
         assert!(matches!(
-            credits.claim(OwnerId(2), 1),
-            Err(CreditError::ClaimItemLimit)
+            credits.claim(OwnerId(2), ByteCreditStage::Decompression, 1),
+            Err(CreditError::Backpressured(CreditPressure {
+                scope: CreditLimitScope::Global,
+                ..
+            }))
         ));
     }
 
@@ -1163,5 +2163,156 @@ mod tests {
         ));
         assert_eq!(ledger.waiter_occupancy(), (0, 0));
         assert!(ledger.verify().is_ok());
+    }
+
+    #[test]
+    fn versioned_contract_builds_exact_declared_owner_ceiling() -> Result<(), String> {
+        let contract = ResourceContractV1::new(vector(10, 1, 0), 3, 1, 3, 30);
+        let mut ledger = ResourceLedger::from_contract(&contract)
+            .map_err(|error| format!("contract rejected: {error:?}"))?;
+        assert!(matches!(
+            ledger.request(OwnerId(1), vector(1, 0, 0)),
+            Ok(Admission::Granted(_))
+        ));
+        assert!(matches!(
+            ledger.request(OwnerId(1), vector(1, 0, 0)),
+            Ok(Admission::Queued(_))
+        ));
+        assert_eq!(ledger.waiter_occupancy(), (1, 1));
+        assert!(ledger.verify().is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn owned_resource_lease_releases_on_normal_error_and_panic_paths() -> Result<(), String> {
+        let contract = ResourceContractV1::new(vector(10, 1, 0), 2, 1, 2, 20);
+        let broker = OwnedResourceBroker::from_contract(&contract)
+            .map_err(|error| format!("broker construction failed: {error:?}"))?;
+
+        {
+            let admission = broker.request(OwnerId(1), vector(4, 0, 0));
+            assert!(matches!(admission, Ok(OwnedAdmission::Granted(_))));
+            assert_eq!(broker.in_use(), vector(4, 0, 0));
+            assert_eq!(broker.active_grant_count(), 1);
+        }
+        assert_eq!(broker.in_use(), ResourceVector::default());
+        assert_eq!(broker.active_grant_count(), 0);
+
+        let error_path = || -> Result<(), LedgerError> {
+            let admission = broker.request(OwnerId(2), vector(5, 0, 0))?;
+            let OwnedAdmission::Granted(_lease) = admission else {
+                return Err(LedgerError::InvariantViolation);
+            };
+            Err(LedgerError::RequestExceedsCapacity)
+        };
+        assert_eq!(error_path(), Err(LedgerError::RequestExceedsCapacity));
+        assert_eq!(broker.in_use(), ResourceVector::default());
+
+        let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let admission = broker
+                .request(OwnerId(3), vector(6, 0, 0))
+                .expect("panic-path grant");
+            let OwnedAdmission::Granted(_lease) = admission else {
+                panic!("panic-path request unexpectedly queued");
+            };
+            panic!("injected unwind");
+        }));
+        assert!(panic_result.is_err());
+        assert_eq!(broker.in_use(), ResourceVector::default());
+        assert!(broker.verify().is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn owned_waiter_drop_cancels_exact_head_and_dispatches_next_fifo_owner() -> Result<(), String> {
+        let contract = ResourceContractV1::new(vector(10, 0, 0), 2, 1, 3, 30);
+        let broker = OwnedResourceBroker::from_contract(&contract)
+            .map_err(|error| format!("broker construction failed: {error:?}"))?;
+        let active = match broker.request(OwnerId(1), vector(5, 0, 0)) {
+            Ok(OwnedAdmission::Granted(lease)) => lease,
+            other => return Err(format!("initial request not granted: {other:?}")),
+        };
+        let blocked_same_owner = match broker.request(OwnerId(1), vector(5, 0, 0)) {
+            Ok(OwnedAdmission::Queued(waiter)) => waiter,
+            other => return Err(format!("owner ceiling request not queued: {other:?}")),
+        };
+        let mut next_owner = match broker.request(OwnerId(2), vector(5, 0, 0)) {
+            Ok(OwnedAdmission::Queued(waiter)) => waiter,
+            other => return Err(format!("FIFO follower not queued: {other:?}")),
+        };
+        let next_id = next_owner.id();
+
+        drop(blocked_same_owner);
+        assert_eq!(broker.ready_waiter_ids(), vec![next_id]);
+        let next_lease = next_owner
+            .try_acquire()
+            .map_err(|error| format!("ready acquisition failed: {error:?}"))?
+            .ok_or_else(|| "ready waiter had no grant".to_owned())?;
+        assert_eq!(next_lease.owner(), OwnerId(2));
+        assert_eq!(broker.waiter_occupancy(), (0, 0));
+
+        drop(active);
+        drop(next_lease);
+        assert_eq!(broker.in_use(), ResourceVector::default());
+        assert!(broker.verify().is_ok());
+        Ok(())
+    }
+
+    #[test]
+    // WP009-REG-CREDIT-OWNED-GATE-001
+    fn owned_credit_failure_cancel_drop_and_unwind_paths_release_exactly_once() {
+        let contract = ByteCreditContractV1::new(10, 2);
+        let broker = OwnedByteCreditBroker::from_contract(&contract).expect("valid contract");
+        assert!(matches!(
+            broker.claim_coupled(
+                OwnerId(1),
+                CoupledByteReservation {
+                    input_stage: ByteCreditStage::DecryptOrPackInput,
+                    input_bytes: u64::MAX,
+                    output_stage: ByteCreditStage::DecryptOrPackOutput,
+                    output_bytes: 1,
+                },
+            ),
+            Err(CreditError::ArithmeticOverflow)
+        ));
+        assert_eq!(broker.global_occupancy(), Ok((0, 0)));
+
+        {
+            let lease = broker
+                .claim_coupled(
+                    OwnerId(1),
+                    CoupledByteReservation {
+                        input_stage: ByteCreditStage::DecryptOrPackInput,
+                        input_bytes: 4,
+                        output_stage: ByteCreditStage::DecryptOrPackOutput,
+                        output_bytes: 6,
+                    },
+                )
+                .expect("coupled exact-capacity claim");
+            assert_eq!(
+                lease.attribution().expect("attribution").components.len(),
+                2
+            );
+            assert_eq!(broker.global_occupancy(), Ok((2, 10)));
+        }
+        assert_eq!(broker.global_occupancy(), Ok((0, 0)));
+
+        let cancelled = broker
+            .claim(OwnerId(2), ByteCreditStage::Writer, 3)
+            .expect("cancel-path claim")
+            .cancel()
+            .expect("cancel releases");
+        assert_eq!(cancelled.components[0].bytes, 3);
+        assert_eq!(broker.global_occupancy(), Ok((0, 0)));
+
+        let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _lease = broker
+                .claim(OwnerId(3), ByteCreditStage::Journal, 5)
+                .expect("panic-path claim");
+            panic!("injected unwind");
+        }));
+        assert!(panic_result.is_err());
+        assert_eq!(broker.global_occupancy(), Ok((0, 0)));
+        assert!(broker.verify().is_ok());
     }
 }

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Produce archive-store selection and failure evidence",
     "created_at_utc": "2026-07-18T21:13:04Z",
-    "updated_at_utc": "2026-07-18T21:13:04Z"
+    "updated_at_utc": "2026-08-02T13:27:34Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -58,16 +58,16 @@
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "STUB",
+    "status": "SUPERSEDED",
     "risk": "HIGH",
     "blockers": [
       "WP-FF-003 executable gate bootstrap must be VALIDATED before this compiled spike starts.",
       "The exact pure-Rust candidate set and current source-level research are not yet recorded.",
       "Archive identity and commit/archive contracts from WP-FF-005 and WP-FF-009 must be stable enough to define equal workloads and failure oracles."
     ],
-    "next_action": "After prerequisite packets are proven, refresh current archive-store research, select maintained pure-Rust candidates without authorizing SQLite, promote this STUB to READY_FOR_DEV, and execute the crash/concurrency/migration/performance evidence matrix.",
+    "next_action": "Superseded by WP-FF-008-archive-store-evidence-v2, which preserves this scope and corrects the accepted WP-009 dependency lineage before implementation.",
     "supersedes": [],
-    "superseded_by": null
+    "superseded_by": "WP-FF-008-archive-store-evidence-v2"
   },
   "scope": {
     "summary": "Resolve the archive-backend readiness gate with a bounded Rust-first spike that measures a maintained pure-Rust store against the complete archive contract and records an evidence matrix; SQLite remains unapproved unless the Operator later accepts a narrow dependency exception based on the same evidence.",

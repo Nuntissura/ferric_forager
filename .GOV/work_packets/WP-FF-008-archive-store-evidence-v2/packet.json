@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Produce archive-store selection and failure evidence with corrected durability lineage",
     "created_at_utc": "2026-08-02T13:27:34Z",
-    "updated_at_utc": "2026-08-02T21:37:43Z"
+    "updated_at_utc": "2026-08-02T22:16:32Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -179,12 +179,13 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-02T21:37:43Z",
+      "recorded_at_utc": "2026-08-02T22:16:32Z",
       "branch": "codex/archive-store-evidence",
       "base_sha": "7cb53af59268b7838d2b640f32f10b8168ff2acd",
-      "head_sha": "b033ac58c620f991beeb032eaa3cb41c667ce815",
+      "head_sha": "1af1ef3e9b593bc6e1652b62e329e5add4e8dc82",
       "dirty_paths": [
-        ".GOV/work_packets/WP-FF-008-archive-store-evidence-v2/packet.json"
+        ".GOV/work_packets/WP-FF-008-archive-store-evidence-v2/packet.json",
+        "build/crates/fforager-testkit/src/lib.rs"
       ],
       "checks_run": [
         "powershell -NoProfile -File build/scripts/clean-artifacts.ps1: PASS FF-GATE-ARTIFACT-HYGIENE-001; items=0 before task selection",
@@ -201,7 +202,9 @@
         "Prerequisite-ceiling report: build/reports/runtime-truth-check-1785704804038891900-21400.json; 3 checks, 0 failed",
         "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785706094496663900-67912.json; 58 checks, 0 failed; source 37a8b0e0eada8df77687d454b84085ffeb03249c plus packet-only dirty evidence",
         "Commit b033ac58c620f991beeb032eaa3cb41c667ce815 records the settled adversarial finding mappings and packet evidence; its hook returned PASS FF-GATE-SECRET-001 with findings=0",
-        "The first committed-source FF-GATE-PR-001 attempt rejected a stale applicable_rule_ids inventory before any downstream checks; the packet now includes the exact current REQUIRED architecture-rule set plus directly applicable invariant rules"
+        "The first committed-source FF-GATE-PR-001 attempt rejected a stale applicable_rule_ids inventory before any downstream checks; the packet now includes the exact current REQUIRED architecture-rule set plus directly applicable invariant rules",
+        "Two later committed-source FF-GATE-PR-001 attempts cleared governance and xtask 115/115 but reproduced the same WP009-E-PLATFORM-PROBE-TIMEOUT on wsl.exe --exec cat /etc/os-release after 30 seconds under heavy host load",
+        "After raising only that read-only probe bound to 120 seconds, cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-testkit --lib tests::resource_durability_model_corpus_executes_public_boundaries -- --exact --nocapture: PASS 1/1 in 52.55 seconds"
       ],
       "blockers": [],
       "next_action": "Commit the settled implementation and adversarial evidence, then run the PR gate and exact committed-source secret scan before MERGE_PENDING."
@@ -276,7 +279,8 @@
         "Replaced migration check-then-act behavior with write exclusion before activation, atomic revalidation during activation, phase-specific checkpoints, and irreversible post-activation version state.",
         "Persisted reconciliation application receipts so retries converge idempotently, retain lease generation and token lineage, reject backward clocks, and never steal a fresh lease.",
         "Replaced self-declared report outcomes with structured SHA-256 action and negative receipts, current source fingerprints, real close/reopen cases, deterministic barrier concurrency, and independently reparsed reports.",
-        "Separated measured endpoint RSS from peak-memory claims and made the one-million B-021 workload an explicit opt-in BLOCKED row when the stress budget is absent."
+        "Separated measured endpoint RSS from peak-memory claims and made the one-million B-021 workload an explicit opt-in BLOCKED row when the stress budget is absent.",
+        "Raised the existing read-only WP-009 WSL identity-probe bound from 30 to 120 seconds after two committed-source PR runs reproduced timeouts under heavy host load; the exact proof then succeeded in 52.55 seconds and the probe remains bounded to its own child process."
       ],
       "post_simplification_verdict": "PASS: independent public-boundary regressions, the canonical workspace suite, strict Clippy, formatting, runtime truth, and deep verification were independently verified on the settled implementation.",
       "complete_post_change_verification": ["cargo fmt --manifest-path build/Cargo.toml --all -- --check", "cargo clippy --manifest-path build/Cargo.toml --locked --workspace --all-targets --all-features -- -D warnings", "cargo test --manifest-path build/Cargo.toml --locked --workspace --all-features --no-fail-fast", "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check", "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- runtime-truth-check --evidence-from-taskboard", "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-deep --evidence-from-taskboard", "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- verify-pr --evidence-from-taskboard", "secret scan, closure commit, merge to main, containment proof, artifact cleanup and empty verification"],

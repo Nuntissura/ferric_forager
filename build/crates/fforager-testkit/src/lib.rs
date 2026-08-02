@@ -513,7 +513,7 @@ fn command_record(program: &str, args: &[String]) -> Value {
 
 #[cfg(windows)]
 fn run_wp009_probe(program: &str, args: &[String]) -> Result<String, ModelProofError> {
-    const TIMEOUT: Duration = Duration::from_secs(30);
+    const TIMEOUT: Duration = Duration::from_mins(2);
     let mut command = Command::new(program);
     command
         .args(args)

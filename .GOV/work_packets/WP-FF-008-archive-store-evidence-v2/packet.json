@@ -8,7 +8,7 @@
     "version": "2",
     "title": "Produce archive-store selection and failure evidence with corrected durability lineage",
     "created_at_utc": "2026-08-02T13:27:34Z",
-    "updated_at_utc": "2026-08-02T22:16:32Z"
+    "updated_at_utc": "2026-08-02T23:02:58Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -43,18 +43,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/archive-store-evidence",
-      "head_sha": null,
-      "verified_at_utc": null
+      "head_sha": "92505bd29112c989bb4fbecf5eb58af96ec458e3",
+      "verified_at_utc": "2026-08-02T23:02:58Z"
     },
-    "closure_commit": null,
-    "main_containment_status": "NOT_STARTED",
+    "closure_commit": "92505bd29112c989bb4fbecf5eb58af96ec458e3",
+    "main_containment_status": "PENDING_MERGE",
     "merged_main_commit": null
   },
   "lifecycle": {
-    "status": "IN_PROGRESS",
+    "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit the settled implementation and adversarial evidence, then run the PR gate and exact committed-source secret scan before MERGE_PENDING.",
+    "next_action": "Commit and push the MERGE_PENDING evidence state, merge it to canonical main, prove closure containment, update VALIDATED state, and clean all repository artifacts.",
     "supersedes": ["WP-FF-008-archive-store-evidence-v1"],
     "superseded_by": null
   },
@@ -142,7 +142,7 @@
       "proof_class": "executed_candidate_evidence_report",
       "status": "PASS",
       "evidence": [
-        "build/reports/wp-ff-008-archive-store-evidence-67912-1785705676955951400.json has SHA-256 2763f661c0d66a3137cb9009f524543fb485d33984f16d8afd0f111bf15f03dc, manifest fingerprint sha256:a94fae7f90f6575037e073af1bbe327e38f6b9a2f5547172985d4f69e4a97331, five current source fingerprints, and 24 unique rows.",
+        "build/reports/wp-ff-008-archive-store-evidence-70288-1785711038123498700.json has SHA-256 b14efb7927f765d689adebc2c5393f8b14606b036dca8ff93474396404b3727c, manifest fingerprint sha256:a94fae7f90f6575037e073af1bbe327e38f6b9a2f5547172985d4f69e4a97331, five current source fingerprints, and 24 unique rows.",
         "The report records 23 semantic PASS rows, zero failed rows, and one honest B-021 BLOCKED row because FFORAGER_RUN_B021 was not enabled; it records endpoint RSS rather than peak RSS and labels the generator memory figure as a derived bound."
       ]
     },
@@ -160,10 +160,10 @@
       "id": "WP-FF-008-archive-store-evidence-v2-AC-006",
       "requirement": "FF-GATE-ARCH-001, FF-GATE-RUNTIME-001 prerequisite ceiling, FF-GATE-DEEP-001, FF-GATE-PR-001, secret scan, and independent adversarial reviews pass on the same committed source and evidence manifest.",
       "proof_class": "aggregate_validation_and_independent_adversarial_review",
-      "status": "PENDING",
+      "status": "PASS",
       "evidence": [
-        "Prerequisite-ceiling report build/reports/runtime-truth-check-1785704804038891900-21400.json records 3 checks and zero failures; deep report build/reports/verify-deep-1785706094496663900-67912.json records 58 checks and zero failures.",
-        "FF-GATE-PR-001, the exact committed-source secret scan, and main containment remain outstanding closure proofs; this row stays PENDING until those surfaces pass."
+        "Clean commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 produced architecture report build/reports/architecture-check-1785711755989965800-77200.json with 7 checks, prerequisite-ceiling report build/reports/runtime-truth-check-1785711767588503500-62888.json with 3 checks, deep report build/reports/verify-deep-1785710052962996500-47276.json with 58 checks, and PR report build/reports/verify-pr-1785711440271499700-70288.json with 68 checks; all record zero failures and dirty=false.",
+        "Independent contract, durability, and proof/report reviewers attacked different blocks, every confirmed finding is REMEDIATED with canonical executable proof, and commit plus push hooks returned FF-GATE-SECRET-001 findings=0."
       ]
     },
     {
@@ -179,13 +179,12 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-02T22:16:32Z",
+      "recorded_at_utc": "2026-08-02T23:02:58Z",
       "branch": "codex/archive-store-evidence",
       "base_sha": "7cb53af59268b7838d2b640f32f10b8168ff2acd",
-      "head_sha": "1af1ef3e9b593bc6e1652b62e329e5add4e8dc82",
+      "head_sha": "92505bd29112c989bb4fbecf5eb58af96ec458e3",
       "dirty_paths": [
-        ".GOV/work_packets/WP-FF-008-archive-store-evidence-v2/packet.json",
-        "build/crates/fforager-testkit/src/lib.rs"
+        ".GOV/work_packets/WP-FF-008-archive-store-evidence-v2/packet.json"
       ],
       "checks_run": [
         "powershell -NoProfile -File build/scripts/clean-artifacts.ps1: PASS FF-GATE-ARTIFACT-HYGIENE-001; items=0 before task selection",
@@ -204,10 +203,16 @@
         "Commit b033ac58c620f991beeb032eaa3cb41c667ce815 records the settled adversarial finding mappings and packet evidence; its hook returned PASS FF-GATE-SECRET-001 with findings=0",
         "The first committed-source FF-GATE-PR-001 attempt rejected a stale applicable_rule_ids inventory before any downstream checks; the packet now includes the exact current REQUIRED architecture-rule set plus directly applicable invariant rules",
         "Two later committed-source FF-GATE-PR-001 attempts cleared governance and xtask 115/115 but reproduced the same WP009-E-PLATFORM-PROBE-TIMEOUT on wsl.exe --exec cat /etc/os-release after 30 seconds under heavy host load",
-        "After raising only that read-only probe bound to 120 seconds, cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-testkit --lib tests::resource_durability_model_corpus_executes_public_boundaries -- --exact --nocapture: PASS 1/1 in 52.55 seconds"
+        "After raising only that read-only probe bound to 120 seconds, cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-testkit --lib tests::resource_durability_model_corpus_executes_public_boundaries -- --exact --nocapture: PASS 1/1 in 52.55 seconds",
+        "Clean closure commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 generated archive report build/reports/wp-ff-008-archive-store-evidence-70288-1785711038123498700.json; 24 cases, 23 semantic PASS, 1 explicit B-021 BLOCKED, 0 failed",
+        "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785711755989965800-77200.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 7 checks, 0 failed",
+        "Prerequisite-ceiling report: build/reports/runtime-truth-check-1785711767588503500-62888.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 3 checks, 0 failed",
+        "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785710052962996500-47276.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 58 checks, 0 failed",
+        "PASS FF-GATE-PR-001: build/reports/verify-pr-1785711440271499700-70288.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false, 68 checks, 0 failed",
+        "git push origin codex/archive-store-evidence backed up closure commit 92505bd29112c989bb4fbecf5eb58af96ec458e3 after PASS FF-GATE-SECRET-001; findings=0"
       ],
       "blockers": [],
-      "next_action": "Commit the settled implementation and adversarial evidence, then run the PR gate and exact committed-source secret scan before MERGE_PENDING."
+      "next_action": "Commit and push the MERGE_PENDING evidence state, merge it to canonical main, prove closure containment, update VALIDATED state, and clean all repository artifacts."
     }
   },
   "validation": {
@@ -217,11 +222,13 @@
       "taskboard_index_and_focus: PASS",
       "prerequisite_containment_review: PASS",
       "research_basis: RECORDED",
-      "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785685764467905600-66176.json",
-      "Prerequisite-ceiling report: build/reports/runtime-truth-check-1785704804038891900-21400.json; 3 checks, 0 failed",
-      "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785706094496663900-67912.json; 58 checks, 0 failed",
+      "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785711755989965800-77200.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false",
+      "Prerequisite-ceiling report: build/reports/runtime-truth-check-1785711767588503500-62888.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false; 3 checks, 0 failed",
+      "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785710052962996500-47276.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false; 58 checks, 0 failed",
+      "PASS FF-GATE-PR-001: build/reports/verify-pr-1785711440271499700-70288.json; commit 92505bd29112c989bb4fbecf5eb58af96ec458e3, dirty=false; 68 checks, 0 failed",
+      "PASS FF-GATE-SECRET-001: findings=0 on closure commit and branch push",
       "PASS: independent contract, storage durability, and proof/report reviews after remediation",
-      "PENDING: FF-GATE-PR-001, exact committed-source secret scan, merge, and main containment"
+      "PENDING: merge and main containment"
     ],
     "not_proven": [
       "Physical power-loss durability on every supported filesystem",

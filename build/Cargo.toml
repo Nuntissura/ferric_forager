@@ -6,6 +6,7 @@ members = [
     "../product/crates/fforager-contracts",
     "../product/crates/fforager-diagnostics-contract",
     "../product/crates/fforager-core",
+    "../product/crates/fforager-storage",
     "crates/fforager-testkit",
 ]
 default-members = [
@@ -15,6 +16,7 @@ default-members = [
     "../product/crates/fforager-contracts",
     "../product/crates/fforager-diagnostics-contract",
     "../product/crates/fforager-core",
+    "../product/crates/fforager-storage",
     "crates/fforager-testkit",
 ]
 resolver = "3"
@@ -34,6 +36,7 @@ boa_parser = "=0.21.1"
 cargo_metadata = { version = "=0.23.1", default-features = false }
 futures-util = { version = "=0.3.33", default-features = false, features = ["async-await", "std"] }
 reqwest = { version = "=0.13.4", default-features = false, features = ["http2", "rustls-no-provider", "stream"] }
+redb = { version = "=4.1.0", default-features = false }
 rustls = { version = "=0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"

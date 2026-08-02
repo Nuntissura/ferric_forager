@@ -9528,6 +9528,7 @@ fn prepare_isolated_testkit_workspace(source_root: &Path, sandbox: &Path) -> Res
         "product/crates/fforager-contracts",
         "product/crates/fforager-diagnostics-contract",
         "product/crates/fforager-core",
+        "product/crates/fforager-storage",
     ] {
         copy_fixture_tree(&source_root.join(relative), &sandbox.join(relative))?;
     }
@@ -9537,6 +9538,7 @@ members = [
     "../product/crates/fforager-contracts",
     "../product/crates/fforager-diagnostics-contract",
     "../product/crates/fforager-core",
+    "../product/crates/fforager-storage",
 ]
 resolver = "3"
 
@@ -9549,6 +9551,7 @@ publish = false
 [workspace.dependencies]
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
+redb = { version = "=4.1.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

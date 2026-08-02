@@ -10,6 +10,7 @@ publish.workspace = true
 fforager-contracts = { version = "0.1.0", path = "../../../product/crates/fforager-contracts" }
 fforager-diagnostics-contract = { version = "0.1.0", path = "../../../product/crates/fforager-diagnostics-contract" }
 fforager-core = { version = "0.1.0", path = "../../../product/crates/fforager-core" }
+fforager-storage = { version = "0.1.0", path = "../../../product/crates/fforager-storage" }
 serde_json.workspace = true
 
 [lints]

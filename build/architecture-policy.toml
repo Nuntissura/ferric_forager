@@ -18,7 +18,7 @@ internal_edge_default = "deny"
 forbidden_layer_edges = ["engine->frontend", "engine->adapter", "engine->watcher", "adapter->adapter", "product->watcher", "watcher->engine", "normal_or_build:product->testkit"]
 forbidden_product_runtime_roots = [".GOV", "build", ".fforager-artifacts"]
 allowed_runtime_or_native_dependencies = ["FFmpeg", "ffprobe", "FF-DEC-001", "FF-DEC-002"]
-approved_transitive_build_packages = ["bindgen@0.72.1", "btls-sys@0.5.6", "camino@1.2.4", "clang-sys@1.8.1", "crc32fast@1.5.0", "crossbeam-utils@0.8.22", "getrandom@0.3.4", "getrandom@0.4.3", "httparse@1.10.1", "icu_normalizer_data@2.0.0", "icu_properties_data@2.0.1", "libc@0.2.189", "memoffset@0.9.1", "ntapi@0.4.3", "num-traits@0.2.19", "parking_lot_core@0.9.12", "paste@1.0.15", "portable-atomic@1.14.0", "proc-macro2@1.0.107", "quote@1.0.47", "ring@0.17.14", "rustls@0.23.42", "rustversion@1.0.23", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "winapi@0.3.9", "zerocopy@0.8.55", "zmij@1.0.23", "zstd-safe@7.2.4", "zstd-sys@2.0.16+zstd.1.5.7"]
+approved_transitive_build_packages = ["bindgen@0.72.1", "btls-sys@0.5.6", "camino@1.2.4", "clang-sys@1.8.1", "crc32fast@1.5.0", "crossbeam-utils@0.8.22", "getrandom@0.3.4", "getrandom@0.4.3", "httparse@1.10.1", "icu_normalizer_data@2.0.0", "icu_properties_data@2.0.1", "libc@0.2.189", "memoffset@0.9.1", "ntapi@0.4.3", "num-traits@0.2.19", "parking_lot_core@0.9.12", "paste@1.0.15", "portable-atomic@1.14.0", "proc-macro2@1.0.107", "quote@1.0.47", "redb@4.1.0", "ring@0.17.14", "rustls@0.23.42", "rustversion@1.0.23", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "winapi@0.3.9", "zerocopy@0.8.55", "zmij@1.0.23", "zstd-safe@7.2.4", "zstd-sys@2.0.16+zstd.1.5.7"]
 approved_transitive_proc_macros = ["boa_macros@0.21.1", "bytemuck_derive@1.11.0", "derive_arbitrary@1.4.2", "displaydoc@0.2.6", "dynify-macros@0.1.2", "equator-macro@0.4.2", "foreign-types-macros@0.2.4", "futures-macro@0.3.33", "num_enum_derive@0.7.6", "openssl-macros@0.1.1", "paste@1.0.15", "phf_macros@0.13.1", "pin-project-internal@1.1.13", "rustversion@1.0.23", "serde_derive@1.0.228", "thiserror-impl@2.0.19", "time-macros@0.2.32", "typed-builder-macro@0.23.2", "windows-implement@0.60.2", "windows-interface@0.59.3", "yoke-derive@0.8.2", "zerofrom-derive@0.1.7", "zerovec-derive@0.11.3"]
 
 [[members]]
@@ -130,6 +130,24 @@ unsafe_policy_ref = "FF-BUILD-050"
 exception_policy_ref = "FF-BUILD-052"
 
 [[members]]
+name = "fforager-storage"
+manifest = "product/crates/fforager-storage/Cargo.toml"
+source_root = "product/crates/fforager-storage/src"
+layer = "adapter"
+artifact_role = "shipped_archive_store_prerequisite"
+shipped = true
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = [{ package = "fforager-contracts", kinds = ["normal"], optional = false }]
+split_trigger = "WP-FF-008-archive-store-evidence-v2-AC-001"
+feature_owner = "WP-FF-008-archive-store-evidence-v2"
+profile = "phase0_prerequisite_archive_store"
+removal_condition = "Replace only through a versioned archive-store migration that reruns the complete candidate-neutral crash, concurrency, migration, reconciliation, and scale corpus."
+runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
+unsafe_policy_ref = "FF-BUILD-050"
+exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
 name = "fforager-testkit"
 manifest = "build/crates/fforager-testkit/Cargo.toml"
 source_root = "build/crates/fforager-testkit/src"
@@ -142,6 +160,7 @@ allowed_internal_dependencies = [
   { package = "fforager-contracts", kinds = ["normal"], optional = false },
   { package = "fforager-diagnostics-contract", kinds = ["normal"], optional = false },
   { package = "fforager-core", kinds = ["normal"], optional = false },
+  { package = "fforager-storage", kinds = ["normal"], optional = false },
 ]
 split_trigger = "WP-FF-005-versioned-core-contracts-v1-AC-005"
 feature_owner = "WP-FF-005-versioned-core-contracts-v1"
@@ -150,6 +169,21 @@ removal_condition = "Remove only after every framed protocol consumer has equiva
 runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
 unsafe_policy_ref = "FF-BUILD-050"
 exception_policy_ref = "FF-BUILD-052"
+
+[[dependency_decisions]]
+name = "redb"
+version = "4.1.0"
+consumer = "fforager-storage"
+runtime_class = "shipped_rust_product"
+purpose = "Execute the bounded Phase 0 archive-store candidate behind Ferric-owned identity, claim, lease, migration, and reconciliation contracts."
+native = false
+owner = "WP-FF-008-archive-store-evidence"
+allowed_consumers = ["fforager-storage"]
+reason = "Current source-level comparison selected exact-pinned redb 4.1.0 as the smallest maintained pure-Rust ACID candidate with stable format, MVCC, crash repair, and no mandatory default dependency; Ferric still requires two-phase durability and independent fault evidence."
+removal_trigger = "Remove or replace if the candidate fails any mandatory archive correctness row or a maintained pure-Rust alternative passes the same candidate-neutral corpus with materially lower risk."
+approval_id = "WP-FF-008-archive-store-evidence-v2-AC-002"
+features = []
+default_features = false
 
 [[dependency_decisions]]
 name = "cargo_metadata"

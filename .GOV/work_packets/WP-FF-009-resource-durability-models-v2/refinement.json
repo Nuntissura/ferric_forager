@@ -1,8 +1,8 @@
 {
   "schema_id": "ff.work_packet_refinement@1",
-  "file_id": "WP-FF-009-resource-durability-models-v1-REFINEMENT-001",
-  "wp_id": "WP-FF-009-resource-durability-models-v1",
-  "updated_at_utc": "2026-08-01T22:35:45Z",
+  "file_id": "WP-FF-009-resource-durability-models-v2-REFINEMENT-001",
+  "wp_id": "WP-FF-009-resource-durability-models-v2",
+  "updated_at_utc": "2026-08-02T04:45:17Z",
   "operator_request": "Start implementing WP-009; use no more than three subagents in parallel for implementation help and independent adversarial review through different lenses; harden concerns, risks, and gaps; clean Cargo/test artifacts when finished; close finished subagents; tolerate long waits on the loaded host; do not stop processes the assistant did not start; and preserve Ferric as a Rust-native yt-dlp replacement with no yt-dlp dependency.",
   "basis": {
     "research_status": "CURRENT_SOURCE_LEVEL_RESEARCH_COMPLETED_2026-08-01",
@@ -196,7 +196,10 @@
       ],
       "grant_rule": "complete checked vector or nothing",
       "ownership_rule": "one non-cloneable owned lease releases exactly once on Drop or explicit finish",
-      "queue_bounds": ["max_waiter_items", "max_waiter_declared_variable_bytes"],
+      "queue_bounds": [
+        "max_waiter_items",
+        "max_waiter_declared_variable_bytes"
+      ],
       "fairness_policy": "strict_fifo_head_reservation_v1_with_deterministic_per_owner_active_ceiling",
       "fairness_assumptions": [
         "Every active grant eventually releases, explicitly cancels, or unwinds.",
@@ -221,7 +224,11 @@
       "reservation_rule": "reserve every simultaneously live input and output byte before allocation",
       "ownership_rule": "an unconsumed claim may transfer exactly once at a time; consumed attribution cannot be rewritten",
       "loss_policy": "required bytes are lossless; lossy diagnostics require a separate declared budget and cannot consume recorder credit",
-      "durability_positions": ["received", "validated_written_contiguous", "durable_contiguous"]
+      "durability_positions": [
+        "received",
+        "validated_written_contiguous",
+        "durable_contiguous"
+      ]
     },
     "model_inventory": [
       "resource_admission",
@@ -265,7 +272,11 @@
           "final handle path, file identity, and volume verification",
           "cross-volume rejection or explicit copy-sync-rename classification"
         ],
-        "not_assumed": ["universal directory flush", "network filesystem durability", "normalization as confinement"]
+        "not_assumed": [
+          "universal directory flush",
+          "network filesystem durability",
+          "normalization as confinement"
+        ]
       },
       {
         "profile_id": "ff-fs-ubuntu-24.04-wsl2-v9fs-v1",
@@ -295,13 +306,13 @@
     ]
   },
   "acceptance_ids": [
-    "WP-FF-009-resource-durability-models-v1-AC-001",
-    "WP-FF-009-resource-durability-models-v1-AC-002",
-    "WP-FF-009-resource-durability-models-v1-AC-003",
-    "WP-FF-009-resource-durability-models-v1-AC-004",
-    "WP-FF-009-resource-durability-models-v1-AC-005",
-    "WP-FF-009-resource-durability-models-v1-AC-006",
-    "WP-FF-009-resource-durability-models-v1-AC-007"
+    "WP-FF-009-resource-durability-models-v2-AC-001",
+    "WP-FF-009-resource-durability-models-v2-AC-002",
+    "WP-FF-009-resource-durability-models-v2-AC-003",
+    "WP-FF-009-resource-durability-models-v2-AC-004",
+    "WP-FF-009-resource-durability-models-v2-AC-005",
+    "WP-FF-009-resource-durability-models-v2-AC-006",
+    "WP-FF-009-resource-durability-models-v2-AC-007"
   ],
   "red_team": {
     "risk_tier": "HIGH",

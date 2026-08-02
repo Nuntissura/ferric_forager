@@ -1,6 +1,6 @@
 schema_id: ff.taskboard@2
 file_id: FF-GOV-TASKBOARD-001
-updated_at: "2026-07-30"
+updated_at: "2026-08-02"
 authority: canonical_index
 project_id: FF-PROJ-001
 packet_root: .GOV/work_packets/
@@ -35,8 +35,8 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: WP-FF-009-resource-durability-models-v1 is active for implementation and independent adversarial proof of the Phase 0 resource, credit, durability, recovery, and filesystem-capability models; it remains an immutable zero-product-progress prerequisite until a later shipped Ferric runtime consumes and proves it.
-  active_wp_id: WP-FF-009-resource-durability-models-v1
+  statement: WP-FF-009-resource-durability-models-v2 preserves the complete implemented and adversarially reviewed Phase 0 resource, credit, durability, recovery, and filesystem-capability scope under a corrected immutable activation base; it remains a zero-product-progress prerequisite until a later shipped Ferric runtime consumes and proves it.
+  active_wp_id: WP-FF-009-resource-durability-models-v2
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1
     packet: .GOV/work_packets/WP-FF-001-governance-workflow-v1/packet.json
@@ -61,7 +61,9 @@ work_packets:
   - wp_id: WP-FF-008-archive-store-evidence-v1
     packet: .GOV/work_packets/WP-FF-008-archive-store-evidence-v1/packet.json
   - wp_id: WP-FF-009-resource-durability-models-v1
-    packet: .GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json
+    packet: .GOV/archive/work_packets/WP-FF-009-resource-durability-models/WP-FF-009-resource-durability-models-v1/packet.json
+  - wp_id: WP-FF-009-resource-durability-models-v2
+    packet: .GOV/work_packets/WP-FF-009-resource-durability-models-v2/packet.json
   - wp_id: WP-FF-010-ffmpeg-supervision-spike-v1
     packet: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json
   - wp_id: WP-FF-011-equivalent-work-vertical-slice-v1

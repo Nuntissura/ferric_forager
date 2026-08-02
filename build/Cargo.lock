@@ -654,7 +654,9 @@ dependencies = [
  "fforager-core",
  "fforager-diagnostics-contract",
  "fforager-storage",
+ "redb",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -27,12 +27,49 @@ const TRANSPORT_SEMANTIC_PROJECTION_SHA256: &str =
     "35bfe562e409375b3a0811456e2eb7820485dc2c71427b891767c90c2af8bfbc";
 const FAILURE_PROOF_CLASS: &str = "structural";
 static COMMAND_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static WP008_INVOCATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static WP009_INVOCATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_TEST: &str =
     "tests::public_boundary_counterexamples_reject_audit_failures";
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_PROOF_ID: &str =
     "testkit::tests::public_boundary_counterexamples_reject_audit_failures";
 const PUBLIC_BOUNDARY_COUNTEREXAMPLE_RECEIPT: &str = "FF-PUBLIC-COUNTEREXAMPLE-RECEIPT:v5:source-graph-cycle,filesystem-effect-correlation,ffmpeg-terminal-release,ffmpeg-partial-unsuccessful-outcomes,schema-authority,sequence-zero,unknown-envelope-field,nested-wire-unknown-fields,durable-journal-payload-unknown-field,durable-journal-record-unknown-field,durable-reconcile-state-unknown-field,durable-journal-sequence-zero,acknowledged-effect-prefixes";
+const WP008_MANIFEST_PATH: &str = "build/fixtures/archive-store-evidence/manifest.json";
+const WP008_PROOF_TEST: &str = "tests::archive_store_evidence_corpus_executes_public_boundary";
+const WP008_REPORT_PREFIX: &str = "FF-WP008-ARCHIVE-REPORT:";
+const WP008_SOURCE_PATHS: &[&str] = &[
+    "product/crates/fforager-contracts/src/archive.rs",
+    "product/crates/fforager-storage/src/lib.rs",
+    "build/crates/fforager-testkit/src/archive_evidence.rs",
+    "build/crates/fforager-testkit/src/lib.rs",
+    "build/tools/fforager-xtask/src/main.rs",
+];
+const WP008_CASE_IDS: &[&str] = &[
+    "wp008-identity-item",
+    "wp008-identity-representation",
+    "wp008-identity-track",
+    "wp008-identity-asset",
+    "wp008-identity-derived",
+    "wp008-duplicate-suppression",
+    "wp008-concurrent-claim",
+    "wp008-lease-renewal",
+    "wp008-lease-takeover",
+    "wp008-crash-before-archive",
+    "wp008-crash-after-archive",
+    "wp008-reconciliation-idempotent",
+    "wp008-corrupt-store",
+    "wp008-torn-store",
+    "wp008-schema-create",
+    "wp008-schema-forward",
+    "wp008-schema-interrupted",
+    "wp008-schema-unknown",
+    "wp008-import-mapped",
+    "wp008-import-unknown",
+    "wp008-retry-idempotent",
+    "wp008-rollback-last-known-good",
+    "wp008-scale-representative",
+    "wp008-scale-b021",
+];
 const WP009_MANIFEST_PATH: &str = "build/fixtures/resource-durability-models/manifest.json";
 const WP009_PROOF_TEST: &str = "tests::resource_durability_model_corpus_executes_public_boundaries";
 const WP009_REPORT_PREFIX: &str = "FF-WP009-MODEL-REPORT:";
@@ -567,6 +604,25 @@ struct Wp009ExecutionReceipt {
     executed_cases: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Wp008ExecutionReceipt {
+    invocation_id: String,
+    report_path: String,
+    report_sha256: String,
+    manifest_sha256: String,
+    source_content_fingerprint: String,
+    executed_cases: u64,
+    blocked_cases: u64,
+}
+
+#[derive(Debug)]
+struct Wp008Invocation {
+    id: String,
+    started_at: SystemTime,
+    manifest_sha256: String,
+    source_content_fingerprint: String,
+}
+
 #[derive(Debug)]
 struct Wp009Invocation {
     id: String,
@@ -610,6 +666,7 @@ fn run() -> Result<(), String> {
             compatibility::run_live_canaries(&root, &args, rest)
         }
         [command] if command == "transport-corpus" => run_transport_corpus(&root),
+        [command] if command == "archive-store-evidence" => run_archive_store_evidence(&root),
         [command] if command == "resource-durability-models" => {
             run_resource_durability_models(&root)
         }
@@ -630,7 +687,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|secret-scan <--install-hooks|--verify-hooks|--staged|--history|--pre-push REMOTE>|transport-corpus|resource-durability-models|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|secret-scan <--install-hooks|--verify-hooks|--staged|--history|--pre-push REMOTE>|transport-corpus|archive-store-evidence|resource-durability-models|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -859,13 +916,17 @@ fn run_verify_deep(root: &Path, gate_args: &[String]) -> Result<(), String> {
 fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String> {
     let mut checks = Vec::new();
     let mut transport_report = String::new();
+    let archive_store_invocation = begin_wp008_invocation(root)?;
     let resource_durability_invocation = begin_wp009_invocation(root)?;
-    let (architecture, resource_durability_receipt) = run_verify_deep_checks(
-        root,
-        &mut checks,
-        &mut transport_report,
-        &resource_durability_invocation,
-    )?;
+    let (architecture, archive_store_receipt, resource_durability_receipt) =
+        run_verify_deep_checks(
+            root,
+            &mut checks,
+            &mut transport_report,
+            &archive_store_invocation,
+            &resource_durability_invocation,
+        )?;
+    validate_wp008_execution_receipt(root, &archive_store_receipt, &archive_store_invocation)?;
     validate_wp009_execution_receipt(
         root,
         &resource_durability_receipt,
@@ -900,13 +961,15 @@ fn run_verify_deep_inner(root: &Path, gate_args: &[String]) -> Result<(), String
         executed_proof_classes,
         proof_limitations: vec![
             "This is Phase 0 prerequisite proof and claims no product capability, runtime completion, packaging, release, or phase progress.".to_owned(),
-            "Concrete network, storage, FFmpeg, JavaScript, plugin, scheduler, watcher, and archive adapters remain future consumers of these contracts and models.".to_owned(),
+            "No production network, FFmpeg, JavaScript, plugin, scheduler, watcher, or shipped archive consumer was executed.".to_owned(),
         ],
         artifacts: vec![
             "build/fixtures/contracts/inventory.json".to_owned(),
+            WP008_MANIFEST_PATH.to_owned(),
             WP009_MANIFEST_PATH.to_owned(),
             "build/reports".to_owned(),
             transport_report,
+            archive_store_receipt.report_path,
             resource_durability_receipt.report_path,
             ".fforager-artifacts/cargo-target".to_owned(),
         ],
@@ -920,11 +983,22 @@ fn run_verify_deep_checks(
     root: &Path,
     checks: &mut Vec<Check>,
     transport_report: &mut String,
+    archive_store_invocation: &Wp008Invocation,
     resource_durability_invocation: &Wp009Invocation,
-) -> Result<(ArchitectureResult, Wp009ExecutionReceipt), String> {
+) -> Result<
+    (
+        ArchitectureResult,
+        Wp008ExecutionReceipt,
+        Wp009ExecutionReceipt,
+    ),
+    String,
+> {
     verify_tool_identities(root, checks)?;
     run_rust_verification(root, checks)?;
     execute_public_boundary_counterexample_test(root, checks)?;
+    let archive_store_receipt =
+        execute_archive_store_evidence(root, checks, archive_store_invocation)?;
+    validate_wp008_execution_receipt(root, &archive_store_receipt, archive_store_invocation)?;
     let resource_durability_receipt = require_wp009_execution_receipt(Some(
         execute_resource_durability_models(root, checks, resource_durability_invocation)?,
     ))?;
@@ -943,15 +1017,1025 @@ fn run_verify_deep_checks(
     checks.append(&mut architecture.checks);
     checks.push(pass(
         "deep-proof-surface",
-        "locked workspace, contract inventory, WP-009 resource/durability model corpus, model manual, data-only scan, public-boundary counterexamples, transport corpus, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
+        "locked workspace, contract inventory, WP-008 archive-store evidence, WP-009 resource/durability model corpus, model manual, data-only scan, public-boundary counterexamples, transport corpus, doctests, and canonical architecture rules were executed; active-packet acceptance attribution remains external evidence work",
     ));
-    Ok((architecture, resource_durability_receipt))
+    Ok((
+        architecture,
+        archive_store_receipt,
+        resource_durability_receipt,
+    ))
 }
 
 fn run_transport_corpus(root: &Path) -> Result<(), String> {
     let mut checks = Vec::new();
     let report = execute_transport_corpus(root, &mut checks)?;
     println!("COMPLETE WP-FF-007 transport corpus; report={report}");
+    Ok(())
+}
+
+fn run_archive_store_evidence(root: &Path) -> Result<(), String> {
+    let mut checks = Vec::new();
+    let invocation = begin_wp008_invocation(root)?;
+    let receipt = execute_archive_store_evidence(root, &mut checks, &invocation)?;
+    validate_wp008_execution_receipt(root, &receipt, &invocation)?;
+    println!(
+        "COMPLETE WP-FF-008 archive-store evidence; report={}",
+        receipt.report_path
+    );
+    Ok(())
+}
+
+fn begin_wp008_invocation(root: &Path) -> Result<Wp008Invocation, String> {
+    let started_at = SystemTime::now();
+    let manifest_bytes = fs::read(root.join(WP008_MANIFEST_PATH))
+        .map_err(|error| format!("WP008-E-MANIFEST-READ:{error}"))?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("WP008-E-MANIFEST-PARSE:{error}"))?;
+    validate_wp008_manifest(&manifest)?;
+    let manifest_sha256 = encode_sha256(&manifest_bytes);
+    let source_content_fingerprint = source_state(root)?.content_fingerprint;
+    let sequence = WP008_INVOCATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let started_nanos = started_at
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("WP008-E-INVOCATION-CLOCK:{error}"))?
+        .as_nanos();
+    let identity_material = format!(
+        "{}:{sequence}:{started_nanos}:{manifest_sha256}:{source_content_fingerprint}",
+        std::process::id()
+    );
+    Ok(Wp008Invocation {
+        id: encode_sha256(identity_material.as_bytes()),
+        started_at,
+        manifest_sha256,
+        source_content_fingerprint,
+    })
+}
+
+fn execute_archive_store_evidence(
+    root: &Path,
+    checks: &mut Vec<Check>,
+    invocation: &Wp008Invocation,
+) -> Result<Wp008ExecutionReceipt, String> {
+    let manifest_bytes = fs::read(root.join(WP008_MANIFEST_PATH))
+        .map_err(|error| format!("WP008-E-MANIFEST-READ:{error}"))?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("WP008-E-MANIFEST-PARSE:{error}"))?;
+    validate_wp008_manifest(&manifest)?;
+    let source_before = source_state(root)?;
+    if encode_sha256(&manifest_bytes) != invocation.manifest_sha256
+        || source_before.content_fingerprint != invocation.source_content_fingerprint
+    {
+        return Err("WP008-E-EXECUTION-INVOCATION-STALE".to_owned());
+    }
+
+    let listed = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "--jobs",
+            "1",
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            "--",
+            "--list",
+        ],
+    )?;
+    let expected_registration = format!("{WP008_PROOF_TEST}: test");
+    if !listed
+        .lines()
+        .any(|line| line.trim() == expected_registration)
+    {
+        return Err("WP008-E-GATE-UNTRIGGERED: exact compiled proof test is absent".to_owned());
+    }
+    let output = cargo_proof_output(
+        root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "build/Cargo.toml",
+            "--locked",
+            "--jobs",
+            "1",
+            "-p",
+            "fforager-testkit",
+            "--lib",
+            WP008_PROOF_TEST,
+            "--",
+            "--exact",
+            "--nocapture",
+        ],
+    )?;
+    let report = extract_wp008_report(&output)?;
+    validate_wp008_report(root, &manifest_bytes, &manifest, &report)?;
+    let source_after = source_state(root)?;
+    if source_before.git_commit != source_after.git_commit
+        || source_before.dirty != source_after.dirty
+        || source_before.dirty_paths != source_after.dirty_paths
+        || source_before.content_fingerprint != source_after.content_fingerprint
+    {
+        return Err("WP008-E-SOURCE-CHANGED: source changed during evidence execution".to_owned());
+    }
+    let receipt = write_wp008_report(root, &report, invocation)?;
+    checks.push(Check {
+        id: "wp008-archive-public-boundary".to_owned(),
+        status: "PASS",
+        proof_class: "semantic",
+        concrete_input: format!(
+            "{WP008_MANIFEST_PATH}; exact source manifest={WP008_SOURCE_PATHS:?}"
+        ),
+        executed_boundary: format!(
+            "cargo test --exact --nocapture -p fforager-testkit {WP008_PROOF_TEST}; strict independent xtask report consumer"
+        ),
+        expected_result: "24 exact rows; correctness failures zero; B-021 measured or explicitly BLOCKED; every executed semantic row has a declaration-preserving counterfactual rejection".to_owned(),
+        observed_result: format!(
+            "{} executed rows, {} explicit blocked rows; report={}",
+            receipt.executed_cases, receipt.blocked_cases, receipt.report_path
+        ),
+        skipped_semantic_dependencies: vec![
+            "No shipped Ferric entrypoint consumed the archive adapter; zero-product-progress prerequisite ceiling applies.".to_owned(),
+            "A BLOCKED B-021 row is not performance evidence.".to_owned(),
+        ],
+        detail: "Candidate-neutral claim, lease, commit, reconciliation, corruption, migration, import, retry, and representative-scale behavior crossed the compiled public storage boundary.".to_owned(),
+    });
+    Ok(receipt)
+}
+
+fn extract_wp008_report(output: &str) -> Result<Value, String> {
+    let reports = output
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(WP008_REPORT_PREFIX))
+        .collect::<Vec<_>>();
+    if reports.len() != 1 {
+        return Err(format!(
+            "WP008-E-REPORT-COUNT: expected one archive report, observed {}",
+            reports.len()
+        ));
+    }
+    serde_json::from_str(reports[0]).map_err(|error| format!("WP008-E-REPORT-PARSE:{error}"))
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "FF-BUILD-057: the independent gate keeps the complete WP-008 corpus schema fail-closed in one validator"
+)]
+fn validate_wp008_manifest(manifest: &Value) -> Result<(), String> {
+    wp008_require_exact_keys(
+        manifest,
+        &[
+            "schema_id",
+            "corpus_id",
+            "fixture_identity",
+            "candidate",
+            "candidate_matrix",
+            "source_paths",
+            "limits",
+            "cases",
+            "residual_uncertainty",
+        ],
+        "WP008-E-MANIFEST-SCHEMA",
+    )?;
+    if manifest.get("schema_id").and_then(Value::as_str)
+        != Some("ff.archive-store-evidence-corpus@2")
+        || manifest.get("corpus_id").and_then(Value::as_str)
+            != Some("WP-FF-008-archive-store-evidence-v2")
+    {
+        return Err("WP008-E-MANIFEST-IDENTITY".to_owned());
+    }
+    let fixture = manifest
+        .get("fixture_identity")
+        .ok_or("WP008-E-FIXTURE-IDENTITY")?;
+    wp008_require_exact_keys(
+        fixture,
+        &[
+            "owner",
+            "origin",
+            "network_required",
+            "external_executable_required",
+        ],
+        "WP008-E-FIXTURE-IDENTITY",
+    )?;
+    if fixture.get("owner").and_then(Value::as_str) != Some("Ferric Forager")
+        || fixture.get("network_required").and_then(Value::as_bool) != Some(false)
+        || fixture
+            .get("external_executable_required")
+            .and_then(Value::as_bool)
+            != Some(false)
+    {
+        return Err("WP008-E-FIXTURE-DEPENDENCY".to_owned());
+    }
+    validate_wp008_candidate(manifest.get("candidate").ok_or("WP008-E-CANDIDATE")?)?;
+    validate_wp008_candidate_matrix(
+        manifest
+            .get("candidate_matrix")
+            .ok_or("WP008-E-CANDIDATE-MATRIX")?,
+    )?;
+    let source_paths = manifest
+        .get("source_paths")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-SOURCE-PATHS")?
+        .iter()
+        .map(|value| value.as_str().ok_or("WP008-E-SOURCE-PATHS"))
+        .collect::<Result<Vec<_>, _>>()?;
+    if source_paths != WP008_SOURCE_PATHS {
+        return Err("WP008-E-SOURCE-MANIFEST-DRIFT".to_owned());
+    }
+    let limits = manifest.get("limits").ok_or("WP008-E-LIMITS")?;
+    wp008_require_exact_keys(
+        limits,
+        &[
+            "maximum_fixture_bytes",
+            "maximum_cases",
+            "maximum_case_runtime_ms",
+            "representative_identities",
+            "b021_identities",
+            "latency_sample_limit",
+            "maximum_report_bytes",
+        ],
+        "WP008-E-LIMITS",
+    )?;
+    if limits.as_object().is_none_or(|object| {
+        object
+            .values()
+            .any(|value| value.as_u64().is_none_or(|n| n == 0))
+    }) || limits.get("maximum_cases").and_then(Value::as_u64)
+        != u64::try_from(WP008_CASE_IDS.len()).ok()
+        || limits.get("b021_identities").and_then(Value::as_u64) != Some(1_000_000)
+    {
+        return Err("WP008-E-LIMITS".to_owned());
+    }
+    let cases = manifest
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-CASES")?;
+    let mut observed = BTreeSet::new();
+    for case in cases {
+        wp008_require_exact_keys(
+            case,
+            &[
+                "case_id",
+                "category",
+                "scenario",
+                "injected_fault",
+                "expected",
+                "actions",
+                "negative_action",
+            ],
+            "WP008-E-CASE-SCHEMA",
+        )?;
+        let case_id = wp008_required_text(case, "case_id", "WP008-E-CASE")?;
+        for key in ["category", "scenario", "injected_fault", "expected"] {
+            let _text = wp008_required_text(case, key, "WP008-E-CASE")?;
+        }
+        let actions = case
+            .get("actions")
+            .and_then(Value::as_array)
+            .ok_or("WP008-E-CASE-ACTIONS")?;
+        let mut action_ids = BTreeSet::new();
+        if actions.is_empty()
+            || actions.iter().any(|action| {
+                action
+                    .as_str()
+                    .is_none_or(|action| action.is_empty() || !action_ids.insert(action))
+            })
+        {
+            return Err("WP008-E-CASE-ACTIONS".to_owned());
+        }
+        if case_id == "wp008-scale-b021" {
+            if !case.get("negative_action").is_some_and(Value::is_null) {
+                return Err("WP008-E-CASE-NEGATIVE".to_owned());
+            }
+        } else if case
+            .get("negative_action")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err("WP008-E-CASE-NEGATIVE".to_owned());
+        }
+        if !observed.insert(case_id) {
+            return Err("WP008-E-DUPLICATE-CASE".to_owned());
+        }
+    }
+    if observed != WP008_CASE_IDS.iter().copied().collect::<BTreeSet<_>>() {
+        return Err("WP008-E-UNMAPPED-INPUT".to_owned());
+    }
+    let residual = manifest
+        .get("residual_uncertainty")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-RESIDUAL")?;
+    if residual.len() < 3
+        || residual
+            .iter()
+            .any(|value| value.as_str().is_none_or(str::is_empty))
+    {
+        return Err("WP008-E-RESIDUAL".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp008_candidate(candidate: &Value) -> Result<(), String> {
+    wp008_require_exact_keys(
+        candidate,
+        &[
+            "name",
+            "version",
+            "default_features",
+            "features",
+            "write_strategy",
+            "durability",
+        ],
+        "WP008-E-CANDIDATE",
+    )?;
+    if candidate.get("name").and_then(Value::as_str) != Some("redb")
+        || candidate.get("version").and_then(Value::as_str) != Some("4.1.0")
+        || candidate.get("default_features").and_then(Value::as_bool) != Some(false)
+        || candidate
+            .get("features")
+            .and_then(Value::as_array)
+            .is_none_or(|v| !v.is_empty())
+        || candidate.get("write_strategy").and_then(Value::as_str) != Some("two_phase")
+        || candidate.get("durability").and_then(Value::as_str) != Some("immediate")
+    {
+        return Err("WP008-E-CANDIDATE".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp008_candidate_matrix(matrix: &Value) -> Result<(), String> {
+    let rows = matrix.as_array().ok_or("WP008-E-CANDIDATE-MATRIX")?;
+    let expected = BTreeMap::from([
+        ("redb", ("4.1.0", "EXECUTED")),
+        ("fjall", ("3.1.8", "DEFERRED_COMPARISON")),
+        ("sled", ("0.34.7", "REJECTED")),
+        ("sqlite", ("unapproved", "UNAUTHORIZED")),
+    ]);
+    let mut observed = BTreeSet::new();
+    for row in rows {
+        wp008_require_exact_keys(
+            row,
+            &["name", "version", "disposition", "reason"],
+            "WP008-E-CANDIDATE-MATRIX",
+        )?;
+        let name = wp008_required_text(row, "name", "WP008-E-CANDIDATE-MATRIX")?;
+        let (version, disposition) = expected.get(name).ok_or("WP008-E-CANDIDATE-MATRIX")?;
+        if wp008_required_text(row, "version", "WP008-E-CANDIDATE-MATRIX")? != *version
+            || wp008_required_text(row, "disposition", "WP008-E-CANDIDATE-MATRIX")? != *disposition
+            || !observed.insert(name)
+        {
+            return Err("WP008-E-CANDIDATE-MATRIX".to_owned());
+        }
+    }
+    if observed != expected.keys().copied().collect::<BTreeSet<_>>() {
+        return Err("WP008-E-CANDIDATE-MATRIX".to_owned());
+    }
+    Ok(())
+}
+
+fn wp008_require_exact_keys(
+    value: &Value,
+    expected: &[&str],
+    diagnostic: &str,
+) -> Result<(), String> {
+    let object = value.as_object().ok_or_else(|| diagnostic.to_owned())?;
+    let observed = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
+    if observed != expected {
+        return Err(format!(
+            "{diagnostic}: expected keys={expected:?}; observed={observed:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn wp008_required_text<'a>(
+    value: &'a Value,
+    key: &str,
+    diagnostic: &str,
+) -> Result<&'a str, String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| format!("{diagnostic}:{key}"))
+}
+
+#[allow(clippy::too_many_lines)]
+fn validate_wp008_report(
+    root: &Path,
+    manifest_bytes: &[u8],
+    manifest: &Value,
+    report: &Value,
+) -> Result<(), String> {
+    wp008_require_exact_keys(
+        report,
+        &[
+            "schema_id",
+            "schema_version",
+            "corpus_id",
+            "manifest_path",
+            "manifest_fingerprint",
+            "source_manifest",
+            "candidate",
+            "candidate_matrix",
+            "environment",
+            "workload",
+            "rows",
+            "measurements",
+            "summary",
+            "residual_uncertainty",
+        ],
+        "WP008-E-REPORT-SCHEMA",
+    )?;
+    if report.get("schema_id").and_then(Value::as_str) != Some("ff.archive-store-evidence-report@2")
+        || report.get("schema_version").and_then(Value::as_str) != Some("2.0.0")
+        || report.get("corpus_id").and_then(Value::as_str)
+            != Some("WP-FF-008-archive-store-evidence-v2")
+        || report.get("manifest_path").and_then(Value::as_str) != Some(WP008_MANIFEST_PATH)
+        || report.get("manifest_fingerprint").and_then(Value::as_str)
+            != Some(format!("sha256:{}", encode_sha256(manifest_bytes)).as_str())
+    {
+        return Err("WP008-E-REPORT-IDENTITY".to_owned());
+    }
+    validate_wp008_candidate(report.get("candidate").ok_or("WP008-E-CANDIDATE")?)?;
+    if report.get("candidate") != manifest.get("candidate")
+        || report.get("candidate_matrix") != manifest.get("candidate_matrix")
+        || report.get("residual_uncertainty") != manifest.get("residual_uncertainty")
+    {
+        return Err("WP008-E-REPORT-MANIFEST-DRIFT".to_owned());
+    }
+    let source_manifest = report
+        .get("source_manifest")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-SOURCE-MANIFEST")?;
+    if source_manifest.len() != WP008_SOURCE_PATHS.len() {
+        return Err("WP008-E-SOURCE-MANIFEST".to_owned());
+    }
+    for (row, relative) in source_manifest.iter().zip(WP008_SOURCE_PATHS) {
+        wp008_require_exact_keys(row, &["path", "sha256"], "WP008-E-SOURCE-MANIFEST")?;
+        let bytes = fs::read(root.join(relative))
+            .map_err(|error| format!("WP008-E-SOURCE-READ:{relative}:{error}"))?;
+        if row.get("path").and_then(Value::as_str) != Some(*relative)
+            || row.get("sha256").and_then(Value::as_str) != Some(encode_sha256(&bytes).as_str())
+        {
+            return Err("WP008-E-SOURCE-MANIFEST-DRIFT".to_owned());
+        }
+    }
+    let environment = report.get("environment").ok_or("WP008-E-ENVIRONMENT")?;
+    wp008_require_exact_keys(
+        environment,
+        &[
+            "os",
+            "arch",
+            "cargo_profile",
+            "artifact_root",
+            "stress_enabled",
+        ],
+        "WP008-E-ENVIRONMENT",
+    )?;
+    if environment.get("os").and_then(Value::as_str) != Some(env::consts::OS)
+        || environment.get("arch").and_then(Value::as_str) != Some(env::consts::ARCH)
+        || environment.get("cargo_profile").and_then(Value::as_str) != Some("test")
+        || environment.get("artifact_root").and_then(Value::as_str) != Some(".fforager-artifacts")
+        || environment
+            .get("stress_enabled")
+            .and_then(Value::as_bool)
+            .is_none()
+    {
+        return Err("WP008-E-ENVIRONMENT".to_owned());
+    }
+    let workload = report.get("workload").ok_or("WP008-E-WORKLOAD")?;
+    wp008_require_exact_keys(
+        workload,
+        &[
+            "maximum_case_runtime_ms",
+            "representative_identities",
+            "b021_identities",
+            "latency_sample_limit",
+            "maximum_report_bytes",
+        ],
+        "WP008-E-WORKLOAD",
+    )?;
+    for key in [
+        "maximum_case_runtime_ms",
+        "representative_identities",
+        "b021_identities",
+        "latency_sample_limit",
+        "maximum_report_bytes",
+    ] {
+        if workload.get(key) != manifest.pointer(&format!("/limits/{key}")) {
+            return Err(format!("WP008-E-WORKLOAD:{key}"));
+        }
+    }
+    let cases = manifest
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-CASES")?;
+    let rows = report
+        .get("rows")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-ROWS")?;
+    if rows.len() != cases.len() {
+        return Err("WP008-E-ROW-COUNT".to_owned());
+    }
+    let case_by_id = cases
+        .iter()
+        .map(|case| {
+            wp008_required_text(case, "case_id", "WP008-E-CASE").map(|case_id| (case_id, case))
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let mut observed = BTreeSet::new();
+    let mut blocked = 0_u64;
+    for row in rows {
+        wp008_require_exact_keys(
+            row,
+            &[
+                "case_id",
+                "category",
+                "status",
+                "proof_class",
+                "concrete_input",
+                "executed_boundary",
+                "expected_result",
+                "observed_result",
+                "actions",
+                "negative_path",
+                "elapsed_ns",
+                "residual_uncertainty",
+            ],
+            "WP008-E-ROW-SCHEMA",
+        )?;
+        let case_id = wp008_required_text(row, "case_id", "WP008-E-ROW")?;
+        let case = case_by_id.get(case_id).ok_or("WP008-E-UNMAPPED-ROW")?;
+        if !observed.insert(case_id) {
+            return Err("WP008-E-DUPLICATE-ROW".to_owned());
+        }
+        if row.get("category") != case.get("category")
+            || row.get("expected_result") != case.get("expected")
+            || wp008_required_text(row, "concrete_input", "WP008-E-ROW")?.is_empty()
+            || wp008_required_text(row, "executed_boundary", "WP008-E-ROW")?.is_empty()
+            || wp008_required_text(row, "observed_result", "WP008-E-ROW")?.is_empty()
+            || row.get("elapsed_ns").and_then(Value::as_u64).is_none()
+            || row
+                .get("residual_uncertainty")
+                .and_then(Value::as_array)
+                .is_none()
+        {
+            return Err(format!("WP008-E-ROW-ATTRIBUTION:{case_id}"));
+        }
+        let expected_actions = case
+            .get("actions")
+            .and_then(Value::as_array)
+            .ok_or("WP008-E-CASE-ACTIONS")?;
+        let actions = row
+            .get("actions")
+            .and_then(Value::as_array)
+            .ok_or("WP008-E-ACTION-RECEIPTS")?;
+        if actions.len() != expected_actions.len() {
+            return Err(format!("WP008-E-ACTION-COUNT:{case_id}"));
+        }
+        for (receipt, expected_action) in actions.iter().zip(expected_actions) {
+            validate_wp008_action_receipt(
+                receipt,
+                expected_action.as_str().ok_or("WP008-E-CASE-ACTIONS")?,
+                "PASS",
+            )?;
+        }
+        match (
+            row.get("negative_path"),
+            case.get("negative_action").and_then(Value::as_str),
+        ) {
+            (Some(Value::Null), None) => {}
+            (Some(receipt), Some(action_id)) => {
+                validate_wp008_action_receipt(receipt, action_id, "REJECTED")?;
+            }
+            _ => return Err(format!("WP008-E-NEGATIVE-RECEIPT:{case_id}")),
+        }
+        match row.get("status").and_then(Value::as_str) {
+            Some("PASS") => {
+                if row.get("proof_class").and_then(Value::as_str) != Some("semantic") {
+                    return Err(format!("WP008-E-DECLARATION-ONLY:{case_id}"));
+                }
+            }
+            Some("BLOCKED") if case_id == "wp008-scale-b021" => {
+                blocked = blocked.saturating_add(1);
+                if row.get("proof_class").and_then(Value::as_str) != Some("structural") {
+                    return Err("WP008-E-B021-BLOCKED-OVERCLAIM".to_owned());
+                }
+            }
+            _ => return Err(format!("WP008-E-ROW-STATUS:{case_id}")),
+        }
+    }
+    if observed != WP008_CASE_IDS.iter().copied().collect::<BTreeSet<_>>() {
+        return Err("WP008-E-UNMAPPED-ROW".to_owned());
+    }
+    validate_wp008_measurements(manifest, report, blocked)?;
+    let summary = report.get("summary").ok_or("WP008-E-SUMMARY")?;
+    wp008_require_exact_keys(
+        summary,
+        &[
+            "executed_cases",
+            "semantic_pass_cases",
+            "blocked_cases",
+            "failed_cases",
+            "zero_product_progress",
+        ],
+        "WP008-E-SUMMARY",
+    )?;
+    let total = u64::try_from(rows.len()).map_err(|error| error.to_string())?;
+    if summary.get("executed_cases").and_then(Value::as_u64) != Some(total)
+        || summary.get("semantic_pass_cases").and_then(Value::as_u64)
+            != Some(total.saturating_sub(blocked))
+        || summary.get("blocked_cases").and_then(Value::as_u64) != Some(blocked)
+        || summary.get("failed_cases").and_then(Value::as_u64) != Some(0)
+        || summary
+            .get("zero_product_progress")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        return Err("WP008-E-SUMMARY".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_wp008_action_receipt(
+    receipt: &Value,
+    expected_action_id: &str,
+    expected_outcome: &str,
+) -> Result<(), String> {
+    wp008_require_exact_keys(
+        receipt,
+        &[
+            "action_id",
+            "boundary",
+            "input",
+            "input_sha256",
+            "observed",
+            "output_sha256",
+            "outcome",
+        ],
+        "WP008-E-ACTION-RECEIPT-SCHEMA",
+    )?;
+    let input = wp008_required_text(receipt, "input", "WP008-E-ACTION-RECEIPT")?;
+    let observed = wp008_required_text(receipt, "observed", "WP008-E-ACTION-RECEIPT")?;
+    if wp008_required_text(receipt, "action_id", "WP008-E-ACTION-RECEIPT")? != expected_action_id
+        || wp008_required_text(receipt, "boundary", "WP008-E-ACTION-RECEIPT")?.is_empty()
+        || wp008_required_text(receipt, "outcome", "WP008-E-ACTION-RECEIPT")? != expected_outcome
+        || wp008_required_text(receipt, "input_sha256", "WP008-E-ACTION-RECEIPT")?
+            != encode_sha256(input.as_bytes())
+        || wp008_required_text(receipt, "output_sha256", "WP008-E-ACTION-RECEIPT")?
+            != encode_sha256(observed.as_bytes())
+    {
+        return Err(format!("WP008-E-ACTION-RECEIPT:{expected_action_id}"));
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "FF-BUILD-057: independent measurement validation keeps all anti-overclaim checks atomic"
+)]
+fn validate_wp008_measurements(
+    manifest: &Value,
+    report: &Value,
+    blocked_rows: u64,
+) -> Result<(), String> {
+    let measurements = report
+        .get("measurements")
+        .and_then(Value::as_array)
+        .ok_or("WP008-E-MEASUREMENTS")?;
+    if measurements.len() != 2 {
+        return Err("WP008-E-MEASUREMENTS".to_owned());
+    }
+    let mut profiles = BTreeSet::new();
+    for measurement in measurements {
+        let profile = wp008_required_text(measurement, "profile", "WP008-E-MEASUREMENT")?;
+        if !profiles.insert(profile) {
+            return Err("WP008-E-MEASUREMENT-DUPLICATE".to_owned());
+        }
+        let expected_count = match profile {
+            "representative" => manifest.pointer("/limits/representative_identities"),
+            "b021" => manifest.pointer("/limits/b021_identities"),
+            _ => return Err("WP008-E-MEASUREMENT-PROFILE".to_owned()),
+        };
+        if measurement.get("identity_count") != expected_count
+            || measurement.get("timeout_ms") != manifest.pointer("/limits/maximum_case_runtime_ms")
+        {
+            return Err(format!("WP008-E-MEASUREMENT:{profile}"));
+        }
+        match measurement.get("status").and_then(Value::as_str) {
+            Some("PASS")
+                if profile == "representative" || (profile == "b021" && blocked_rows == 0) =>
+            {
+                validate_wp008_measured_profile(measurement, profile)?;
+            }
+            Some("BLOCKED") if profile == "b021" && blocked_rows == 1 => {
+                wp008_require_exact_keys(
+                    measurement,
+                    &[
+                        "profile",
+                        "status",
+                        "identity_count",
+                        "timeout_ms",
+                        "blocked_reason",
+                        "residual_uncertainty",
+                    ],
+                    "WP008-E-B021-BLOCKED-SCHEMA",
+                )?;
+                if wp008_required_text(measurement, "blocked_reason", "WP008-E-B021-BLOCKED")?
+                    .is_empty()
+                    || measurement
+                        .get("residual_uncertainty")
+                        .and_then(Value::as_array)
+                        .is_none_or(Vec::is_empty)
+                {
+                    return Err("WP008-E-B021-BLOCKED-DETAIL".to_owned());
+                }
+            }
+            _ => return Err(format!("WP008-E-MEASUREMENT-STATUS:{profile}")),
+        }
+    }
+    if profiles != BTreeSet::from(["representative", "b021"]) {
+        return Err("WP008-E-MEASUREMENT-PROFILE".to_owned());
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "independent strict consumer keeps all measured-claim anti-promotion checks coupled"
+)]
+fn validate_wp008_measured_profile(measurement: &Value, profile: &str) -> Result<(), String> {
+    wp008_require_exact_keys(
+        measurement,
+        &[
+            "profile",
+            "status",
+            "identity_count",
+            "timeout_ms",
+            "elapsed_ns",
+            "insert_latency_ns",
+            "cold_lookup_latency_ns",
+            "warm_lookup_latency_ns",
+            "generator_state",
+            "rss",
+            "storage_size_bytes",
+            "logical_bytes_written",
+            "write_amplification_proxy_milli",
+            "cache_state",
+            "residual_uncertainty",
+        ],
+        "WP008-E-MEASUREMENT-SCHEMA",
+    )?;
+    let elapsed_ns = measurement
+        .get("elapsed_ns")
+        .and_then(Value::as_u64)
+        .ok_or("WP008-E-MEASUREMENT-TIMEOUT")?;
+    let timeout_ms = measurement
+        .get("timeout_ms")
+        .and_then(Value::as_u64)
+        .ok_or("WP008-E-MEASUREMENT-TIMEOUT")?;
+    if elapsed_ns > timeout_ms.saturating_mul(1_000_000)
+        || wp008_required_text(measurement, "cache_state", "WP008-E-MEASUREMENT")?
+            != "cold_after_database_reopen_then_warm_same_handle"
+        || measurement
+            .get("storage_size_bytes")
+            .and_then(Value::as_u64)
+            .is_none_or(|value| value == 0)
+        || measurement
+            .get("logical_bytes_written")
+            .and_then(Value::as_u64)
+            .is_none_or(|value| value == 0)
+        || measurement
+            .get("write_amplification_proxy_milli")
+            .and_then(Value::as_u64)
+            .is_none_or(|value| value == 0)
+        || measurement
+            .get("residual_uncertainty")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+    {
+        return Err(format!("WP008-E-MEASURED-PROFILE:{profile}"));
+    }
+    for key in [
+        "insert_latency_ns",
+        "cold_lookup_latency_ns",
+        "warm_lookup_latency_ns",
+    ] {
+        wp008_validate_distribution(measurement.get(key).ok_or("WP008-E-LATENCY")?, profile)?;
+    }
+    let generator = measurement
+        .get("generator_state")
+        .ok_or("WP008-E-GENERATOR")?;
+    wp008_require_exact_keys(
+        generator,
+        &[
+            "method",
+            "state_struct_bytes",
+            "peak_batch_wire_bytes",
+            "derived_bound_bytes",
+        ],
+        "WP008-E-GENERATOR",
+    )?;
+    let state = generator
+        .get("state_struct_bytes")
+        .and_then(Value::as_u64)
+        .ok_or("WP008-E-GENERATOR")?;
+    let batch = generator
+        .get("peak_batch_wire_bytes")
+        .and_then(Value::as_u64)
+        .ok_or("WP008-E-GENERATOR")?;
+    if wp008_required_text(generator, "method", "WP008-E-GENERATOR")?
+        != "size_of_state_plus_peak_serialized_batch"
+        || state == 0
+        || batch == 0
+        || generator.get("derived_bound_bytes").and_then(Value::as_u64)
+            != Some(state.saturating_add(batch))
+    {
+        return Err("WP008-E-GENERATOR".to_owned());
+    }
+    let rss = measurement.get("rss").ok_or("WP008-E-RSS")?;
+    wp008_require_exact_keys(
+        rss,
+        &[
+            "status",
+            "scope",
+            "samples",
+            "before_bytes",
+            "after_bytes",
+            "maximum_observed_endpoint_bytes",
+        ],
+        "WP008-E-RSS",
+    )?;
+    let before = rss.get("before_bytes").and_then(Value::as_u64).unwrap_or(0);
+    let after = rss.get("after_bytes").and_then(Value::as_u64).unwrap_or(0);
+    if wp008_required_text(rss, "status", "WP008-E-RSS")? != "MEASURED_ENDPOINT_PROCESS_WORKING_SET"
+        || wp008_required_text(rss, "scope", "WP008-E-RSS")? != "process_endpoint_samples_not_peak"
+        || rss.get("samples").and_then(Value::as_u64) != Some(2)
+        || before == 0
+        || after == 0
+        || rss
+            .get("maximum_observed_endpoint_bytes")
+            .and_then(Value::as_u64)
+            != Some(before.max(after))
+    {
+        return Err("WP008-E-RSS".to_owned());
+    }
+    Ok(())
+}
+
+fn wp008_validate_distribution(value: &Value, profile: &str) -> Result<(), String> {
+    wp008_require_exact_keys(
+        value,
+        &["samples", "minimum", "p50", "p95", "p99", "maximum"],
+        "WP008-E-LATENCY-SCHEMA",
+    )?;
+    let samples = value
+        .get("samples")
+        .and_then(Value::as_u64)
+        .ok_or("WP008-E-LATENCY")?;
+    let values = ["minimum", "p50", "p95", "p99", "maximum"]
+        .iter()
+        .map(|key| {
+            value
+                .get(*key)
+                .and_then(Value::as_u64)
+                .ok_or("WP008-E-LATENCY")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let ordered = values.windows(2).all(|pair| pair[0] <= pair[1]);
+    if !ordered || (profile == "representative" && samples == 0) {
+        return Err(format!("WP008-E-LATENCY:{profile}"));
+    }
+    Ok(())
+}
+
+fn write_wp008_report(
+    root: &Path,
+    report: &Value,
+    invocation: &Wp008Invocation,
+) -> Result<Wp008ExecutionReceipt, String> {
+    let reports = root.join("build/reports");
+    fs::create_dir_all(&reports).map_err(|error| format!("create reports: {error}"))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("WP008-E-REPORT-CLOCK:{error}"))?
+        .as_nanos();
+    let stem = format!(
+        "wp-ff-008-archive-store-evidence-{}-{nonce}",
+        std::process::id()
+    );
+    let temporary = reports.join(format!(".{stem}.tmp"));
+    let final_path = reports.join(format!("{stem}.json"));
+    let bytes = serde_json::to_vec_pretty(report)
+        .map_err(|error| format!("WP008-E-REPORT-SERIALIZE:{error}"))?;
+    let result = (|| -> io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(&bytes)?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        file.sync_all()?;
+        fs::rename(&temporary, &final_path)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _result = fs::remove_file(&temporary);
+        return Err(format!("WP008-E-REPORT-WRITE:{error}"));
+    }
+    let persisted_bytes =
+        fs::read(&final_path).map_err(|error| format!("WP008-E-REPORT-REREAD:{error}"))?;
+    let persisted: Value = serde_json::from_slice(&persisted_bytes)
+        .map_err(|error| format!("WP008-E-REPORT-REPARSE:{error}"))?;
+    if persisted != *report {
+        return Err("WP008-E-REPORT-PERSISTENCE".to_owned());
+    }
+    let report_path = final_path
+        .strip_prefix(root)
+        .map(slash)
+        .map_err(|error| format!("WP008-E-REPORT-PATH:{error}"))?;
+    Ok(Wp008ExecutionReceipt {
+        invocation_id: invocation.id.clone(),
+        report_path,
+        report_sha256: encode_sha256(&persisted_bytes),
+        manifest_sha256: invocation.manifest_sha256.clone(),
+        source_content_fingerprint: invocation.source_content_fingerprint.clone(),
+        executed_cases: report
+            .pointer("/summary/executed_cases")
+            .and_then(Value::as_u64)
+            .ok_or("WP008-E-SUMMARY")?,
+        blocked_cases: report
+            .pointer("/summary/blocked_cases")
+            .and_then(Value::as_u64)
+            .ok_or("WP008-E-SUMMARY")?,
+    })
+}
+
+fn validate_wp008_execution_receipt(
+    root: &Path,
+    receipt: &Wp008ExecutionReceipt,
+    invocation: &Wp008Invocation,
+) -> Result<(), String> {
+    if receipt.invocation_id != invocation.id
+        || receipt.manifest_sha256 != invocation.manifest_sha256
+        || receipt.source_content_fingerprint != invocation.source_content_fingerprint
+        || receipt.executed_cases != u64::try_from(WP008_CASE_IDS.len()).unwrap_or(u64::MAX)
+        || receipt.blocked_cases > 1
+    {
+        return Err("WP008-E-EXECUTION-RECEIPT-IDENTITY".to_owned());
+    }
+    let relative = Path::new(&receipt.report_path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+        || relative.parent() != Some(Path::new("build/reports"))
+        || relative
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_none_or(|name| {
+                !name.starts_with("wp-ff-008-archive-store-evidence-")
+                    || Path::new(name).extension() != Some(OsStr::new("json"))
+            })
+    {
+        return Err("WP008-E-EXECUTION-RECEIPT-PATH".to_owned());
+    }
+    let path = root.join(relative);
+    let modified = fs::metadata(&path)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| format!("WP008-E-EXECUTION-RECEIPT-MISSING:{error}"))?;
+    if modified < invocation.started_at {
+        return Err("WP008-E-EXECUTION-RECEIPT-STALE".to_owned());
+    }
+    let bytes =
+        fs::read(&path).map_err(|error| format!("WP008-E-EXECUTION-RECEIPT-MISSING:{error}"))?;
+    if encode_sha256(&bytes) != receipt.report_sha256 {
+        return Err("WP008-E-EXECUTION-RECEIPT-DIGEST".to_owned());
+    }
+    let report: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("WP008-E-EXECUTION-RECEIPT-PARSE:{error}"))?;
+    let manifest_bytes = fs::read(root.join(WP008_MANIFEST_PATH))
+        .map_err(|error| format!("WP008-E-MANIFEST-READ:{error}"))?;
+    if encode_sha256(&manifest_bytes) != invocation.manifest_sha256 {
+        return Err("WP008-E-EXECUTION-RECEIPT-SOURCE-DRIFT".to_owned());
+    }
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("WP008-E-MANIFEST-PARSE:{error}"))?;
+    validate_wp008_report(root, &manifest_bytes, &manifest, &report)?;
+    if source_state(root)?.content_fingerprint != invocation.source_content_fingerprint {
+        return Err("WP008-E-EXECUTION-RECEIPT-SOURCE-DRIFT".to_owned());
+    }
     Ok(())
 }
 
@@ -9552,6 +10636,7 @@ publish = false
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 redb = { version = "=4.1.0", default-features = false }
+sha2 = { version = "=0.11.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -11356,13 +12441,17 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         detail: "Matched values are never emitted; GitHub secret-scanning push protection supplies the independent remote pre-receive layer.".to_owned(),
     });
     let mut transport_report = String::new();
+    let archive_store_invocation = begin_wp008_invocation(root)?;
     let resource_durability_invocation = begin_wp009_invocation(root)?;
-    let (architecture, resource_durability_receipt) = run_verify_deep_checks(
-        root,
-        &mut checks,
-        &mut transport_report,
-        &resource_durability_invocation,
-    )?;
+    let (architecture, archive_store_receipt, resource_durability_receipt) =
+        run_verify_deep_checks(
+            root,
+            &mut checks,
+            &mut transport_report,
+            &archive_store_invocation,
+            &resource_durability_invocation,
+        )?;
+    validate_wp008_execution_receipt(root, &archive_store_receipt, &archive_store_invocation)?;
     validate_wp009_execution_receipt(
         root,
         &resource_durability_receipt,
@@ -11415,6 +12504,7 @@ fn run_verify_pr_inner(root: &Path, gate_args: &[String]) -> Result<(), String> 
         ".fforager-artifacts/cargo-target".to_owned(),
         "build/reports".to_owned(),
         transport_report,
+        archive_store_receipt.report_path,
         resource_durability_receipt.report_path,
     ];
     artifacts.extend(runtime.artifacts);

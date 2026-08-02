@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod archive;
 pub mod framing;
 pub mod graph;
 pub mod identity;
@@ -15,6 +16,7 @@ pub mod protocol;
 pub mod resource;
 pub mod storage;
 
+pub use archive::*;
 pub use framing::{FrameDecoder, FrameError, FrameLimits};
 pub use graph::*;
 pub use identity::*;

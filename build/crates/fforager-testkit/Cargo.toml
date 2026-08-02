@@ -11,7 +11,9 @@ fforager-contracts = { version = "0.1.0", path = "../../../product/crates/fforag
 fforager-diagnostics-contract = { version = "0.1.0", path = "../../../product/crates/fforager-diagnostics-contract" }
 fforager-core = { version = "0.1.0", path = "../../../product/crates/fforager-core" }
 fforager-storage = { version = "0.1.0", path = "../../../product/crates/fforager-storage" }
+redb.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

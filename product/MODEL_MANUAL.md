@@ -57,6 +57,43 @@ Evidence ceiling: this corpus executes pure product contract/core models through
 
 </topic>
 
+<topic id="phase-0-archive-store-evidence" status="active" version="1" wp="WP-FF-008-archive-store-evidence-v2" ingestable="true" updated_at="2026-08-02">
+
+## Run the archive-store evidence corpus
+
+WP-FF-008 exercises Ferric's candidate-neutral archive boundary against exact-pinned pure-Rust `redb 4.1.0`. It keeps item, representation, track, asset, and derived-output identities distinct and executes atomic claims, renewable leases, stale takeover, successful-output insertion, membership, reconciliation, schema migration, mapped text import, corruption refusal, retries, and representative-scale measurements. Every durable write explicitly uses immediate durability, two-phase commit, and quick repair. No Python, yt-dlp, external executable, network access, or native database is part of this workflow.
+
+Run the bounded default corpus from the repository root:
+
+```powershell
+$env:CARGO_BUILD_JOBS = "1"
+$env:CARGO_TARGET_DIR = ".fforager-artifacts/cargo-target"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- archive-store-evidence
+```
+
+The exact committed input is `build/fixtures/archive-store-evidence/manifest.json`. The command compiles and runs `tests::archive_store_evidence_corpus_executes_public_boundary`, independently validates all 24 report rows and their counterfactuals, binds the result to current manifest/source fingerprints, and atomically writes `build/reports/wp-ff-008-archive-store-evidence-*.json`. The default run measures 4,096 streamed identities. The one-million-identity B-021 row is recorded as `BLOCKED`, never as a pass or measurement, unless the operator deliberately provides the heavier stress budget:
+
+```powershell
+$env:FFORAGER_RUN_B021 = "1"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- archive-store-evidence
+Remove-Item Env:FFORAGER_RUN_B021
+```
+
+Inspect a failure in this order: the matching `case_id` in the manifest, the report row with that exact ID, `build/crates/fforager-testkit/src/archive_evidence.rs`, the candidate-neutral DTO or decision in `product/crates/fforager-contracts/src/archive.rs`, and the redb adapter in `product/crates/fforager-storage/src/lib.rs`. All disposable databases and test state must remain below `.fforager-artifacts/test-runs/`; a path escaping that root is a corpus defect.
+
+Failure and recovery:
+
+- `WP008-E-GATE-UNTRIGGERED`, missing report prefix, stale receipt, or source/manifest drift: do not use a stored report; restore the exact compiled test and source mapping, then rerun the command.
+- Claim, lease, commit, import, or reconciliation mismatch: repair the candidate-neutral boundary or adapter and add the exact public counterexample. Do not weaken the expected row or classify a semantic failure as unsupported.
+- `OpenFailed` for corrupt or truncated input is the required typed fail-closed result. A panic escaping `ArchiveStore::open`, a successful open of invalid bytes, or invented archive success is a defect.
+- Migration interruption must preserve a resumable checkpoint and last-known-good source. Unknown/newer schema versions and unknown import mappings must remain typed refusals.
+- A `BLOCKED` B-021 row means no million-identity latency, RSS, storage-size, recovery, or write-amplification result exists. Do not infer one from the representative row.
+- Report-write or artifact-confinement failure invalidates the invocation. Restore repository-local artifact access and rerun; never redirect disposable state to an external temp directory.
+
+Evidence ceiling: this is Phase 0 prerequisite evidence for a storage candidate. It does not execute a shipped Ferric entrypoint, physical power-loss test, or complete production archive subsystem and therefore provides zero product, capability, runtime, packaging, release, or phase progress.
+
+</topic>
+
 <topic id="phase-0-compatibility-oracle" status="active" version="5" wp="WP-FF-004-compatibility-inventory-corpus-v1" updated_at="2026-07-26">
 
 ## Validate Ferric compatibility data and optionally capture an external comparison

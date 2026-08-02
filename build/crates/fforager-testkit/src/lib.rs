@@ -7,11 +7,11 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::thread;
 #[cfg(windows)]
 use std::{
     io::Read,
     process::{Child, Command, Stdio},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -36,6 +36,61 @@ use fforager_core::resource::{
     OwnedResourceBroker, OwnerId,
 };
 use serde_json::{Value, json};
+
+mod archive_evidence;
+
+pub use archive_evidence::{
+    run_archive_store_evidence_corpus, validate_archive_store_evidence_report,
+};
+
+/// Canonical WP-008 candidate-neutral archive evidence corpus.
+pub const ARCHIVE_STORE_EVIDENCE_MANIFEST: &str =
+    "build/fixtures/archive-store-evidence/manifest.json";
+
+/// Exact compiled public test invoked by the WP-008 evidence gate.
+pub const ARCHIVE_STORE_EVIDENCE_PROOF_TEST: &str =
+    "tests::archive_store_evidence_corpus_executes_public_boundary";
+
+/// Stable stdout prefix carrying the strict machine-readable WP-008 report.
+pub const ARCHIVE_STORE_EVIDENCE_REPORT_PREFIX: &str = "FF-WP008-ARCHIVE-REPORT:";
+
+const ARCHIVE_STORE_EVIDENCE_SOURCE_PATHS: &[&str] = &[
+    "product/crates/fforager-contracts/src/archive.rs",
+    "product/crates/fforager-storage/src/lib.rs",
+    "build/crates/fforager-testkit/src/archive_evidence.rs",
+    "build/crates/fforager-testkit/src/lib.rs",
+    "build/tools/fforager-xtask/src/main.rs",
+];
+
+const ARCHIVE_STORE_EVIDENCE_CASE_IDS: &[&str] = &[
+    "wp008-identity-item",
+    "wp008-identity-representation",
+    "wp008-identity-track",
+    "wp008-identity-asset",
+    "wp008-identity-derived",
+    "wp008-duplicate-suppression",
+    "wp008-concurrent-claim",
+    "wp008-lease-renewal",
+    "wp008-lease-takeover",
+    "wp008-crash-before-archive",
+    "wp008-crash-after-archive",
+    "wp008-reconciliation-idempotent",
+    "wp008-corrupt-store",
+    "wp008-torn-store",
+    "wp008-schema-create",
+    "wp008-schema-forward",
+    "wp008-schema-interrupted",
+    "wp008-schema-unknown",
+    "wp008-import-mapped",
+    "wp008-import-unknown",
+    "wp008-retry-idempotent",
+    "wp008-rollback-last-known-good",
+    "wp008-scale-representative",
+    "wp008-scale-b021",
+];
+
+static ARCHIVE_EVIDENCE_RUN_SEQUENCE: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// Maximum size of one canonical conformance fixture.
 pub const MAX_FIXTURE_BYTES: u64 = 1_048_576;
@@ -212,6 +267,34 @@ impl From<std::io::Error> for ModelProofError {
 }
 
 impl From<serde_json::Error> for ModelProofError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+
+/// Fail-closed WP-008 archive evidence error.
+#[derive(Debug)]
+pub enum ArchiveEvidenceError {
+    Io(std::io::Error),
+    Json(serde_json::Error),
+    Contract(String),
+}
+
+impl fmt::Display for ArchiveEvidenceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "WP-008 archive evidence error: {self:?}")
+    }
+}
+
+impl std::error::Error for ArchiveEvidenceError {}
+
+impl From<std::io::Error> for ArchiveEvidenceError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl From<serde_json::Error> for ArchiveEvidenceError {
     fn from(error: serde_json::Error) -> Self {
         Self::Json(error)
     }
@@ -3292,6 +3375,85 @@ mod tests {
     use std::collections::BTreeSet;
 
     const CANONICAL_INVENTORY_FNV1A64: u64 = 0x4500_038f_d33a_8d64;
+
+    #[test]
+    fn archive_store_evidence_corpus_executes_public_boundary() {
+        let report = run_archive_store_evidence_corpus()
+            .expect("WP-008 archive corpus must execute public boundaries");
+        let manifest_bytes = fs::read(repository_root().join(ARCHIVE_STORE_EVIDENCE_MANIFEST))
+            .expect("WP-008 manifest must be readable");
+        let manifest: Value =
+            serde_json::from_slice(&manifest_bytes).expect("WP-008 manifest must be JSON");
+        validate_archive_store_evidence_report(&report, &manifest)
+            .expect("fresh WP-008 report must validate");
+
+        archive_evidence::verify_behavior_removal_mutations_fail()
+            .expect("behavior-removal mutations must be caught by real proof oracles");
+
+        let mut declaration_only = report.clone();
+        declaration_only["rows"][0]["actions"]
+            .as_array_mut()
+            .expect("actions must be an array")
+            .pop();
+        assert!(
+            validate_archive_store_evidence_report(&declaration_only, &manifest).is_err(),
+            "removing executed behavior while preserving the PASS declaration must fail",
+        );
+
+        let mut forged_receipt = report.clone();
+        forged_receipt["rows"][0]["actions"][0]["observed"] = json!("forged outcome");
+        assert!(
+            validate_archive_store_evidence_report(&forged_receipt, &manifest).is_err(),
+            "a changed observation with an unchanged SHA-256 receipt must fail",
+        );
+
+        if report["rows"]
+            .as_array()
+            .and_then(|rows| {
+                rows.iter().position(|row| {
+                    row.get("case_id").and_then(Value::as_str) == Some("wp008-scale-b021")
+                        && row.get("status").and_then(Value::as_str) == Some("BLOCKED")
+                })
+            })
+            .is_some()
+        {
+            let mut false_scale_pass = report.clone();
+            let row = false_scale_pass["rows"]
+                .as_array_mut()
+                .and_then(|rows| {
+                    rows.iter_mut().find(|row| {
+                        row.get("case_id").and_then(Value::as_str) == Some("wp008-scale-b021")
+                    })
+                })
+                .expect("B-021 row must exist");
+            row["status"] = json!("PASS");
+            row["proof_class"] = json!("semantic");
+            let measurement = false_scale_pass["measurements"]
+                .as_array_mut()
+                .and_then(|measurements| {
+                    measurements.iter_mut().find(|measurement| {
+                        measurement.get("profile").and_then(Value::as_str) == Some("b021")
+                    })
+                })
+                .expect("B-021 measurement must exist");
+            measurement["status"] = json!("PASS");
+            measurement["elapsed_ns"] = json!(0);
+            measurement["storage_size_bytes"] = json!(0);
+            measurement["cache_state"] = json!("fabricated");
+            false_scale_pass["summary"]["blocked_cases"] = json!(0);
+            false_scale_pass["summary"]["semantic_pass_cases"] =
+                false_scale_pass["summary"]["executed_cases"].clone();
+            assert!(
+                validate_archive_store_evidence_report(&false_scale_pass, &manifest).is_err(),
+                "zero measurement fields must not be promoted from BLOCKED to B-021 PASS",
+            );
+        }
+
+        println!(
+            "{ARCHIVE_STORE_EVIDENCE_REPORT_PREFIX}{}",
+            serde_json::to_string(&report).expect("WP-008 report must serialize")
+        );
+    }
 
     #[test]
     fn resource_durability_model_corpus_executes_public_boundaries() {

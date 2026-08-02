@@ -186,6 +186,36 @@ features = []
 default_features = false
 
 [[dependency_decisions]]
+name = "redb"
+version = "4.1.0"
+consumer = "fforager-testkit"
+runtime_class = "non_shipped_test_tooling"
+purpose = "Create candidate-specific malformed and unknown-version database fixtures while keeping corruption hooks out of the shipped candidate-neutral archive API."
+native = false
+owner = "WP-FF-008-archive-store-evidence"
+allowed_consumers = ["fforager-testkit"]
+reason = "The independent proof harness must mutate redb metadata below the public Ferric boundary to prove typed refusal of valid-looking but unsupported on-disk states."
+removal_trigger = "Remove with the redb candidate or when an equally strict candidate-neutral fault-injection fixture format replaces direct test-only mutation."
+approval_id = "WP-FF-008-archive-store-evidence-v2-AC-003"
+features = []
+default_features = false
+
+[[dependency_decisions]]
+name = "sha2"
+version = "0.11.0"
+consumer = "fforager-testkit"
+runtime_class = "non_shipped_test_tooling"
+purpose = "Bind persisted archive evidence inputs, executed action receipts, counterfactual receipts, and producer source files to cryptographic identities."
+native = false
+owner = "WP-FF-008-archive-store-evidence"
+allowed_consumers = ["fforager-testkit"]
+reason = "Independent persisted evidence needs the workspace's existing exact-pinned SHA-256 implementation instead of non-cryptographic FNV attribution or a new local digest implementation."
+removal_trigger = "Rust supplies a standard SHA-256 implementation or the archive evidence contract migrates through an accepted digest transition."
+approval_id = "WP-FF-008-archive-store-evidence-v2-AC-004"
+features = []
+default_features = false
+
+[[dependency_decisions]]
 name = "cargo_metadata"
 version = "0.23.1"
 consumer = "fforager-xtask"

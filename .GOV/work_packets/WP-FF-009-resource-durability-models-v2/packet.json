@@ -53,18 +53,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/resource-durability-models",
-      "head_sha": "605667f6562c7ae1d51af66bf13bec5f49c24338",
-      "verified_at_utc": "2026-08-02T06:08:37Z"
+      "head_sha": "89d394c149a3d5ce5ca675bf67f3ef31105d0af8",
+      "verified_at_utc": "2026-08-02T06:18:18Z"
     },
     "closure_commit": "605667f6562c7ae1d51af66bf13bec5f49c24338",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "89d394c149a3d5ce5ca675bf67f3ef31105d0af8"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Merge closure commit 605667f6562c7ae1d51af66bf13bec5f49c24338 and this MERGE_PENDING evidence record into canonical main, then mechanically prove containment before marking VALIDATED and clean the shared artifact root.",
+    "next_action": "No WP-009 action remains. Await separate Operator direction before activating another work packet.",
     "supersedes": [
       "WP-FF-009-resource-durability-models-v1"
     ],
@@ -199,10 +199,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-02T06:08:37Z",
-      "branch": "codex/resource-durability-models",
+      "recorded_at_utc": "2026-08-02T06:18:18Z",
+      "branch": "main",
       "base_sha": "05eb05708e92fb1f3ad35e5f030bd980810a21a9",
-      "head_sha": "605667f6562c7ae1d51af66bf13bec5f49c24338",
+      "head_sha": "89d394c149a3d5ce5ca675bf67f3ef31105d0af8",
       "dirty_paths": [],
       "checks_run": [
         "powershell -NoProfile -File build/scripts/clean-artifacts.ps1: PASS FF-GATE-ARTIFACT-HYGIENE-001; items=0",
@@ -225,10 +225,13 @@
         "PASS FF-GATE-ARCH-001: build/reports/architecture-check-1785649394293900300-30616.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false",
         "FF-GATE-RUNTIME-001 prerequisite-ceiling report: build/reports/runtime-truth-check-1785649239798166100-49632.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false",
         "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785649979680355700-41400.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false; 57 checks, 0 failed",
-        "PASS FF-GATE-PR-001: build/reports/verify-pr-1785650876381761500-59200.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false; 67 checks, 0 failed"
+        "PASS FF-GATE-PR-001: build/reports/verify-pr-1785650876381761500-59200.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false; 67 checks, 0 failed",
+        "git merge-base --is-ancestor: closure commit 605667f6562c7ae1d51af66bf13bec5f49c24338 and MERGE_PENDING evidence commit 89d394c149a3d5ce5ca675bf67f3ef31105d0af8 are contained in canonical main",
+        "git push origin main and git ls-remote: origin/main exactly matches 89d394c149a3d5ce5ca675bf67f3ef31105d0af8",
+        "PASS post-merge FF-GATE-ARCH-001: build/reports/architecture-check-1785651471356786700-36700.json"
       ],
       "blockers": [],
-      "next_action": "Merge closure commit 605667f6562c7ae1d51af66bf13bec5f49c24338 and this MERGE_PENDING evidence record into canonical main, then mechanically prove containment before marking VALIDATED and clean the shared artifact root."
+      "next_action": "No WP-009 action remains. Await separate Operator direction before activating another work packet."
     }
   },
   "validation": {
@@ -244,7 +247,10 @@
       "FF-GATE-RUNTIME-001 prerequisite-ceiling report: build/reports/runtime-truth-check-1785649239798166100-49632.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false",
       "PASS FF-GATE-DEEP-001: build/reports/verify-deep-1785649979680355700-41400.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false; 57 checks, 0 failed",
       "PASS FF-GATE-PR-001: build/reports/verify-pr-1785650876381761500-59200.json; commit 605667f6562c7ae1d51af66bf13bec5f49c24338, dirty=false; 67 checks, 0 failed",
-      "PASS: independent adversarial resource, durability/recovery, and proof/report reviews after remediation"
+      "PASS: independent adversarial resource, durability/recovery, and proof/report reviews after remediation",
+      "PASS: closure commit 605667f6562c7ae1d51af66bf13bec5f49c24338 and MERGE_PENDING evidence commit 89d394c149a3d5ce5ca675bf67f3ef31105d0af8 are ancestors of canonical main",
+      "PASS: origin/main exactly matched 89d394c149a3d5ce5ca675bf67f3ef31105d0af8 after merge push",
+      "PASS post-merge FF-GATE-ARCH-001: build/reports/architecture-check-1785651471356786700-36700.json"
     ],
     "not_proven": [
       "Real crash or power-loss durability on physical filesystems",

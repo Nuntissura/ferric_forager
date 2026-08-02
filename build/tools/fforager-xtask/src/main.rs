@@ -13221,6 +13221,15 @@ fn expected_adversarial_finding_proof(finding_id: &str) -> Option<&'static str> 
         "WP-FF-007-FINDING-DEEP-DECLARATION-005" => Some(
             "xtask::tests::deep_gate_reports_canonical_rules_without_packet_acceptance_attribution",
         ),
+        "WP-FF-008-FINDING-CONTRACT-PROVENANCE-001" => {
+            Some("contracts::archive::tests::commit_requires_exact_immutable_claim_provenance")
+        }
+        "WP-FF-008-FINDING-STORAGE-DURABILITY-002" => {
+            Some("storage::tests::migration_blocks_commit_between_verify_and_activate")
+        }
+        "WP-FF-008-FINDING-PROOF-REPORT-003" => {
+            Some("testkit::tests::archive_store_evidence_corpus_executes_public_boundary")
+        }
         "WP-FF-009-FINDING-RESOURCE-CONCURRENCY-001" => Some(
             "testkit::tests::resource_durability_report_rejects_missing_queue_bounds_and_durability_outrun",
         ),

@@ -64,13 +64,13 @@
   },
   "scope": {
     "product_impact": "PREREQUISITE",
-    "summary": "Build bounded Phase 0 supporting evidence that FFmpeg and ffprobe can be selected, invoked, observed, cancelled, reaped, and output-validated on Windows and Unix without a shell, hidden unbounded pipes, or false descendant-containment claims.",
+    "summary": "Build bounded prerequisite evidence for selecting, invoking, observing, cancelling, reaping, and checking output from FFmpeg and ffprobe on Windows and Unix without a shell, hidden unbounded pipes, or false descendant-containment claims.",
     "in_scope": [
       "Define a versioned data-only FFmpeg contract for trusted absolute executable identity, file/version/capability binding, typed operation plans, direct argument vectors, resource limits, deadlines, lifecycle, cancellation, diagnostics, and ffprobe-normalized output facts.",
       "Use direct arguments with explicit stream maps and stream-copy selection; shell construction, arbitrary operator command text, ambient working directories, and unrestricted protocols/input mechanisms are forbidden.",
       "Reserve child stdout for framed -progress pipe:1 evidence in the Phase 0 file-output profile, drain bounded stderr diagnostics separately, send media to a job-scoped file, and never parse human stderr as the progress protocol.",
       "Scrub inherited environment, govern working directory, pass -nostdin, and treat every child-provided byte, path, version string, progress field, diagnostic, and output as untrusted bounded input.",
-      "Extend the lifecycle model with Spawned, Running, GracefulStopRequested, ForcedKillRequested, Reaped, and Validated semantics so resource release and success remain impossible before direct-child reap and output validation.",
+      "Extend the lifecycle model with Spawned, Running, GracefulStopRequested, ForcedKillRequested, Reaped, and Validated semantics so terminal acceptance remains gated by direct-child reap and output validation.",
       "On Windows, require pre-execution Job assignment, KILL_ON_JOB_CLOSE, bounded forced whole-Job termination, direct-child wait, independent ActiveProcesses == 0 query, and sentinel inheritable-handle negatives; report the suspended-orphan residual unless a stronger broker is approved.",
       "On Unix, create a dedicated process group, apply bounded TERM then KILL to the group, wait the direct child, prove absence only for the declared nonescaping fixture topology, execute a setsid escape counterexample, and report that process groups are signal scopes rather than hostile descendant containment.",
       "Prove graceful stop only for declared supported profiles: Unix signal handling and a console-hosted Windows profile if its shared-console constraints are reproducibly met; do not claim general quiet-GUI Windows graceful stop.",
@@ -259,7 +259,7 @@
     },
     "stub_implementation_brief": {
       "implementation_authorized": true,
-      "base_scope": "Produce non-product Phase 0 FFmpeg supervision evidence without claiming shipped capability.",
+      "base_scope": "Produce FFmpeg supervision evidence classified as a non-product prerequisite; it does not establish a Ferric capability.",
       "activation_constraints": [
         "The exact non-product prerequisite declaration is immutable from this first non-STUB checkpoint through closure.",
         "Contracts, lifecycle/resource integration, fake-child fixtures, report contracts, and validators may proceed under current dependencies.",
@@ -288,7 +288,7 @@
           "Typed FFmpeg supervision contracts and lifecycle/resource integration execute at public prerequisite boundaries.",
           "Windows and Unix reports distinguish direct-child reap, declared containment, escape-capable residuals, and supported graceful profiles.",
           "Real FFmpeg/ffprobe output is bounded and semantically validated before success.",
-          "Every outcome remains zero product/capability/runtime/packaging/release/phase progress until a later shipped consumer re-proves it."
+          "This packet's acceptance ceiling excludes claims for the product, capability, execution, packaging, release, or project phase; each requires independent evidence from a later consumer."
         ],
         "risk_cases": [
           "A descendant escapes or a Job/process group is reported empty without an independent oracle.",
@@ -383,7 +383,7 @@
           "evidence": [
             "The activation requires the manual to state the exact locked Cargo commands and supported Windows/Unix proof profiles before closure.",
             "The activation requires the manual to document bounded diagnostics, common failures, and recovery without upgrading process-group semantics.",
-            "The activation requires the manual to state the zero-progress prerequisite ceiling and future FF-GATE-RUNTIME-001 proof through shipped artifacts."
+            "The activation requires the manual to state the prerequisite claim ceiling and to name FF-GATE-RUNTIME-001 as a later proof gate."
           ]
         }
       },

@@ -143,6 +143,10 @@ registered_files:
     path: .GOV/work_packets/WP-FF-009-resource-durability-models-v1/packet.json
   - id: WP-FF-010-ffmpeg-supervision-spike-v1
     path: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json
+  - id: WP-FF-010-ffmpeg-supervision-spike-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/refinement.json
+  - id: WP-FF-010-ffmpeg-supervision-spike-v1-CEILING-001
+    path: .GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json#/extensions/change_evidence/ceilings_exceptions_and_evidence
   - id: WP-FF-011-equivalent-work-vertical-slice-v1
     path: .GOV/work_packets/WP-FF-011-equivalent-work-vertical-slice-v1/packet.json
   - id: WP-FF-012-runtime-truth-gates-v1

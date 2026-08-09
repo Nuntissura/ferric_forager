@@ -276,6 +276,21 @@ features = []
 default_features = true
 
 [[dependency_decisions]]
+name = "sha2"
+version = "0.11.0"
+consumer = "fforager-contracts"
+runtime_class = "shipped_rust_product"
+purpose = "Compute the versioned canonical SHA-256 projections that bind validated FFmpeg requests and typed operation plans before an executable argument vector is exposed."
+native = false
+owner = "WP-FF-010-ffmpeg-supervision-spike"
+allowed_consumers = ["fforager-contracts"]
+reason = "The supervision contract must reject stale or caller-forged operation identities before spawn; reusing the workspace's exact-pinned pure-Rust SHA-256 implementation avoids an arbitrary verifier boundary or a local digest implementation."
+removal_trigger = "Rust supplies an approved standard SHA-256 implementation or the FFmpeg contract migrates through an accepted versioned digest transition."
+approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-001"
+features = []
+default_features = false
+
+[[dependency_decisions]]
 name = "serde"
 version = "1.0.228"
 consumer = "fforager-diagnostics-contract"

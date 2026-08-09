@@ -110,7 +110,7 @@ exception_authority:
       allowed_native_runtime_packages: ["rustls-platform-verifier@0.7.0"]
       allowed_package_archive_sha256: ["ring@0.17.14=a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7", "rustls-platform-verifier@0.7.0=26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"]
       allowed_package_source_inventory_sha256: ["ring@0.17.14=60be074c360264320b3fa0a46515ca828e44954988d8843ad3766bf84fc452d3", "rustls-platform-verifier@0.7.0=8d7a222bf3a643ce4c2003c1ede94bbd0d4e10443271602ab445c9d940ac40b0"]
-      ordinary_transport_resolved_closure_sha256: "f042b288374c8cd88b72191983df65732abd5bd940f950c44dce57051de45210"
+      ordinary_transport_resolved_closure_sha256: "1ae0db5e3c4237412d71c9d3323f49cb071b4583d37232a3ff62b09b5a396e9e"
       ordinary_transport_registry_source_closure_sha256: "77cd4f81824d693e36750605c68eadedb57dbda5db35ec85bc4aae8b78719bc3"
       allowed_runtime_classes: [non_shipped_phase0_prerequisite, shipped_rust_product]
       allow_build_scripts: true

@@ -8966,7 +8966,7 @@ fn read_native_dependency_exceptions(
                             ),
                         ])
                     && ordinary_transport_resolved_closure_sha256
-                        == "f042b288374c8cd88b72191983df65732abd5bd940f950c44dce57051de45210"
+                        == "1ae0db5e3c4237412d71c9d3323f49cb071b4583d37232a3ff62b09b5a396e9e"
                     && ordinary_transport_registry_source_closure_sha256
                         == "77cd4f81824d693e36750605c68eadedb57dbda5db35ec85bc4aae8b78719bc3"
                     && allowed_runtime_classes

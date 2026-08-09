@@ -3374,7 +3374,7 @@ mod tests {
     use fforager_diagnostics_contract as diagnostics;
     use std::collections::BTreeSet;
 
-    const CANONICAL_INVENTORY_FNV1A64: u64 = 0x4500_038f_d33a_8d64;
+    const CANONICAL_INVENTORY_FNV1A64: u64 = 0x8d40_e7b5_6085_fe1e;
 
     #[test]
     fn archive_store_evidence_corpus_executes_public_boundary() {
@@ -3864,6 +3864,11 @@ mod tests {
                 "ResourceVector|ResourceLedger|ByteCreditLedger|CreditAttribution",
                 "core::resource::tests::receive_requires_exact_claim_owner_and_records_attribution",
             ),
+            (
+                "FF-CONTRACT-FFMPEG-SUPERVISION-001",
+                "FfmpegSupervisionRequestV1|FfmpegSupervisionReportV1",
+                "contracts::ffmpeg::tests::registered_public_boundary_suite",
+            ),
         ];
         assert_eq!(entries.len(), canonical_contracts.len());
         for (id, rust_type, proof_id) in canonical_contracts {
@@ -4074,6 +4079,30 @@ mod tests {
         canonical_wire_decodes_process_and_worker_envelopes();
         canonical_wire_decodes_durability_and_filesystem_contracts();
         canonical_wire_decodes_diagnostics_contracts();
+        canonical_wire_decodes_ffmpeg_supervision_contract();
+    }
+
+    fn canonical_wire_decodes_ffmpeg_supervision_contract() {
+        use fforager_contracts::ffmpeg::{FfmpegSupervisionReportV1, FfmpegSupervisionRequestV1};
+
+        let build_fixture =
+            read_fixture("ffmpeg-supervision-v1.0.json").expect("FFmpeg fixture must load");
+        let product_fixture = include_bytes!(
+            "../../../../product/crates/fforager-contracts/testdata/ffmpeg-supervision-v1.0.json"
+        );
+        assert_eq!(
+            build_fixture.as_slice(),
+            product_fixture,
+            "product contract test fixture and build-owned proof fixture must remain byte-identical"
+        );
+        let value: Value =
+            serde_json::from_slice(&build_fixture).expect("FFmpeg fixture must be JSON");
+        let request: FfmpegSupervisionRequestV1 =
+            serde_json::from_value(value["request"].clone()).expect("request must decode");
+        let report: FfmpegSupervisionReportV1 =
+            serde_json::from_value(value["report"].clone()).expect("report must decode");
+        assert!(request.validate_for_invocation().is_ok());
+        assert_eq!(report.validate_against(&request), Ok(()));
     }
 
     fn canonical_wire_decodes_typed_identities() {

@@ -1,6 +1,6 @@
 schema_id: ff.taskboard@2
 file_id: FF-GOV-TASKBOARD-001
-updated_at: "2026-08-02"
+updated_at: "2026-08-09"
 authority: canonical_index
 project_id: FF-PROJ-001
 packet_root: .GOV/work_packets/
@@ -92,3 +92,7 @@ work_packets:
     packet: .GOV/work_packets/WP-FF-018-governance-state-wording-fix-v1/packet.json
   - wp_id: WP-FF-019-ferforstart-session-bootstrap-v1
     packet: .GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/packet.json
+  - wp_id: WP-FF-020-equivalent-work-benchmark-design-v1
+    packet: .GOV/work_packets/WP-FF-020-equivalent-work-benchmark-design-v1/packet.json
+  - wp_id: WP-FF-021-first-runnable-production-slice-v1
+    packet: .GOV/work_packets/WP-FF-021-first-runnable-production-slice-v1/packet.json

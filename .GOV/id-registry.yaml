@@ -1,6 +1,6 @@
 schema_id: ff.id_registry@1
 file_id: FF-GOV-ID-REGISTRY-001
-updated_at: "2026-07-31"
+updated_at: "2026-08-09"
 namespaces:
   FF-PROJ:
     entity_kind: project
@@ -44,7 +44,7 @@ namespaces:
     next_numeric_id: 10
   WP-FF:
     entity_kind: work_packet
-    next_numeric_id: 20
+    next_numeric_id: 22
   FF-AC:
     entity_kind: work_packet_acceptance_row
     next_numeric_id: 1
@@ -211,6 +211,14 @@ registered_files:
     path: .GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/packet.json
   - id: WP-FF-019-ferforstart-session-bootstrap-v1-REFINEMENT-001
     path: .GOV/work_packets/WP-FF-019-ferforstart-session-bootstrap-v1/refinement.json
+  - id: WP-FF-020-equivalent-work-benchmark-design-v1
+    path: .GOV/work_packets/WP-FF-020-equivalent-work-benchmark-design-v1/packet.json
+  - id: WP-FF-020-equivalent-work-benchmark-design-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-020-equivalent-work-benchmark-design-v1/refinement.json
+  - id: WP-FF-021-first-runnable-production-slice-v1
+    path: .GOV/work_packets/WP-FF-021-first-runnable-production-slice-v1/packet.json
+  - id: WP-FF-021-first-runnable-production-slice-v1-REFINEMENT-001
+    path: .GOV/work_packets/WP-FF-021-first-runnable-production-slice-v1/refinement.json
   - id: FF-NODE-SESSION-BOOTSTRAP-001
     path: .GOV/topology.yaml#/nodes
   - id: FF-EDGE-SESSION-BOOTSTRAP-INJECTS-START-001

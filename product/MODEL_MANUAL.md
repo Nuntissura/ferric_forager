@@ -1,7 +1,7 @@
 ---
 file_id: FF-PRODUCT-MODEL-MANUAL-001
 file_kind: model_manual
-updated_at: "2026-08-02"
+updated_at: "2026-08-10"
 ---
 
 <topic id="phase-0-purpose" status="active" version="4" wp="WP-FF-006-rust-youtube-challenge-spike-v1" updated_at="2026-07-26">
@@ -23,7 +23,7 @@ Shipped product runtime must not read or require `.GOV/` or `build/`. Build tool
 
 </topic>
 
-<topic id="wp-ff-010-ffmpeg-supervision-prerequisite" status="active" version="1" wp="WP-FF-010-ffmpeg-supervision-spike-v1" ingestable="true" updated_at="2026-08-09">
+<topic id="wp-ff-010-ffmpeg-supervision-prerequisite" status="active" version="1" wp="WP-FF-010-ffmpeg-supervision-spike-v1" ingestable="true" updated_at="2026-08-10">
 
 ## Run the FFmpeg supervision prerequisite proof
 
@@ -38,9 +38,9 @@ The shared fixture root must remain under `.fforager-artifacts/` and contain:
 - `input/video.h264`, an elementary H264 Annex-B file;
 - an initially available `output/` directory for `merged.mp4` and bounded probe scratch.
 
-The producer accepts only explicit absolute native paths through `FFORAGER_WP010_FFMPEG`, `FFORAGER_WP010_FFPROBE`, `FFORAGER_WP010_FIXTURE_ROOT`, `FFORAGER_WP010_REPORT_OUTPUT`, and `FFORAGER_WP010_FAKE_CHILD`. It also requires the independently supplied clean Git identity in `FFORAGER_WP010_SOURCE_COMMIT`, literal `false` in `FFORAGER_WP010_SOURCE_DIRTY`, and a host description in `FFORAGER_WP010_HOST_KERNEL`. Linux additionally requires the absolute native `setsid` path in `FFORAGER_WP010_SETSID`. Do not use a Windows `.exe` through WSL as Linux evidence.
+Run the repository-owned `ffmpeg-supervision-produce` wrapper rather than invoking the ignored producer test directly. The wrapper independently requires a clean committed source before and after execution; discovers and records the native Cargo, FFmpeg, ffprobe, fake-child, `setsid`, namespace, timeout, identity, and host tools; builds the fake child in an isolated artifact-root Cargo home and target; synthesizes the producer environment; and writes a strict report plus producer receipt. Caller-authored tool paths, Git identity, dirty-state claims, process environment, command text, and working directories are not accepted as proof inputs. Do not use a Windows `.exe` through WSL as Linux evidence.
 
-Each platform writes one strict `ff.ffmpeg-platform-proof@1` JSON report. The report contains platform-specific request and tool identities plus common operation, fixture, and limit bindings; raw canonical request/plan/limits/lifecycle/wait/output evidence; the versioned bound-runtime projection and exact platform argument vector; diagnostic tail bytes; progress counters; and typed containment observations. The aggregator independently rereads clean Git and the canonical fixture, reconstructs the Windows pathname vector or Linux descriptor vector, recomputes all exposed digests and behavioral decisions, requires one Windows and one Linux-native row, and writes an `ff.ffmpeg-cross-platform-proof@1` report under `build/reports/`.
+Each platform writes one strict `ff.ffmpeg-platform-proof@1` JSON report and one `ff.ffmpeg-producer-receipt@1` receipt under `.fforager-artifacts/runtime-proof/`. The report contains platform-specific request and tool identities plus common operation, fixture, and limit bindings; raw canonical request/plan/limits/lifecycle/wait/output evidence; the versioned bound-runtime projection and exact platform argument vector; complete bounded progress and diagnostic evidence; and typed containment observations. The aggregator independently rereads clean Git and the canonical fixture, validates both producer receipts, reconstructs the Windows pathname vector or Linux descriptor vector, recomputes all exposed digests and behavioral decisions, requires one Windows and one Linux-native row, and writes an `ff.ffmpeg-cross-platform-proof@1` receipt under `.fforager-artifacts/runtime-proof/ffmpeg-supervision/`.
 
 ### Prepare one shared deterministic fixture on Windows
 
@@ -55,7 +55,6 @@ New-Item -ItemType Directory -Force (Join-Path $fixtureRoot "input"), (Join-Path
 Copy-Item -LiteralPath "product/crates/fforager-contracts/testdata/ffmpeg-supervision-v1.0.json" -Destination (Join-Path $fixtureRoot "ffmpeg-supervision-v1.0.json") -Force
 & $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=2" -c:a aac -b:a 128k -f adts (Join-Path $fixtureRoot "input/audio.aac")
 & $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=size=320x240:rate=25:duration=2" -c:v libx264 -pix_fmt yuv420p -preset medium -f h264 (Join-Path $fixtureRoot "input/video.h264")
-cargo build --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-testkit --bin fforager-fake-child
 ```
 
 Both platform producers must consume these same fixture bytes. Record their SHA-256 values before either run and reject any mismatch.
@@ -63,44 +62,19 @@ Both platform producers must consume these same fixture bytes. Record their SHA-
 ### Produce the Windows report
 
 ```powershell
-$sourceCommit = (git rev-parse HEAD).Trim()
 if (git status --porcelain) { throw "WP-010 final reports require a clean source" }
-$env:FFORAGER_WP010_FFMPEG = $ffmpeg
-$env:FFORAGER_WP010_FFPROBE = $ffprobe
-$env:FFORAGER_WP010_FIXTURE_ROOT = $fixtureRoot
-$env:FFORAGER_WP010_REPORT_OUTPUT = Join-Path $proofRoot "windows.json"
-$env:FFORAGER_WP010_FAKE_CHILD = Join-Path (Resolve-Path ".fforager-artifacts/cargo-target/debug").Path "fforager-fake-child.exe"
-$env:FFORAGER_WP010_SOURCE_COMMIT = $sourceCommit
-$env:FFORAGER_WP010_SOURCE_DIRTY = "false"
-$env:FFORAGER_WP010_HOST_KERNEL = [Environment]::OSVersion.VersionString
-cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-ffmpeg proof_producer::tests::real_platform_proof_from_environment -- --ignored --exact --nocapture
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-produce --platform windows_x86_64 --fixture-root ".fforager-artifacts/wp010-final/shared-fixture" --report ".fforager-artifacts/runtime-proof/wp010-windows.json" --receipt ".fforager-artifacts/runtime-proof/wp010-windows-receipt.json"
 ```
 
 The supported quiet Windows profile uses `CREATE_NO_WINDOW`, `-nostdin`, pre-execution Job assignment, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, bounded whole-Job forced termination, cached direct-child wait, and an independent active-process query. General graceful stop is unsupported: this profile has neither the shared console needed for CTRL_BREAK nor the stdin `q` route. Windows numeric exit status does not prove exception provenance. Without a broker, the suspended-orphan interval remains explicit residual uncertainty.
 
 ### Produce the Linux-native report
 
-Run in the provisioned Linux host against Linux-native tools. The example assumes the worktree is visible at the matching WSL mount and reuses the Windows-created fixture bytes.
+Run the Linux-native producer from the clean Windows worktree through the same closed wrapper. It enters the configured WSL2 Ubuntu host, uses Linux-native `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, isolates the build in a PID namespace with an earlier inner timeout than the outer Windows wrapper, and reuses the exact Windows-created fixture bytes.
 
-```bash
-set -eu
-export CARGO_BUILD_JOBS=1
-export CARGO_TARGET_DIR="$PWD/.fforager-artifacts/cargo-target-linux"
-proof_root="$PWD/.fforager-artifacts/wp010-final"
-fixture_root="$proof_root/shared-fixture"
-source_commit="$(git rev-parse HEAD)"
-test -z "$(git status --porcelain)"
-cargo build --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-testkit --bin fforager-fake-child
-export FFORAGER_WP010_FFMPEG=/usr/bin/ffmpeg
-export FFORAGER_WP010_FFPROBE=/usr/bin/ffprobe
-export FFORAGER_WP010_FIXTURE_ROOT="$fixture_root"
-export FFORAGER_WP010_REPORT_OUTPUT="$proof_root/linux.json"
-export FFORAGER_WP010_FAKE_CHILD="$CARGO_TARGET_DIR/debug/fforager-fake-child"
-export FFORAGER_WP010_SOURCE_COMMIT="$source_commit"
-export FFORAGER_WP010_SOURCE_DIRTY=false
-export FFORAGER_WP010_HOST_KERNEL="$(uname -srmo)"
-export FFORAGER_WP010_SETSID=/usr/bin/setsid
-cargo test --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-ffmpeg proof_producer::tests::real_platform_proof_from_environment -- --ignored --exact --nocapture
+```powershell
+if (git status --porcelain) { throw "WP-010 final reports require a clean source" }
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-produce --platform linux_x86_64 --fixture-root ".fforager-artifacts/wp010-final/shared-fixture" --report ".fforager-artifacts/runtime-proof/wp010-linux.json" --receipt ".fforager-artifacts/runtime-proof/wp010-linux-receipt.json"
 ```
 
 Linux opens every input with `O_NOFOLLOW`, precreates the output with `openat`, `O_EXCL`, and `O_NOFOLLOW` on the retained output-directory descriptor, and passes only fixed audited descriptors to FFmpeg. The bound vector uses `-fd 64..95` for inputs, `-fd 96` for output, `fd:`, the internal `fd,pipe` protocol inventory, and `-y` only because the exact output descriptor is already exclusively precreated. The logical request remains the version-one pathname and `-n` contract; `ff.ffmpeg-bound-runtime-invocation-canonical-json@1` binds the platform transformation. FFprobe receives the exact retained media descriptor rather than reopening a pathname.
@@ -113,7 +87,7 @@ Return to the clean linked worktree on Windows and run:
 
 ```powershell
 $env:CARGO_TARGET_DIR = ".fforager-artifacts/cargo-target"
-cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-aggregate --windows-report ".fforager-artifacts/wp010-final/windows.json" --linux-report ".fforager-artifacts/wp010-final/linux.json"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-aggregate --windows-report ".fforager-artifacts/runtime-proof/wp010-windows.json" --windows-receipt ".fforager-artifacts/runtime-proof/wp010-windows-receipt.json" --linux-report ".fforager-artifacts/runtime-proof/wp010-linux.json" --linux-receipt ".fforager-artifacts/runtime-proof/wp010-linux-receipt.json"
 ```
 
 The consumer rejects a missing platform; dirty, stale, or mismatched source; tool/request/operation/fixture/limit drift; forged raw evidence; a producer digest used as its own oracle; false Windows active-zero; missing direct wait; progress or diagnostic limit violation; declaration-preserving lifecycle or containment mutation; a leaked Windows handle sentinel; or a Linux report without the executed `setsid` escape and residual.

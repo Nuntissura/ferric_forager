@@ -146,6 +146,9 @@ pub fn drain_progress_supervised(
     // At most four equal chunks coexist: the reader buffer, the value being
     // offered, the one queued value, and the parser-owned received value.
     // Parser state owns two exact max-record buffers and retains no records.
+    let cadence_deadline = Instant::now()
+        .checked_add(runtime_limits.cadence_timeout)
+        .unwrap_or_else(Instant::now);
     let (sender, receiver) = sync_channel(1);
     let stalled = Arc::new(AtomicBool::new(false));
     let read_error = Arc::new(Mutex::new(None));
@@ -157,13 +160,18 @@ pub fn drain_progress_supervised(
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => {
-                    let _sent = send_with_stall(&sender, None, stall_timeout, &reader_stalled);
+                    let _sent = send_with_stall(
+                        &sender,
+                        (Instant::now(), None),
+                        stall_timeout,
+                        &reader_stalled,
+                    );
                     return;
                 }
                 Ok(count) => {
                     if send_with_stall(
                         &sender,
-                        Some(buffer[..count].to_vec()),
+                        (Instant::now(), Some(buffer[..count].to_vec())),
                         stall_timeout,
                         &reader_stalled,
                     )
@@ -186,6 +194,7 @@ pub fn drain_progress_supervised(
         &receiver,
         parser_limits,
         runtime_limits.cadence_timeout,
+        cadence_deadline,
         &stalled,
         &read_error,
         transcript_capacity,
@@ -197,9 +206,9 @@ pub fn drain_progress_supervised(
     parsed
 }
 
-fn send_with_stall(
-    sender: &SyncSender<Option<Vec<u8>>>,
-    mut value: Option<Vec<u8>>,
+fn send_with_stall<T>(
+    sender: &SyncSender<T>,
+    mut value: T,
     timeout: Duration,
     stalled: &AtomicBool,
 ) -> Result<(), ()> {
@@ -223,18 +232,28 @@ fn send_with_stall(
 }
 
 fn receive_progress(
-    receiver: &Receiver<Option<Vec<u8>>>,
+    receiver: &Receiver<(Instant, Option<Vec<u8>>)>,
     limits: ProgressLimits,
     cadence_timeout: Duration,
+    mut cadence_deadline: Instant,
     stalled: &AtomicBool,
     read_error: &Mutex<Option<std::io::Error>>,
     transcript_capacity: usize,
 ) -> Result<ProgressSummary, ProgressDrainError> {
     let mut parser = ProgressParser::new(limits, transcript_capacity);
     loop {
-        match receiver.recv_timeout(cadence_timeout) {
-            Ok(Some(bytes)) => parser.feed(&bytes).map_err(ProgressDrainError::Progress)?,
-            Ok(None) => return parser.finish().map_err(ProgressDrainError::Progress),
+        let remaining = cadence_deadline.saturating_duration_since(Instant::now());
+        match receiver.recv_timeout(remaining) {
+            Ok((observed_at, _)) if observed_at > cadence_deadline => {
+                return Err(ProgressDrainError::CadenceTimedOut);
+            }
+            Ok((observed_at, Some(bytes))) => {
+                parser.feed(&bytes).map_err(ProgressDrainError::Progress)?;
+                cadence_deadline = observed_at
+                    .checked_add(cadence_timeout)
+                    .unwrap_or(observed_at);
+            }
+            Ok((_, None)) => return parser.finish().map_err(ProgressDrainError::Progress),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 return Err(ProgressDrainError::CadenceTimedOut);
             }
@@ -434,6 +453,56 @@ mod tests {
             ),
             Err(ProgressDrainError::CadenceTimedOut)
         ));
+    }
+
+    #[test]
+    fn queued_chunk_observed_after_cadence_deadline_is_rejected() {
+        let (sender, receiver) = sync_channel(1);
+        let cadence_deadline = Instant::now();
+        sender
+            .send((
+                cadence_deadline + Duration::from_millis(1),
+                Some(b"progress=end\n".to_vec()),
+            ))
+            .expect("queue stale chunk");
+        assert!(matches!(
+            receive_progress(
+                &receiver,
+                progress_limits(),
+                Duration::from_secs(1),
+                cadence_deadline,
+                &AtomicBool::new(false),
+                &Mutex::new(None),
+                128,
+            ),
+            Err(ProgressDrainError::CadenceTimedOut)
+        ));
+    }
+
+    #[test]
+    fn timely_queued_events_survive_receiver_scheduling_delay() {
+        let (sender, receiver) = sync_channel(2);
+        let observed_at = Instant::now();
+        let cadence_timeout = Duration::from_millis(20);
+        sender
+            .send((observed_at, Some(b"progress=end\n".to_vec())))
+            .expect("queue timely chunk");
+        sender
+            .send((observed_at + Duration::from_millis(1), None))
+            .expect("queue timely EOF");
+        std::thread::sleep(Duration::from_millis(30));
+        let summary = receive_progress(
+            &receiver,
+            progress_limits(),
+            cadence_timeout,
+            observed_at + cadence_timeout,
+            &AtomicBool::new(false),
+            &Mutex::new(None),
+            128,
+        )
+        .expect("reader-observed cadence must survive receiver scheduling delay");
+        assert!(summary.saw_terminal);
+        assert_eq!(summary.raw_transcript, b"progress=end\n");
     }
 
     #[test]

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove cross-platform FFmpeg supervision",
     "created_at_utc": "2026-07-18T21:13:04Z",
-    "updated_at_utc": "2026-08-10T12:04:00Z"
+    "updated_at_utc": "2026-08-10T12:34:11Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -45,18 +45,18 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/ffmpeg-supervision-spike",
-      "head_sha": "a9ff788f480adca9970ada24876df20a851fe96e",
-      "verified_at_utc": "2026-08-10T12:04:00Z"
+      "head_sha": "5bc528cb4dd1fa78d373467c0ef95474c88008cd",
+      "verified_at_utc": "2026-08-10T12:34:11Z"
     },
     "closure_commit": "a9ff788f480adca9970ada24876df20a851fe96e",
-    "main_containment_status": "NOT_STARTED",
-    "merged_main_commit": null
+    "main_containment_status": "VERIFIED",
+    "merged_main_commit": "9b2233fce1a443d9c51b1a17ee272786be7d58b1"
   },
   "lifecycle": {
-    "status": "MERGE_PENDING",
+    "status": "VALIDATED",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Commit and remotely back up this truthful MERGE_PENDING evidence record, merge the closure lineage into canonical main, mechanically prove local and remote main containment, then transition WP-FF-010 to VALIDATED and clean the shared artifact root.",
+    "next_action": "No WP-010 action remains. Await separate Operator direction before activating another work packet; any later product consumer must re-prove this prerequisite through WP-FF-011 and FF-GATE-RUNTIME-001.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -215,10 +215,10 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-10T12:04:00Z",
-      "branch": "codex/ffmpeg-supervision-spike",
+      "recorded_at_utc": "2026-08-10T12:34:11Z",
+      "branch": "main",
       "base_sha": "a44f9ce69200df54be637334403a4da173e9bb15",
-      "head_sha": "a9ff788f480adca9970ada24876df20a851fe96e",
+      "head_sha": "9b2233fce1a443d9c51b1a17ee272786be7d58b1",
       "dirty_paths": [],
       "checks_run": [
         "ferforstart.cmd: startup authority loaded in the dedicated linked worktree",
@@ -234,10 +234,13 @@
         "The Linux setsid retained-pipe regression no longer uses an unbounded readiness spin: exact PID/ready identity, fail-closed marker handling, bounded SIGKILL-to-ESRCH cleanup, ten loaded repetitions, two 72/0/5 full adapter runs, strict Clippy, and orphan scans pass.",
         "The Windows forbidden-handle differential no longer depends on one unstable PowerShell failure code: protected execution must be opaque non-success, non-supervisor-forced, and write no target bytes while the deliberately weakened mutation must succeed and write exact LEAK; twenty focused repetitions, two 64/0/3 full adapter runs, and strict Clippy pass.",
         "Clean-source closure gates on a9ff788f480adca9970ada24876df20a851fe96e: FF-GATE-DEEP-001 PASS, FF-GATE-ARCH-001 PASS, FF-GATE-RUNTIME-001 prerequisite-ceiling PASS, history secret scan PASS, and hooks verification PASS; FF-GATE-PR-001 correctly refused because MERGE_PENDING does not authorize implementation.",
-        "Independent HIGH-risk adversarial replay passed all executable report, receipt, aggregate, contract-inventory, mutation, and orphan checks; its sole closure-readiness finding was the stale packet checkpoint remediated by this governance-only update."
+        "Independent HIGH-risk adversarial replay passed all executable report, receipt, aggregate, contract-inventory, mutation, and orphan checks; its sole closure-readiness finding was the stale packet checkpoint remediated by the governance-only MERGE_PENDING record.",
+        "git merge-base --is-ancestor proved closure commit a9ff788f480adca9970ada24876df20a851fe96e and MERGE_PENDING evidence commit 5bc528cb4dd1fa78d373467c0ef95474c88008cd are contained in local main merge commit 9b2233fce1a443d9c51b1a17ee272786be7d58b1.",
+        "git push origin main plus independent git ls-remote and merge-base checks proved origin/main exactly 9b2233fce1a443d9c51b1a17ee272786be7d58b1 and contains both the closure and MERGE_PENDING evidence commits.",
+        "PASS post-merge FF-GATE-ARCH-001: build/reports/architecture-check-1786365051608130200-60020.json; clean merge commit 9b2233fce1a443d9c51b1a17ee272786be7d58b1; SHA-256 93fcf5ba0d7303012a30771e76422955f9a31b0a6d6bedcfeaba651bd9bdae0d."
       ],
       "blockers": [],
-      "next_action": "Commit and push this MERGE_PENDING evidence record, obtain the post-patch independent closure-state verdict, merge into canonical main, prove local and remote containment of a9ff788f480adca9970ada24876df20a851fe96e, then transition to VALIDATED and clean artifacts."
+      "next_action": "No WP-010 action remains. Await separate Operator direction before activating another work packet; any later product consumer must re-prove this prerequisite through WP-FF-011 and FF-GATE-RUNTIME-001."
     }
   },
   "validation": {
@@ -250,7 +253,10 @@
       "Linux-native real FFmpeg/ffprobe behavior, TERM/KILL, fd handoff and setsid residual report: PASS",
       "exact clean a9ff788f480adca9970ada24876df20a851fe96e Windows and Linux platform-proof@2 reports, producer receipts, and strict same-source aggregation: PASS; aggregate SHA-256 d5ad90211918bbc22862de95046d5b1212844abed9897cc960bf032074f5958c",
       "locked full workspace tests and architecture gate: PASS",
-      "independent HIGH-risk adversarial review: PASS_NO_OPEN_FINDINGS"
+      "independent HIGH-risk adversarial review: PASS_NO_OPEN_FINDINGS",
+      "local main contains closure a9ff788f480adca9970ada24876df20a851fe96e and MERGE_PENDING evidence 5bc528cb4dd1fa78d373467c0ef95474c88008cd: PASS",
+      "origin/main exactly matched merge commit 9b2233fce1a443d9c51b1a17ee272786be7d58b1 and contains both required commits: PASS",
+      "post-merge FF-GATE-ARCH-001: PASS; report build/reports/architecture-check-1786365051608130200-60020.json; SHA-256 93fcf5ba0d7303012a30771e76422955f9a31b0a6d6bedcfeaba651bd9bdae0d"
     ],
     "not_proven": [
       "Product, capability, runtime, packaging, release, and phase advancement remain outside this prerequisite; the immutable ceiling requires a later WP-FF-011 production consumer and FF-GATE-RUNTIME-001.",

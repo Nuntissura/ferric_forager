@@ -1979,16 +1979,10 @@ fn strictly_sorted_unique<T: Ord>(values: &[T]) -> bool {
 mod tests {
     use super::*;
     use serde_json::{Value, json};
-    use std::{fs, path::Path};
 
     fn fixture() -> Value {
-        let bytes = fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("testdata")
-                .join("ffmpeg-supervision-v1.0.json"),
-        )
-        .expect("product FFmpeg contract fixture must load");
-        serde_json::from_slice(&bytes).expect("product FFmpeg contract fixture must be JSON")
+        serde_json::from_slice(include_bytes!("../testdata/ffmpeg-supervision-v1.0.json"))
+            .expect("product FFmpeg contract fixture must be JSON")
     }
 
     fn request_and_report() -> (FfmpegSupervisionRequestV1, FfmpegSupervisionReportV1) {

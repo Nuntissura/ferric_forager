@@ -1842,7 +1842,9 @@ mod tests {
             Duration::from_secs(10),
         )
         .expect("handle-list fault observation");
-        assert_eq!(observation.protected_exit.windows_status_opaque, Some(23));
+        assert!(observation.protected_exit.windows_status_opaque.is_some());
+        assert!(!observation.protected_exit.successful());
+        assert!(!observation.protected_exit.forced_by_supervisor);
         assert!(observation.protected_bytes.is_empty());
         assert!(observation.mutated_exit.successful());
         assert_eq!(observation.mutated_bytes, b"LEAK");

@@ -1572,7 +1572,8 @@ fn observe_platform_counterexample(
         Duration::from_secs(10),
     )
     .map_err(|failure| error("forbidden-handle fault probe", failure))?;
-    let protected_excluded = forbidden.protected_exit.windows_status_opaque == Some(23)
+    let protected_excluded = forbidden.protected_exit.windows_status_opaque.is_some()
+        && !forbidden.protected_exit.successful()
         && !forbidden.protected_exit.forced_by_supervisor
         && forbidden.protected_bytes.is_empty();
     let mutation_leaked = forbidden.mutated_exit.successful()

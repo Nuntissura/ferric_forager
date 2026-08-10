@@ -743,7 +743,12 @@ fn contract_tool(
 
 const fn proof_limits() -> FfmpegSupervisionLimitsV1 {
     FfmpegSupervisionLimitsV1 {
-        startup_timeout_millis: 30_000,
+        // The Windows proof rehashes the pinned FFmpeg/ffprobe identities at
+        // each governed startup boundary. Full distribution binaries can be
+        // hundreds of MiB, so the real evidence profile reserves a bounded
+        // two-minute cumulative startup window rather than relying on a warm
+        // filesystem cache.
+        startup_timeout_millis: 120_000,
         execution_timeout_millis: 60_000,
         graceful_stop_timeout_millis: 1_000,
         forced_kill_timeout_millis: 5_000,

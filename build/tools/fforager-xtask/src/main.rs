@@ -5686,7 +5686,7 @@ fn expected_inventory_proof(id: &str) -> Option<&'static str> {
             Some("contracts::storage::tests::unsupported_path_confinement_fails_closed")
         }
         "FF-CONTRACT-FFMPEG-SUPERVISION-001" => {
-            Some("ffmpeg::tests::registered_public_boundary_suite")
+            Some("contracts::ffmpeg::tests::registered_public_boundary_suite")
         }
         "FF-STATE-ADMISSION-001" => {
             Some("core::resource::tests::atomic_zero_exact_one_over_and_release_identity")

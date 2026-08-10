@@ -129,7 +129,7 @@
       "status": "PASS",
       "evidence": [
         "fforager-contracts registered FF-CONTRACT-FFMPEG-SUPERVISION-001 and its closed v1 request/report fixtures; missing, reordered, forged, cross-version, stale-plan, environment, path, stream-map, lifecycle, reap, containment, and output counterexamples pass in the locked workspace suite.",
-        "fforager-xtask contract-inventory mutation guard and fforager-testkit canonical inventory/digest guard pass for the exact public proof id ffmpeg::tests::registered_public_boundary_suite."
+        "fforager-xtask contract-inventory mutation guard and fforager-testkit canonical inventory/digest guard pass for the exact public proof id contracts::ffmpeg::tests::registered_public_boundary_suite."
       ]
     },
     {

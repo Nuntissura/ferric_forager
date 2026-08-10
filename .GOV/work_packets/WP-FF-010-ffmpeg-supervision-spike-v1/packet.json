@@ -255,7 +255,7 @@
       "independent HIGH-risk adversarial review: PASS_NO_OPEN_FINDINGS"
     ],
     "not_proven": [
-      "Product, capability, shipped-runtime, packaging, release, or phase progress; the immutable prerequisite ceiling requires a later WP-FF-011 production consumer and FF-GATE-RUNTIME-001.",
+      "Product, capability, runtime, packaging, release, and phase advancement remain outside this prerequisite; the immutable ceiling requires a later WP-FF-011 production consumer and FF-GATE-RUNTIME-001.",
       "Hostile descendant containment on Linux; process groups remain signal scopes and the executed setsid escape remains explicit residual uncertainty.",
       "Windows exception provenance from a numeric GetExitCodeProcess status and brokerless suspended-orphan elimination.",
       "Kernel-atomic protection against hostile pre-existing writable handles outside the trusted media-root access-control assumption."
@@ -402,7 +402,7 @@
           "Linux process groups remain signal scopes rather than hostile containment; the real setsid escape counterexample is retained.",
           "Windows numeric termination status does not prove exception provenance, and brokerless suspended-orphan elimination remains unproven.",
           "Pre-existing writable handles outside trusted media-root access controls remain outside the kernel-atomic pathname handoff claim.",
-          "No product, capability, shipped-runtime, packaging, release, or phase progress is proven by this prerequisite."
+          "No product, capability, runtime, packaging, release, or phase advancement is attributed to this prerequisite."
         ],
         "MANUAL_REVIEW": {
           "artifact": "product/MODEL_MANUAL.md",

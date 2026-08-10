@@ -22,7 +22,8 @@ pub use progress::{ProgressError, ProgressLimits, ProgressSummary, replay_progre
 pub use proof_producer::{ProofProducerError, produce_platform_proof_from_environment};
 pub use report::{
     ContainmentObservationsV1, DirectWaitReceiptEvidenceV1, ForcedWaitReceiptEvidenceV1,
-    PlatformProofReportV1, ProgressObservationsV1,
+    PhaseDeadlineObservationsV2, PlatformProofReportV2, ProducerPhaseLimitsV2,
+    ProgressObservationsV1,
 };
 pub use supervisor::{
     CancellationProfile, FfmpegExecutionEvidence, FfmpegSupervisor, SupervisorError,

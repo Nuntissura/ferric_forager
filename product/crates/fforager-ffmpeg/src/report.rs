@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const FFMPEG_PLATFORM_PROOF_SCHEMA_ID: &str = "ff.ffmpeg-platform-proof@1";
+pub const FFMPEG_PLATFORM_PROOF_SCHEMA_ID: &str = "ff.ffmpeg-platform-proof@2";
 #[cfg(test)]
 const FFMPEG_CROSS_PLATFORM_PROOF_SCHEMA_ID: &str = "ff.ffmpeg-cross-platform-proof@1";
 
@@ -129,9 +129,10 @@ pub struct ForcedWaitReceiptEvidenceV1 {
     clippy::struct_field_names,
     reason = "the closed wire schema names every producer timeout with explicit units"
 )]
-pub struct ProducerPhaseLimitsV1 {
+pub struct ProducerPhaseLimitsV2 {
     pub fixture_probe_timeout_millis: u64,
     pub identity_probe_timeout_millis: u64,
+    pub scope_settlement_timeout_millis: u64,
     pub negative_cases_timeout_millis: u64,
 }
 
@@ -142,7 +143,7 @@ pub struct ProducerPhaseLimitsV1 {
     clippy::struct_field_names,
     reason = "the closed wire schema names every independent elapsed observation with explicit units"
 )]
-pub struct PhaseDeadlineObservationsV1 {
+pub struct PhaseDeadlineObservationsV2 {
     pub fixture_probe_millis: u64,
     pub identity_probe_millis: u64,
     pub startup_millis: u64,
@@ -151,6 +152,7 @@ pub struct PhaseDeadlineObservationsV1 {
     pub graceful_stop_millis: u64,
     pub forced_kill_millis: u64,
     pub reap_millis: u64,
+    pub scope_settlement_millis: u64,
     pub negative_cases_millis: u64,
 }
 
@@ -183,7 +185,7 @@ pub enum ContainmentObservationsV1 {
 /// Strict report produced by an executing platform test, not by packet prose.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PlatformProofReportV1 {
+pub struct PlatformProofReportV2 {
     pub schema_id: String,
     pub source_commit: String,
     pub source_dirty: bool,
@@ -215,8 +217,8 @@ pub struct PlatformProofReportV1 {
     pub forced_wait_receipt_sha256: String,
     pub output_facts_canonical_json: String,
     pub output_facts_sha256: String,
-    pub producer_phase_limits: ProducerPhaseLimitsV1,
-    pub phase_deadlines: PhaseDeadlineObservationsV1,
+    pub producer_phase_limits: ProducerPhaseLimitsV2,
+    pub phase_deadlines: PhaseDeadlineObservationsV2,
     pub diagnostic_total_bytes: u64,
     pub diagnostic_tail_hex: String,
     pub diagnostic_tail_sha256: String,
@@ -271,7 +273,7 @@ enum ProofReportError {
 /// independent xtask consumer owns raw-evidence reconstruction and aggregation.
 #[cfg(test)]
 fn aggregate_declarations_for_schema_tests(
-    reports: &[PlatformProofReportV1],
+    reports: &[PlatformProofReportV2],
 ) -> Result<CrossPlatformProofV1, ProofReportError> {
     if reports.len() != 2 {
         return Err(ProofReportError::MissingPlatform);
@@ -323,7 +325,7 @@ fn aggregate_declarations_for_schema_tests(
 
 #[cfg(test)]
 fn validate_declarations_for_schema_tests(
-    report: &PlatformProofReportV1,
+    report: &PlatformProofReportV2,
 ) -> Result<(), ProofReportError> {
     if report.schema_id != FFMPEG_PLATFORM_PROOF_SCHEMA_ID {
         return Err(ProofReportError::WrongSchema);
@@ -423,10 +425,10 @@ mod tests {
         clippy::too_many_lines,
         reason = "the test constructor intentionally populates every field of the frozen proof wire schema"
     )]
-    fn report(platform: ProofPlatform) -> PlatformProofReportV1 {
+    fn report(platform: ProofPlatform) -> PlatformProofReportV2 {
         let digest = "a".repeat(64);
         let windows = platform == ProofPlatform::WindowsX86_64;
-        PlatformProofReportV1 {
+        PlatformProofReportV2 {
             schema_id: FFMPEG_PLATFORM_PROOF_SCHEMA_ID.to_owned(),
             source_commit: "b".repeat(40),
             source_dirty: false,
@@ -484,12 +486,13 @@ mod tests {
             forced_wait_receipt_sha256: digest.clone(),
             output_facts_canonical_json: "{}".to_owned(),
             output_facts_sha256: digest.clone(),
-            producer_phase_limits: ProducerPhaseLimitsV1 {
+            producer_phase_limits: ProducerPhaseLimitsV2 {
                 fixture_probe_timeout_millis: 10,
                 identity_probe_timeout_millis: 10,
+                scope_settlement_timeout_millis: 10,
                 negative_cases_timeout_millis: 10,
             },
-            phase_deadlines: PhaseDeadlineObservationsV1 {
+            phase_deadlines: PhaseDeadlineObservationsV2 {
                 fixture_probe_millis: 1,
                 identity_probe_millis: 1,
                 startup_millis: 1,
@@ -498,6 +501,7 @@ mod tests {
                 graceful_stop_millis: 0,
                 forced_kill_millis: 1,
                 reap_millis: 1,
+                scope_settlement_millis: 1,
                 negative_cases_millis: 1,
             },
             diagnostic_total_bytes: 0,

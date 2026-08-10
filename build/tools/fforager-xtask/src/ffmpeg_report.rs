@@ -16,7 +16,7 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const PLATFORM_SCHEMA_ID: &str = "ff.ffmpeg-platform-proof@1";
+const PLATFORM_SCHEMA_ID: &str = "ff.ffmpeg-platform-proof@2";
 const BOUND_RUNTIME_PROJECTION_ID: &str = "ff.ffmpeg-bound-runtime-invocation-canonical-json@1";
 const AGGREGATE_SCHEMA_ID: &str = "ff.ffmpeg-cross-platform-proof@1";
 const RECEIPT_SCHEMA_ID: &str = "ff.ffmpeg-aggregation-receipt@1";
@@ -151,9 +151,10 @@ struct ForcedWaitReceiptEvidenceV1 {
     clippy::struct_field_names,
     reason = "the consumer mirrors the closed product wire schema and its explicit units"
 )]
-struct ProducerPhaseLimitsV1 {
+struct ProducerPhaseLimitsV2 {
     fixture_probe_timeout_millis: u64,
     identity_probe_timeout_millis: u64,
+    scope_settlement_timeout_millis: u64,
     negative_cases_timeout_millis: u64,
 }
 
@@ -163,7 +164,7 @@ struct ProducerPhaseLimitsV1 {
     clippy::struct_field_names,
     reason = "the consumer mirrors the closed product wire schema and its explicit units"
 )]
-struct PhaseDeadlineObservationsV1 {
+struct PhaseDeadlineObservationsV2 {
     fixture_probe_millis: u64,
     identity_probe_millis: u64,
     startup_millis: u64,
@@ -172,6 +173,7 @@ struct PhaseDeadlineObservationsV1 {
     graceful_stop_millis: u64,
     forced_kill_millis: u64,
     reap_millis: u64,
+    scope_settlement_millis: u64,
     negative_cases_millis: u64,
 }
 
@@ -540,7 +542,7 @@ struct BoundRuntimeProjection<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PlatformProofReportV1 {
+struct PlatformProofReportV2 {
     schema_id: String,
     source_commit: String,
     source_dirty: bool,
@@ -572,8 +574,8 @@ struct PlatformProofReportV1 {
     forced_wait_receipt_sha256: String,
     output_facts_canonical_json: String,
     output_facts_sha256: String,
-    producer_phase_limits: ProducerPhaseLimitsV1,
-    phase_deadlines: PhaseDeadlineObservationsV1,
+    producer_phase_limits: ProducerPhaseLimitsV2,
+    phase_deadlines: PhaseDeadlineObservationsV2,
     diagnostic_total_bytes: u64,
     diagnostic_tail_hex: String,
     diagnostic_tail_sha256: String,
@@ -716,7 +718,7 @@ struct ValidationContext<'a> {
 struct ReportInput {
     path: String,
     bytes: Vec<u8>,
-    report: PlatformProofReportV1,
+    report: PlatformProofReportV2,
     producer_receipt_path: String,
     producer_receipt_bytes: Vec<u8>,
     producer_receipt: ProducerReceiptV1,
@@ -853,7 +855,7 @@ pub(crate) fn run_producer(root: &Path, args: &[String]) -> Result<(), String> {
                 .to_owned(),
         );
     }
-    let report: PlatformProofReportV1 = serde_json::from_slice(&report_bytes)
+    let report: PlatformProofReportV2 = serde_json::from_slice(&report_bytes)
         .map_err(|error| format!("FF-WP010-E-REPORT-SCHEMA: {error}"))?;
     if report.platform != parsed.platform
         || report.source_commit != source_before.git_commit
@@ -2007,7 +2009,7 @@ fn require_exact_command_projection(
 fn validate_boundary_tool_manifest(
     root: &Path,
     receipt: &ProducerReceiptV1,
-    report: &PlatformProofReportV1,
+    report: &PlatformProofReportV2,
 ) -> Result<(), String> {
     let observed = observe_boundary_tools(root, receipt.platform)?;
     require_exact_boundary_manifest(&receipt.boundary_tools, &observed)?;
@@ -2792,7 +2794,7 @@ fn observe_linux_media_tool(
 }
 
 fn validate_and_aggregate(
-    reports: &[PlatformProofReportV1],
+    reports: &[PlatformProofReportV2],
     context: &ValidationContext<'_>,
 ) -> Result<CrossPlatformProofV1, String> {
     if reports.len() != 2 {
@@ -2857,7 +2859,7 @@ fn validate_and_aggregate(
 }
 
 fn validate_report(
-    report: &PlatformProofReportV1,
+    report: &PlatformProofReportV2,
     context: &ValidationContext<'_>,
 ) -> Result<(), String> {
     if report.schema_id != PLATFORM_SCHEMA_ID {
@@ -2954,7 +2956,7 @@ fn validate_report(
     clippy::too_many_lines,
     reason = "WP-FF-010 independently reconstructs every report digest and exposed behavior in one fail-closed boundary"
 )]
-fn validate_raw_evidence(report: &PlatformProofReportV1) -> Result<(), String> {
+fn validate_raw_evidence(report: &PlatformProofReportV2) -> Result<(), String> {
     let request: RequestEvidenceV1 = parse_canonical_json_typed(
         "request_contract_canonical_json",
         &report.request_contract_canonical_json,
@@ -3245,7 +3247,7 @@ fn json_string_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Result<&'a
 }
 
 fn validate_request_tool_binding(
-    report: &PlatformProofReportV1,
+    report: &PlatformProofReportV2,
     request: &RequestEvidenceV1,
 ) -> Result<(), String> {
     for (name, observed, requested, expected_kind) in [
@@ -3647,7 +3649,7 @@ fn validate_forced_lifecycle(lifecycle: &[LifecycleObservationV1]) -> Result<(),
 }
 
 fn validate_phase_deadlines(
-    report: &PlatformProofReportV1,
+    report: &PlatformProofReportV2,
     limits: &LimitsEvidenceV1,
     lifecycle: &[LifecycleObservationV1],
     forced_lifecycle: &[LifecycleObservationV1],
@@ -3655,9 +3657,10 @@ fn validate_phase_deadlines(
     let producer = report.producer_phase_limits;
     let observed = report.phase_deadlines;
     if producer
-        != (ProducerPhaseLimitsV1 {
+        != (ProducerPhaseLimitsV2 {
             fixture_probe_timeout_millis: 60_000,
             identity_probe_timeout_millis: 180_000,
+            scope_settlement_timeout_millis: 5_000,
             negative_cases_timeout_millis: 300_000,
         })
     {
@@ -3675,7 +3678,13 @@ fn validate_phase_deadlines(
     let forced_combined = observed
         .forced_kill_millis
         .checked_add(observed.reap_millis)
+        .and_then(|value| value.checked_add(observed.scope_settlement_millis))
         .ok_or_else(|| "FF-WP010-E-DEADLINE: forced phase sum overflow".to_owned())?;
+    let forced_cleanup_limit = limits
+        .forced_kill_timeout_millis
+        .checked_add(limits.reap_timeout_millis)
+        .and_then(|value| value.checked_add(producer.scope_settlement_timeout_millis))
+        .ok_or_else(|| "FF-WP010-E-DEADLINE: forced ceiling sum overflow".to_owned())?;
     let forced_timeline = forced_lifecycle[3]
         .monotonic_millis
         .checked_sub(forced_lifecycle[2].monotonic_millis)
@@ -3706,6 +3715,10 @@ fn validate_phase_deadlines(
         ),
         (observed.reap_millis, limits.reap_timeout_millis),
         (
+            observed.scope_settlement_millis,
+            producer.scope_settlement_timeout_millis,
+        ),
+        (
             observed.negative_cases_millis,
             producer.negative_cases_timeout_millis,
         ),
@@ -3713,7 +3726,8 @@ fn validate_phase_deadlines(
     if observed.startup_millis != startup_timeline
         || observed.execution_millis != normal_execution
         || observed.validation_millis != validation_timeline
-        || forced_combined != forced_timeline
+        || forced_timeline != forced_combined
+        || forced_timeline > forced_cleanup_limit
         || !grace_valid
         || phase_checks.iter().any(|(actual, limit)| actual > limit)
     {
@@ -4036,7 +4050,7 @@ fn reconstruct_arguments(
     Ok(arguments)
 }
 
-fn validate_containment_observations(report: &PlatformProofReportV1) -> Result<bool, String> {
+fn validate_containment_observations(report: &PlatformProofReportV2) -> Result<bool, String> {
     match (&report.platform, &report.containment_observations) {
         (
             ProofPlatform::WindowsX86_64,
@@ -4259,7 +4273,7 @@ fn hex_nibble(value: u8) -> Result<u8, String> {
     }
 }
 
-fn validate_windows(report: &PlatformProofReportV1) -> Result<(), String> {
+fn validate_windows(report: &PlatformProofReportV2) -> Result<(), String> {
     let behavior = &report.behavior;
     if behavior.windows_attached_before_execution != Some(true)
         || behavior.windows_kill_on_job_close != Some(true)
@@ -4286,7 +4300,7 @@ fn validate_windows(report: &PlatformProofReportV1) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_linux(report: &PlatformProofReportV1) -> Result<(), String> {
+fn validate_linux(report: &PlatformProofReportV2) -> Result<(), String> {
     let behavior = &report.behavior;
     if behavior.unix_process_group_observed != Some(true)
         || behavior.unix_term_kill_observed != Some(true)
@@ -4358,7 +4372,7 @@ fn validate_tool_identity(
     Ok(())
 }
 
-fn validate_fixture_tool_identities(report: &PlatformProofReportV1) -> Result<(), String> {
+fn validate_fixture_tool_identities(report: &PlatformProofReportV2) -> Result<(), String> {
     let expected_roles = match report.platform {
         ProofPlatform::WindowsX86_64 => BTreeSet::from([FixtureToolRoleV1::FakeChild]),
         ProofPlatform::LinuxX86_64 => {
@@ -4593,9 +4607,9 @@ fn slash(path: &Path) -> String {
 mod tests {
     use super::*;
 
-    type ReportMutation = Box<dyn Fn(&mut PlatformProofReportV1)>;
+    type ReportMutation = Box<dyn Fn(&mut PlatformProofReportV2)>;
 
-    fn reports() -> [PlatformProofReportV1; 2] {
+    fn reports() -> [PlatformProofReportV2; 2] {
         [
             report(ProofPlatform::WindowsX86_64),
             report(ProofPlatform::LinuxX86_64),
@@ -4606,7 +4620,7 @@ mod tests {
         clippy::too_many_lines,
         reason = "the strict test constructor populates and cryptographically binds every platform report field"
     )]
-    fn report(platform: ProofPlatform) -> PlatformProofReportV1 {
+    fn report(platform: ProofPlatform) -> PlatformProofReportV2 {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../product/crates/fforager-contracts/testdata/ffmpeg-supervision-v1.0.json"
         ))
@@ -4823,7 +4837,7 @@ mod tests {
         let progress_observations =
             replay_progress_transcript(progress_transcript, &request.limits)
                 .expect("progress transcript");
-        PlatformProofReportV1 {
+        PlatformProofReportV2 {
             schema_id: PLATFORM_SCHEMA_ID.to_owned(),
             source_commit: "b".repeat(40),
             source_dirty: false,
@@ -4872,12 +4886,13 @@ mod tests {
             forced_wait_receipt_canonical_json: forced_wait_json,
             output_facts_sha256: sha256(output_json.as_bytes()),
             output_facts_canonical_json: output_json,
-            producer_phase_limits: ProducerPhaseLimitsV1 {
+            producer_phase_limits: ProducerPhaseLimitsV2 {
                 fixture_probe_timeout_millis: 60_000,
                 identity_probe_timeout_millis: 180_000,
+                scope_settlement_timeout_millis: 5_000,
                 negative_cases_timeout_millis: 300_000,
             },
-            phase_deadlines: PhaseDeadlineObservationsV1 {
+            phase_deadlines: PhaseDeadlineObservationsV2 {
                 fixture_probe_millis: 100,
                 identity_probe_millis: 200,
                 startup_millis: 1,
@@ -4886,6 +4901,7 @@ mod tests {
                 graceful_stop_millis: u64::from(platform == ProofPlatform::LinuxX86_64),
                 forced_kill_millis: 3,
                 reap_millis: 7,
+                scope_settlement_millis: 0,
                 negative_cases_millis: 300,
             },
             diagnostic_total_bytes: 12,
@@ -4944,7 +4960,7 @@ mod tests {
         }
     }
 
-    fn report_bytes(report: &PlatformProofReportV1) -> Vec<u8> {
+    fn report_bytes(report: &PlatformProofReportV2) -> Vec<u8> {
         serde_json::to_vec(report).expect("report JSON")
     }
 
@@ -4956,7 +4972,7 @@ mod tests {
         }
     }
 
-    fn report_input(path: String, bytes: Vec<u8>, report: PlatformProofReportV1) -> ReportInput {
+    fn report_input(path: String, bytes: Vec<u8>, report: PlatformProofReportV2) -> ReportInput {
         let source = crate::SourceState {
             git_commit: context().source_commit.to_owned(),
             dirty: false,
@@ -5002,7 +5018,7 @@ mod tests {
         }
     }
 
-    fn refresh_bound_runtime(report: &mut PlatformProofReportV1) {
+    fn refresh_bound_runtime(report: &mut PlatformProofReportV2) {
         let request: serde_json::Value =
             serde_json::from_str(&report.request_contract_canonical_json).expect("request JSON");
         report.argument_vector =
@@ -5236,6 +5252,38 @@ mod tests {
     }
 
     #[test]
+    fn forced_cleanup_phases_telescope_exactly_and_bound_scope_polling() {
+        let baseline = reports();
+        for report in &baseline {
+            let phases = report.phase_deadlines;
+            let lifecycle: Vec<LifecycleObservationV1> =
+                serde_json::from_str(&report.forced_lifecycle_timeline_canonical_json)
+                    .expect("forced lifecycle");
+            let timeline = lifecycle[3].monotonic_millis - lifecycle[2].monotonic_millis;
+            let phase_sum =
+                phases.forced_kill_millis + phases.reap_millis + phases.scope_settlement_millis;
+            assert!(
+                phase_sum == timeline,
+                "shared absolute millisecond boundaries must telescope exactly"
+            );
+        }
+        validate_and_aggregate(&baseline, &context())
+            .expect("bounded settlement overhead is valid evidence");
+
+        let mut forged = baseline;
+        forged[0].phase_deadlines.scope_settlement_millis += 1;
+        let error = validate_and_aggregate(&forged, &context())
+            .expect_err("phase samples cannot exceed the lifecycle settlement envelope");
+        assert!(error.contains("DEADLINE"), "{error}");
+
+        let mut over_ceiling = reports();
+        over_ceiling[0].phase_deadlines.scope_settlement_millis = 5_001;
+        let error = validate_and_aggregate(&over_ceiling, &context())
+            .expect_err("scope settlement must retain its independent ceiling");
+        assert!(error.contains("DEADLINE"), "{error}");
+    }
+
+    #[test]
     fn output_self_consistent_payload_rewrite_cannot_escape_request_binding() {
         let mut reports = reports();
         let zero = "0".repeat(64);
@@ -5269,7 +5317,7 @@ mod tests {
     }
 
     fn coherently_rewrite_forced_wait(
-        report: &mut PlatformProofReportV1,
+        report: &mut PlatformProofReportV2,
         mutate: impl FnOnce(&mut ForcedWaitReceiptEvidenceV1),
     ) {
         let mut wait: ForcedWaitReceiptEvidenceV1 =
@@ -5349,7 +5397,7 @@ mod tests {
             .as_object_mut()
             .expect("report object")
             .remove("forced_wait_receipt_canonical_json");
-        assert!(serde_json::from_value::<PlatformProofReportV1>(missing).is_err());
+        assert!(serde_json::from_value::<PlatformProofReportV2>(missing).is_err());
 
         let mut reports = reports();
         reports[0].forced_lifecycle_timeline_canonical_json = reports[0]
@@ -5766,8 +5814,56 @@ mod tests {
             .as_object_mut()
             .expect("report object")
             .insert("unexpected".to_owned(), serde_json::Value::Bool(true));
-        assert!(serde_json::from_value::<PlatformProofReportV1>(mutated).is_err());
+        assert!(serde_json::from_value::<PlatformProofReportV2>(mutated).is_err());
         assert!(safe_relative_path("../outside.json").is_err());
         assert!(safe_relative_path("C:\\outside.json").is_err());
+    }
+
+    #[test]
+    fn platform_proof_v2_rejects_old_hybrid_and_missing_scope_shapes() {
+        let mut old_v1 = serde_json::to_value(&reports()[0]).expect("fixture JSON");
+        let old = old_v1.as_object_mut().expect("report object");
+        old.insert(
+            "schema_id".to_owned(),
+            serde_json::Value::String("ff.ffmpeg-platform-proof@1".to_owned()),
+        );
+        old.get_mut("producer_phase_limits")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("producer limits")
+            .remove("scope_settlement_timeout_millis");
+        old.get_mut("phase_deadlines")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("phase deadlines")
+            .remove("scope_settlement_millis");
+        assert!(
+            serde_json::from_value::<PlatformProofReportV2>(old_v1).is_err(),
+            "the old @1 shape must not parse as the V2 DTO"
+        );
+
+        let mut hybrid = reports();
+        hybrid[0].schema_id = "ff.ffmpeg-platform-proof@1".to_owned();
+        let error = validate_and_aggregate(&hybrid, &context())
+            .expect_err("an @1 label cannot authorize V2 fields");
+        assert!(error.contains("REPORT-SCHEMA"), "{error}");
+
+        for field in ["scope_settlement_timeout_millis", "scope_settlement_millis"] {
+            let mut missing = serde_json::to_value(&reports()[0]).expect("fixture JSON");
+            let container = if field.ends_with("timeout_millis") {
+                "producer_phase_limits"
+            } else {
+                "phase_deadlines"
+            };
+            missing
+                .as_object_mut()
+                .expect("report object")
+                .get_mut(container)
+                .and_then(serde_json::Value::as_object_mut)
+                .expect("scope container")
+                .remove(field);
+            assert!(
+                serde_json::from_value::<PlatformProofReportV2>(missing).is_err(),
+                "missing {field} must fail closed"
+            );
+        }
     }
 }

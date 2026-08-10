@@ -18,8 +18,8 @@ use crate::{
     report::{
         ContainmentObservationsV1, DiagnosticLossEvidenceV1, DirectWaitReceiptEvidenceV1,
         FFMPEG_PLATFORM_PROOF_SCHEMA_ID, FixtureToolProofIdentityV1, FixtureToolRoleV1,
-        ForcedWaitReceiptEvidenceV1, PhaseDeadlineObservationsV1, PlatformBehaviorV1,
-        PlatformProofReportV1, ProducerPhaseLimitsV1, ProgressObservationsV1, ProofPlatform,
+        ForcedWaitReceiptEvidenceV1, PhaseDeadlineObservationsV2, PlatformBehaviorV1,
+        PlatformProofReportV2, ProducerPhaseLimitsV2, ProgressObservationsV1, ProofPlatform,
         ToolProofIdentityV1,
     },
     supervisor::{
@@ -63,6 +63,7 @@ const CAPTURE_LIMIT: u64 = 32 * 1024 * 1024;
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(30);
 const FIXTURE_PROBE_TIMEOUT: Duration = Duration::from_mins(1);
 const IDENTITY_PROBE_TIMEOUT: Duration = Duration::from_mins(3);
+const SCOPE_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(5);
 const NEGATIVE_CASES_TIMEOUT: Duration = Duration::from_mins(5);
 
 /// Bounded failure from the executing proof producer.
@@ -133,9 +134,10 @@ fn lifecycle_delta_millis(
 }
 
 fn validate_phase_deadlines(
-    observed: &PhaseDeadlineObservationsV1,
-    producer: &ProducerPhaseLimitsV1,
+    observed: &PhaseDeadlineObservationsV2,
+    producer: &ProducerPhaseLimitsV2,
     request: FfmpegSupervisionLimitsV1,
+    forced_lifecycle: &[FfmpegLifecycleObservationV1],
 ) -> Result<(), ProofProducerError> {
     let checks = [
         (
@@ -175,6 +177,11 @@ fn validate_phase_deadlines(
         ),
         ("reap", observed.reap_millis, request.reap_timeout_millis),
         (
+            "scope settlement",
+            observed.scope_settlement_millis,
+            producer.scope_settlement_timeout_millis,
+        ),
+        (
             "negative cases",
             observed.negative_cases_millis,
             producer.negative_cases_timeout_millis,
@@ -182,9 +189,33 @@ fn validate_phase_deadlines(
     ];
     if producer.fixture_probe_timeout_millis == 0
         || producer.identity_probe_timeout_millis == 0
+        || producer.scope_settlement_timeout_millis == 0
         || producer.negative_cases_timeout_millis == 0
     {
         return Err(error("producer phase limits", "zero phase ceiling"));
+    }
+    let measured_forced_sum = observed
+        .forced_kill_millis
+        .checked_add(observed.reap_millis)
+        .and_then(|value| value.checked_add(observed.scope_settlement_millis))
+        .ok_or_else(|| error("forced cleanup", "measured phase sum overflow"))?;
+    let forced_cleanup_limit = request
+        .forced_kill_timeout_millis
+        .checked_add(request.reap_timeout_millis)
+        .and_then(|value| value.checked_add(producer.scope_settlement_timeout_millis))
+        .ok_or_else(|| error("forced cleanup", "phase ceiling sum overflow"))?;
+    let forced_cleanup_timeline = lifecycle_delta_millis(
+        forced_lifecycle,
+        FfmpegLifecycleStateV1::ForcedKillRequested,
+        FfmpegLifecycleStateV1::Reaped,
+    )?;
+    if forced_cleanup_timeline != measured_forced_sum
+        || forced_cleanup_timeline > forced_cleanup_limit
+    {
+        return Err(error(
+            "forced cleanup",
+            "settlement duration diverged from its lifecycle or combined ceiling",
+        ));
     }
     for (label, actual, limit) in checks {
         if actual > limit {
@@ -214,7 +245,7 @@ fn validate_phase_deadlines(
     clippy::too_many_lines,
     reason = "the proof producer intentionally keeps acquisition, execution, and report binding in one auditable path"
 )]
-pub fn produce_platform_proof_from_environment() -> Result<PlatformProofReportV1, ProofProducerError>
+pub fn produce_platform_proof_from_environment() -> Result<PlatformProofReportV2, ProofProducerError>
 {
     let repo_root = repository_root()?;
     let artifact_root = repo_root.join(".fforager-artifacts");
@@ -521,12 +552,13 @@ pub fn produce_platform_proof_from_environment() -> Result<PlatformProofReportV1
         FfmpegLifecycleStateV1::Reaped,
         FfmpegLifecycleStateV1::Validated,
     )?;
-    let producer_phase_limits = ProducerPhaseLimitsV1 {
+    let producer_phase_limits = ProducerPhaseLimitsV2 {
         fixture_probe_timeout_millis: duration_millis(FIXTURE_PROBE_TIMEOUT),
         identity_probe_timeout_millis: duration_millis(IDENTITY_PROBE_TIMEOUT),
+        scope_settlement_timeout_millis: duration_millis(SCOPE_SETTLEMENT_TIMEOUT),
         negative_cases_timeout_millis: duration_millis(NEGATIVE_CASES_TIMEOUT),
     };
-    let phase_deadlines = PhaseDeadlineObservationsV1 {
+    let phase_deadlines = PhaseDeadlineObservationsV2 {
         fixture_probe_millis,
         identity_probe_millis,
         startup_millis,
@@ -535,10 +567,16 @@ pub fn produce_platform_proof_from_environment() -> Result<PlatformProofReportV1
         graceful_stop_millis: platform_evidence.unix_graceful_millis.unwrap_or(0),
         forced_kill_millis: forced.forced_kill_millis,
         reap_millis: forced.reap_millis,
+        scope_settlement_millis: forced.scope_settlement_millis,
         negative_cases_millis,
     };
-    validate_phase_deadlines(&phase_deadlines, &producer_phase_limits, request.limits)?;
-    let report = PlatformProofReportV1 {
+    validate_phase_deadlines(
+        &phase_deadlines,
+        &producer_phase_limits,
+        request.limits,
+        &forced.lifecycle,
+    )?;
+    let report = PlatformProofReportV2 {
         schema_id: FFMPEG_PLATFORM_PROOF_SCHEMA_ID.to_owned(),
         source_commit,
         source_dirty,
@@ -1200,6 +1238,7 @@ struct ForcedEvidence {
     lifecycle: Vec<FfmpegLifecycleObservationV1>,
     forced_kill_millis: u64,
     reap_millis: u64,
+    scope_settlement_millis: u64,
     #[cfg(windows)]
     windows_active_process_samples: Vec<u32>,
 }
@@ -1213,6 +1252,18 @@ fn forced_lifecycle_observation(
         sequence,
         state,
         monotonic_millis: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+    }
+}
+
+fn forced_lifecycle_observation_at_millis(
+    sequence: u64,
+    state: FfmpegLifecycleStateV1,
+    monotonic_millis: u64,
+) -> FfmpegLifecycleObservationV1 {
+    FfmpegLifecycleObservationV1 {
+        sequence,
+        state,
+        monotonic_millis,
     }
 }
 
@@ -1324,27 +1375,36 @@ fn observe_forced_real_ffmpeg(
                 "infinite lavfi child exited before cancellation",
             ));
         }
-        lifecycle.push(forced_lifecycle_observation(
+        let force_started_millis = elapsed_millis(started);
+        lifecycle.push(forced_lifecycle_observation_at_millis(
             3,
             FfmpegLifecycleStateV1::ForcedKillRequested,
-            started,
+            force_started_millis,
         ));
-        let force_started = Instant::now();
         child
             .force_terminate()
             .map_err(|failure| error("force real FFmpeg scope", failure))?;
-        let forced_kill_millis = elapsed_millis(force_started);
-        let reap_started = Instant::now();
+        let force_finished_millis = elapsed_millis(started);
+        let forced_kill_millis = force_finished_millis
+            .checked_sub(force_started_millis)
+            .ok_or_else(|| error("force real FFmpeg scope", "monotonic clock reversed"))?;
         let exit = child
-            .wait_timeout(Duration::from_secs(5))
+            .wait_timeout(SCOPE_SETTLEMENT_TIMEOUT)
             .map_err(|failure| error("wait forced FFmpeg", failure))?
             .ok_or_else(|| error("wait forced FFmpeg", "deadline expired"))?;
-        let reap_millis = elapsed_millis(reap_started);
-        let scope_empty = wait_scope_empty(child, Duration::from_secs(5))?;
-        lifecycle.push(forced_lifecycle_observation(
+        let reap_finished_millis = elapsed_millis(started);
+        let reap_millis = reap_finished_millis
+            .checked_sub(force_finished_millis)
+            .ok_or_else(|| error("wait forced FFmpeg", "monotonic clock reversed"))?;
+        let scope_empty = wait_scope_empty(child, SCOPE_SETTLEMENT_TIMEOUT)?;
+        let scope_finished_millis = elapsed_millis(started);
+        let scope_settlement_millis = scope_finished_millis
+            .checked_sub(reap_finished_millis)
+            .ok_or_else(|| error("query declared process scope", "monotonic clock reversed"))?;
+        lifecycle.push(forced_lifecycle_observation_at_millis(
             4,
             FfmpegLifecycleStateV1::Reaped,
-            started,
+            scope_finished_millis,
         ));
         #[cfg(windows)]
         windows_active_process_samples.push(
@@ -1360,6 +1420,7 @@ fn observe_forced_real_ffmpeg(
             lifecycle,
             forced_kill_millis,
             reap_millis,
+            scope_settlement_millis,
             #[cfg(windows)]
             windows_active_process_samples,
         })
@@ -2014,7 +2075,7 @@ fn path_text(path: &Path, label: &str) -> Result<String, ProofProducerError> {
         .ok_or_else(|| error(label, "path is not Unicode"))
 }
 
-fn write_report(path: &Path, report: &PlatformProofReportV1) -> Result<(), ProofProducerError> {
+fn write_report(path: &Path, report: &PlatformProofReportV2) -> Result<(), ProofProducerError> {
     let parent = path
         .parent()
         .ok_or_else(|| error("report output", "missing parent"))?;

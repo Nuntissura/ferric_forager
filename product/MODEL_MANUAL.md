@@ -1,7 +1,7 @@
 ---
 file_id: FF-PRODUCT-MODEL-MANUAL-001
 file_kind: model_manual
-updated_at: "2026-08-02"
+updated_at: "2026-08-10"
 ---
 
 <topic id="phase-0-purpose" status="active" version="4" wp="WP-FF-006-rust-youtube-challenge-spike-v1" updated_at="2026-07-26">
@@ -20,6 +20,92 @@ Repository ownership is deterministic:
 - `rust-toolchain.toml` at repository root is the sole rustup selector.
 
 Shipped product runtime must not read or require `.GOV/` or `build/`. Build tooling may read the active governance packet to validate proof.
+
+</topic>
+
+<topic id="wp-ff-010-ffmpeg-supervision-prerequisite" status="active" version="1" wp="WP-FF-010-ffmpeg-supervision-spike-v1" ingestable="true" updated_at="2026-08-10">
+
+## Run the FFmpeg supervision prerequisite proof
+
+WP-FF-010 exercises a non-shipped Ferric-owned adapter for one bounded operation: copy exact AAC ADTS and H264 Annex-B streams into a job-scoped MP4 file with explicit maps and `-c copy`, machine progress on stdout, bounded diagnostics on stderr, direct-child reap, platform-scoped cancellation, and bounded ffprobe packet validation. It is prerequisite evidence only. It is not a Ferric runtime entrypoint, post-processing product, general codec/container promise, packaging result, release, phase completion, or product progress.
+
+### Inputs and outputs
+
+The shared fixture root must remain under `.fforager-artifacts/` and contain:
+
+- `ffmpeg-supervision-v1.0.json`, copied byte-for-byte from `product/crates/fforager-contracts/testdata/ffmpeg-supervision-v1.0.json`;
+- `input/audio.aac`, an elementary AAC ADTS file;
+- `input/video.h264`, an elementary H264 Annex-B file;
+- an initially available `output/` directory for `merged.mp4` and bounded probe scratch.
+
+Run the repository-owned `ffmpeg-supervision-produce` wrapper rather than invoking the ignored producer test directly. The wrapper independently requires a clean committed source before and after execution; discovers and records the native Cargo, FFmpeg, ffprobe, fake-child, `setsid`, namespace, timeout, identity, and host tools; builds the fake child in an isolated artifact-root Cargo home and target; synthesizes the producer environment; and writes a strict report plus producer receipt. Caller-authored tool paths, Git identity, dirty-state claims, process environment, command text, and working directories are not accepted as proof inputs. Do not use a Windows `.exe` through WSL as Linux evidence.
+
+Each platform writes one strict `ff.ffmpeg-platform-proof@2` JSON report and one `ff.ffmpeg-producer-receipt@1` receipt under `.fforager-artifacts/runtime-proof/`. The report contains platform-specific request and tool identities plus common operation, fixture, and limit bindings; raw canonical request/plan/limits/lifecycle/wait/output evidence; the versioned bound-runtime projection and exact platform argument vector; complete bounded progress and diagnostic evidence; independently measured force, direct-reap, and scope-zero settlement phases; and typed containment observations. The aggregator independently rereads clean Git and the canonical fixture, validates both producer receipts, reconstructs the Windows pathname vector or Linux descriptor vector, recomputes all exposed digests and behavioral decisions, requires one Windows and one Linux-native row, and writes an `ff.ffmpeg-cross-platform-proof@1` receipt under `.fforager-artifacts/runtime-proof/ffmpeg-supervision/`.
+
+### Prepare one shared deterministic fixture on Windows
+
+Run from the linked worktree root. Set `$ffmpeg` and `$ffprobe` to the trusted absolute executables selected for the proof; do not rely on caller-authored tool identities inside the request.
+
+```powershell
+$env:CARGO_BUILD_JOBS = "1"
+$env:CARGO_TARGET_DIR = ".fforager-artifacts/cargo-target"
+$proofRoot = Join-Path (Resolve-Path ".fforager-artifacts").Path "wp010-final"
+$fixtureRoot = Join-Path $proofRoot "shared-fixture"
+New-Item -ItemType Directory -Force (Join-Path $fixtureRoot "input"), (Join-Path $fixtureRoot "output") | Out-Null
+Copy-Item -LiteralPath "product/crates/fforager-contracts/testdata/ffmpeg-supervision-v1.0.json" -Destination (Join-Path $fixtureRoot "ffmpeg-supervision-v1.0.json") -Force
+& $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=2" -c:a aac -b:a 128k -f adts (Join-Path $fixtureRoot "input/audio.aac")
+& $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc=size=320x240:rate=25:duration=2" -c:v libx264 -pix_fmt yuv420p -preset medium -f h264 (Join-Path $fixtureRoot "input/video.h264")
+```
+
+Both platform producers must consume these same fixture bytes. Record their SHA-256 values before either run and reject any mismatch.
+
+### Produce the Windows report
+
+```powershell
+if (git status --porcelain) { throw "WP-010 final reports require a clean source" }
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-produce --platform windows_x86_64 --fixture-root ".fforager-artifacts/wp010-final/shared-fixture" --report ".fforager-artifacts/runtime-proof/wp010-windows.json" --receipt ".fforager-artifacts/runtime-proof/wp010-windows-receipt.json"
+```
+
+The supported quiet Windows profile uses `CREATE_NO_WINDOW`, `-nostdin`, pre-execution Job assignment, `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, bounded whole-Job forced termination, cached direct-child wait, and an independent active-process query. General graceful stop is unsupported: this profile has neither the shared console needed for CTRL_BREAK nor the stdin `q` route. Windows numeric exit status does not prove exception provenance. Without a broker, the suspended-orphan interval remains explicit residual uncertainty.
+
+### Produce the Linux-native report
+
+Run the Linux-native producer from the clean Windows worktree through the same closed wrapper. It enters the configured WSL2 Ubuntu host, uses Linux-native `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, isolates the build in a PID namespace with an earlier inner timeout than the outer Windows wrapper, and reuses the exact Windows-created fixture bytes.
+
+```powershell
+if (git status --porcelain) { throw "WP-010 final reports require a clean source" }
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-produce --platform linux_x86_64 --fixture-root ".fforager-artifacts/wp010-final/shared-fixture" --report ".fforager-artifacts/runtime-proof/wp010-linux.json" --receipt ".fforager-artifacts/runtime-proof/wp010-linux-receipt.json"
+```
+
+Linux opens every input with `O_NOFOLLOW`, precreates the output with `openat`, `O_EXCL`, and `O_NOFOLLOW` on the retained output-directory descriptor, and passes only fixed audited descriptors to FFmpeg. The bound vector uses `-fd 64..95` for inputs, `-fd 96` for output, `fd:`, the internal `fd,pipe` protocol inventory, and `-y` only because the exact output descriptor is already exclusively precreated. The logical request remains the version-one pathname and `-n` contract; `ff.ffmpeg-bound-runtime-invocation-canonical-json@1` binds the platform transformation. FFprobe receives the exact retained media descriptor rather than reopening a pathname.
+
+Linux also creates a dedicated process group, sends bounded TERM then KILL to that group, reaps only the direct child with a typed result, and independently checks declared-group absence. The mandatory `setsid` fixture demonstrates that a descendant can escape this signal scope. Process groups are not hostile containment, and direct-child `waitpid` never proves arbitrary descendant absence. If an escaped descendant retains stdout or stderr, cancellable nonblocking readers return a bounded failure and the adapter permanently withholds the affected capacity rather than deadlocking or admitting another job over an unproven scope.
+
+### Aggregate and validate
+
+Return to the clean linked worktree on Windows and run:
+
+```powershell
+$env:CARGO_TARGET_DIR = ".fforager-artifacts/cargo-target"
+cargo run --manifest-path build/Cargo.toml --locked --jobs 1 -p fforager-xtask -- ffmpeg-supervision-aggregate --windows-report ".fforager-artifacts/runtime-proof/wp010-windows.json" --windows-receipt ".fforager-artifacts/runtime-proof/wp010-windows-receipt.json" --linux-report ".fforager-artifacts/runtime-proof/wp010-linux.json" --linux-receipt ".fforager-artifacts/runtime-proof/wp010-linux-receipt.json"
+```
+
+The consumer rejects a missing platform; dirty, stale, or mismatched source; tool/request/operation/fixture/limit drift; forged raw evidence; a producer digest used as its own oracle; false Windows active-zero; missing direct wait; progress or diagnostic limit violation; declaration-preserving lifecycle or containment mutation; a leaked Windows handle sentinel; or a Linux report without the executed `setsid` escape and residual.
+
+### Safety limits, diagnostics, failures, and recovery
+
+- All disposable targets, fixtures, reports, and scratch remain below `.fforager-artifacts/`. Never redirect them to an external temp root.
+- The public adapter requires both the request and its privately constructed `FfmpegValidatedInvocationV1`, then independently recomputes their correlation before any admission or process creation. A raw request, stale token, shell, arbitrary command text, ambient working directory, or caller-authored `SYSTEMROOT`, `TEMP`, `TMP`, or `TMPDIR` cannot reach execution.
+- Stdout is required framed progress. Stderr is separately bounded diagnostics with explicit tail loss. A missing terminal progress frame, malformed/reordered/truncated record, cadence timeout, consumer stall, allocation/item/byte/parser ceiling, or drain failure is a typed failure.
+- Nonzero exit, signal termination, wait failure, containment not proven, stale/substituted/read-only/partial/wrong-stream output, malformed ffprobe JSON, packet mismatch, or output-size violation cannot become success. A reaped nonzero exit is not retried as a reap failure.
+- On failure, preserve bounded diagnostics; terminate the owned Job or process group when needed; reap the direct child; prove the declared scope empty where possible; join required drains; make the output decision; then release `FfmpegPipe` byte credits and the atomic resource lease. Cancellation is sampled before and after physical release while the release effect is still pending. Never release early or loop cleanup without a bound.
+- Exact descriptor/handle identity prevents pathname substitution, but a hostile process that already owns a writable handle to trusted media can still mutate the same object. Trusted media roots must exclude that condition; the platform report retains it as residual uncertainty.
+- Capability mismatch: verify the exact native executable path, content hash, normalized version/help output, host OS, and architecture. Do not relabel an unsupported tool as passing.
+- Source or fixture mismatch: discard both platform reports, restore one clean commit and one shared fixture, and rerun both producers. Do not edit report JSON.
+- Containment or `setsid` failure: inspect the fake-child handshake and platform boundary. Retain the documented residual; do not reinterpret process disappearance or direct-child exit as descendant proof.
+- Aggregator failure: use its named field and raw-evidence diagnostic. Repair the producer or boundary and regenerate both reports; a stored or hand-authored receipt is not evidence.
+
+Evidence ceiling: even a valid cross-platform report proves only this pinned prerequisite profile on the named hosts and tools. A later shipped Ferric consumer must re-prove the exact staged production artifact through `FF-GATE-RUNTIME-001` before any product, capability, runtime, packaging, release, or phase claim is legal.
 
 </topic>
 

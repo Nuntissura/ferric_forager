@@ -154,6 +154,402 @@ impl RecoveryApplication {
     }
 }
 
+#[cfg(test)]
+mod ffmpeg_v2_tests {
+    use super::*;
+
+    fn instance() -> MachineInstanceId {
+        MachineInstanceId::new(77).expect("nonzero test instance")
+    }
+
+    fn model() -> FfmpegLifecycleV2 {
+        FfmpegLifecycleV2::new(
+            instance(),
+            FfmpegLifecycleLimitsV2::new(2, 2, 2, 2).expect("nonzero cleanup limits"),
+            64,
+        )
+    }
+
+    fn pending(model: &FfmpegLifecycleV2) -> FfmpegEffectRequestV2 {
+        model
+            .pending_effect()
+            .expect("one ordered effect must be pending")
+    }
+
+    fn complete(model: &mut FfmpegLifecycleV2, outcome: FfmpegEffectOutcomeV2) {
+        let request = pending(model);
+        model
+            .complete_effect(request, outcome)
+            .expect("correlated effect completion");
+    }
+
+    fn running() -> FfmpegLifecycleV2 {
+        let mut model = model();
+        model.start().expect("spawn request");
+        complete(&mut model, FfmpegEffectOutcomeV2::Spawned);
+        assert_eq!(model.state(), FfmpegLifecycleStateV2::Running);
+        model
+    }
+
+    fn reaped_zero() -> FfmpegLifecycleV2 {
+        let mut model = running();
+        model.observe_child_exit().expect("exit observation");
+        complete(
+            &mut model,
+            FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::Reaped(
+                FfmpegTerminationV2::ExitCode(0),
+            )),
+        );
+        assert_eq!(model.state(), FfmpegLifecycleStateV2::DiagnosticsPending);
+        model
+    }
+
+    #[test]
+    fn success_orders_reap_diagnostics_validation_and_release() {
+        let mut model = reaped_zero();
+        assert_eq!(model.reap_outcome(), Some(FfmpegTerminationV2::ExitCode(0)));
+        complete(&mut model, FfmpegEffectOutcomeV2::DiagnosticsPreserved);
+        assert_eq!(pending(&model).effect, FfmpegEffectV2::ValidateOutput);
+        complete(&mut model, FfmpegEffectOutcomeV2::OutputValidated);
+        assert_eq!(pending(&model).effect, FfmpegEffectV2::ReleaseResources);
+        assert!(!model.resources_released());
+        complete(&mut model, FfmpegEffectOutcomeV2::ResourcesReleased);
+        assert_eq!(model.state(), FfmpegLifecycleStateV2::Exited);
+        assert!(model.diagnostics_preserved());
+        assert!(model.resources_released());
+        assert_eq!(model.terminal_failure(), None);
+    }
+
+    #[test]
+    fn reaped_termination_is_not_wait_failure_or_retried() {
+        let cases = [
+            (
+                FfmpegTerminationV2::ExitCode(23),
+                FfmpegTerminalFailureV2::NonzeroExit(23),
+            ),
+            (
+                FfmpegTerminationV2::UnixSignal(9),
+                FfmpegTerminalFailureV2::UnixSignal(9),
+            ),
+            (
+                FfmpegTerminationV2::WindowsStatusOpaque(0xC000_0005),
+                FfmpegTerminalFailureV2::WindowsStatusOpaque(0xC000_0005),
+            ),
+            (
+                FfmpegTerminationV2::WindowsException(0xC000_0005),
+                FfmpegTerminalFailureV2::WindowsException(0xC000_0005),
+            ),
+        ];
+        for (termination, expected_failure) in cases {
+            let mut model = running();
+            model.observe_child_exit().expect("exit observation");
+            complete(
+                &mut model,
+                FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::Reaped(termination)),
+            );
+            assert_eq!(pending(&model).effect, FfmpegEffectV2::PreserveDiagnostics);
+            assert_eq!(
+                model
+                    .trace()
+                    .iter()
+                    .filter(|transition| transition.issued.is_some_and(|request| {
+                        request.effect == FfmpegEffectV2::ReapDirectChild
+                    }))
+                    .count(),
+                1,
+                "a successfully reaped termination must never retry wait/reap"
+            );
+            complete(&mut model, FfmpegEffectOutcomeV2::DiagnosticsPreserved);
+            assert_eq!(model.terminal_failure(), Some(expected_failure));
+            assert_eq!(pending(&model).effect, FfmpegEffectV2::ReleaseResources);
+            complete(&mut model, FfmpegEffectOutcomeV2::ResourcesReleased);
+            assert_eq!(model.state(), FfmpegLifecycleStateV2::Failed);
+        }
+    }
+
+    #[test]
+    fn wait_failure_retries_only_to_bound_and_never_releases_early() {
+        let wait_failure = FfmpegWaitFailureV2 { os_code: Some(6) };
+        let mut model = running();
+        model.observe_child_exit().expect("exit observation");
+        complete(
+            &mut model,
+            FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::WaitFailed(wait_failure)),
+        );
+        assert_eq!(model.state(), FfmpegLifecycleStateV2::ReapPending);
+        assert_eq!(pending(&model).effect, FfmpegEffectV2::ReapDirectChild);
+        complete(
+            &mut model,
+            FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::WaitFailed(wait_failure)),
+        );
+        assert_eq!(model.state(), FfmpegLifecycleStateV2::DiagnosticsPending);
+        assert!(!model.resources_released());
+        assert_eq!(
+            model.terminal_failure(),
+            Some(FfmpegTerminalFailureV2::WaitFailed(wait_failure))
+        );
+        complete(&mut model, FfmpegEffectOutcomeV2::DiagnosticsPreserved);
+        assert_eq!(model.state(), FfmpegLifecycleStateV2::Failed);
+        assert!(model.pending_effect().is_none());
+        assert!(!model.resources_released());
+
+        let mut cancelled = running();
+        cancelled.observe_child_exit().expect("exit observation");
+        cancelled
+            .request_cancellation()
+            .expect("cancel while reap is pending");
+        for _ in 0..2 {
+            complete(
+                &mut cancelled,
+                FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::WaitFailed(wait_failure)),
+            );
+        }
+        complete(&mut cancelled, FfmpegEffectOutcomeV2::DiagnosticsPreserved);
+        assert_eq!(cancelled.state(), FfmpegLifecycleStateV2::Cancelled);
+        assert_eq!(
+            cancelled.terminal_failure(),
+            Some(FfmpegTerminalFailureV2::WaitFailed(wait_failure))
+        );
+        assert!(!cancelled.resources_released());
+    }
+
+    #[test]
+    fn cancellation_is_sticky_during_every_pending_effect() {
+        let mut cancelling = model();
+        cancelling.start().expect("spawn request");
+        let spawn = pending(&cancelling);
+        cancelling
+            .request_cancellation()
+            .expect("cancel during spawn");
+        assert_eq!(pending(&cancelling), spawn);
+        complete(&mut cancelling, FfmpegEffectOutcomeV2::Spawned);
+        assert_eq!(
+            cancelling.state(),
+            FfmpegLifecycleStateV2::GracefulStopPending
+        );
+
+        let graceful = pending(&cancelling);
+        cancelling
+            .request_cancellation()
+            .expect("repeat cancel during graceful request");
+        assert_eq!(pending(&cancelling), graceful);
+        complete(
+            &mut cancelling,
+            FfmpegEffectOutcomeV2::GracefulStopUnsupported,
+        );
+
+        let kill = pending(&cancelling);
+        cancelling
+            .request_cancellation()
+            .expect("cancel during kill");
+        assert_eq!(pending(&cancelling), kill);
+        complete(&mut cancelling, FfmpegEffectOutcomeV2::ForcedKillRequested);
+
+        let reap = pending(&cancelling);
+        cancelling
+            .request_cancellation()
+            .expect("cancel during reap");
+        assert_eq!(pending(&cancelling), reap);
+        complete(
+            &mut cancelling,
+            FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::Reaped(
+                FfmpegTerminationV2::ExitCode(0),
+            )),
+        );
+
+        let diagnostics = pending(&cancelling);
+        cancelling
+            .request_cancellation()
+            .expect("cancel during diagnostics");
+        assert_eq!(pending(&cancelling), diagnostics);
+        complete(&mut cancelling, FfmpegEffectOutcomeV2::DiagnosticsPreserved);
+        assert_eq!(
+            pending(&cancelling).effect,
+            FfmpegEffectV2::ReleaseResources,
+            "sticky cancellation skips output validation"
+        );
+
+        let release = pending(&cancelling);
+        cancelling
+            .request_cancellation()
+            .expect("cancel during release");
+        assert_eq!(pending(&cancelling), release);
+        complete(&mut cancelling, FfmpegEffectOutcomeV2::ResourcesReleased);
+        assert_eq!(cancelling.state(), FfmpegLifecycleStateV2::Cancelled);
+        assert!(cancelling.cancellation_requested());
+
+        let mut validating = reaped_zero();
+        complete(&mut validating, FfmpegEffectOutcomeV2::DiagnosticsPreserved);
+        let validation = pending(&validating);
+        validating
+            .request_cancellation()
+            .expect("cancel during validation");
+        assert_eq!(pending(&validating), validation);
+        complete(&mut validating, FfmpegEffectOutcomeV2::OutputValidated);
+        complete(&mut validating, FfmpegEffectOutcomeV2::ResourcesReleased);
+        assert_eq!(validating.state(), FfmpegLifecycleStateV2::Cancelled);
+    }
+
+    #[test]
+    fn exit_kill_and_reap_races_never_kill_after_reap() {
+        let mut graceful_race = running();
+        graceful_race
+            .request_cancellation()
+            .expect("cancel running child");
+        graceful_race
+            .observe_child_exit()
+            .expect("exit races with graceful request");
+        complete(
+            &mut graceful_race,
+            FfmpegEffectOutcomeV2::GracefulStopUnsupported,
+        );
+        assert_eq!(
+            pending(&graceful_race).effect,
+            FfmpegEffectV2::ReapDirectChild
+        );
+        assert!(!graceful_race.trace().iter().any(|transition| {
+            transition
+                .issued
+                .is_some_and(|request| request.effect == FfmpegEffectV2::ForceKillProcessTree)
+        }));
+
+        let mut kill_race = running();
+        kill_race
+            .request_cancellation()
+            .expect("cancel running child");
+        complete(
+            &mut kill_race,
+            FfmpegEffectOutcomeV2::GracefulStopUnsupported,
+        );
+        kill_race
+            .observe_child_exit()
+            .expect("exit races with forced kill");
+        complete(
+            &mut kill_race,
+            FfmpegEffectOutcomeV2::ForcedKillAlreadyExited,
+        );
+        complete(
+            &mut kill_race,
+            FfmpegEffectOutcomeV2::Reap(FfmpegReapOutcomeV2::Reaped(
+                FfmpegTerminationV2::ExitCode(0),
+            )),
+        );
+        let force_count_before = kill_race
+            .trace()
+            .iter()
+            .filter(|transition| {
+                transition
+                    .issued
+                    .is_some_and(|request| request.effect == FfmpegEffectV2::ForceKillProcessTree)
+            })
+            .count();
+        kill_race
+            .observe_child_exit()
+            .expect("late exit observation is idempotent");
+        let force_count_after = kill_race
+            .trace()
+            .iter()
+            .filter(|transition| {
+                transition
+                    .issued
+                    .is_some_and(|request| request.effect == FfmpegEffectV2::ForceKillProcessTree)
+            })
+            .count();
+        assert_eq!(force_count_after, force_count_before);
+        assert_eq!(
+            kill_race.state(),
+            FfmpegLifecycleStateV2::DiagnosticsPending
+        );
+    }
+
+    #[test]
+    fn cleanup_failures_are_bounded_correlated_and_idempotent() {
+        let mut kill_failure = running();
+        kill_failure
+            .request_cancellation()
+            .expect("cancel running child");
+        complete(
+            &mut kill_failure,
+            FfmpegEffectOutcomeV2::GracefulStopUnsupported,
+        );
+        let first_kill = pending(&kill_failure);
+        complete(&mut kill_failure, FfmpegEffectOutcomeV2::ForcedKillFailed);
+        let second_kill = pending(&kill_failure);
+        assert_ne!(first_kill.generation, second_kill.generation);
+        assert!(matches!(
+            kill_failure.complete_effect(first_kill, FfmpegEffectOutcomeV2::ForcedKillFailed),
+            Err(FfmpegLifecycleErrorV2::UnexpectedEffectCompletion { .. })
+        ));
+        complete(&mut kill_failure, FfmpegEffectOutcomeV2::ForcedKillFailed);
+        assert_eq!(
+            pending(&kill_failure).effect,
+            FfmpegEffectV2::PreserveDiagnostics
+        );
+        complete(&mut kill_failure, FfmpegEffectOutcomeV2::DiagnosticsFailed);
+        assert_eq!(
+            pending(&kill_failure).effect,
+            FfmpegEffectV2::PreserveDiagnostics
+        );
+        complete(&mut kill_failure, FfmpegEffectOutcomeV2::DiagnosticsFailed);
+        assert_eq!(kill_failure.state(), FfmpegLifecycleStateV2::Cancelled);
+        assert_eq!(
+            kill_failure.terminal_failure(),
+            Some(FfmpegTerminalFailureV2::ForcedKillFailed)
+        );
+        assert!(kill_failure.pending_effect().is_none());
+        assert!(!kill_failure.resources_released());
+
+        let mut diagnostic_failure = reaped_zero();
+        complete(
+            &mut diagnostic_failure,
+            FfmpegEffectOutcomeV2::DiagnosticsFailed,
+        );
+        complete(
+            &mut diagnostic_failure,
+            FfmpegEffectOutcomeV2::DiagnosticsFailed,
+        );
+        assert_eq!(
+            diagnostic_failure.terminal_failure(),
+            Some(FfmpegTerminalFailureV2::DiagnosticsFailed)
+        );
+        complete(
+            &mut diagnostic_failure,
+            FfmpegEffectOutcomeV2::OutputValidated,
+        );
+        complete(
+            &mut diagnostic_failure,
+            FfmpegEffectOutcomeV2::ResourcesReleased,
+        );
+        assert_eq!(diagnostic_failure.state(), FfmpegLifecycleStateV2::Failed);
+
+        let mut release_failure = reaped_zero();
+        complete(
+            &mut release_failure,
+            FfmpegEffectOutcomeV2::DiagnosticsPreserved,
+        );
+        complete(&mut release_failure, FfmpegEffectOutcomeV2::OutputValidated);
+        let first_release = pending(&release_failure);
+        complete(
+            &mut release_failure,
+            FfmpegEffectOutcomeV2::ResourceReleaseFailed,
+        );
+        assert_ne!(
+            pending(&release_failure).generation,
+            first_release.generation
+        );
+        complete(
+            &mut release_failure,
+            FfmpegEffectOutcomeV2::ResourceReleaseFailed,
+        );
+        assert_eq!(release_failure.state(), FfmpegLifecycleStateV2::Failed);
+        assert_eq!(
+            release_failure.terminal_failure(),
+            Some(FfmpegTerminalFailureV2::ResourceReleaseFailed)
+        );
+        assert!(!release_failure.resources_released());
+    }
+}
+
 /// Applies one successfully acknowledged recovery action to the pure observation model.
 ///
 /// Initial application requires the exact action selected by [`decide_recovery`].
@@ -267,6 +663,820 @@ fn decide_recovery_prefix(observation: &RecoveryObservation) -> RecoveryDecision
         }
         CommitState::Inconsistent => {
             RecoveryDecision::FailClosed(RecoveryFailure::ExistingInconsistentPrefix)
+        }
+    }
+}
+
+/// Versioned limits for cleanup work owned by the `FFmpeg` supervisor.
+///
+/// Each value is an attempt ceiling rather than a duration. The effect adapter
+/// owns the corresponding bounded deadline; this pure model guarantees that a
+/// failing cleanup acknowledgement cannot cause an infinite retry loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FfmpegLifecycleLimitsV2 {
+    force_kill: u8,
+    reap: u8,
+    diagnostics: u8,
+    release: u8,
+}
+
+impl FfmpegLifecycleLimitsV2 {
+    /// Construct nonzero cleanup attempt ceilings.
+    #[must_use]
+    pub const fn new(
+        max_force_kill_attempts: u8,
+        max_reap_attempts: u8,
+        max_diagnostic_attempts: u8,
+        max_release_attempts: u8,
+    ) -> Option<Self> {
+        if max_force_kill_attempts == 0
+            || max_reap_attempts == 0
+            || max_diagnostic_attempts == 0
+            || max_release_attempts == 0
+        {
+            None
+        } else {
+            Some(Self {
+                force_kill: max_force_kill_attempts,
+                reap: max_reap_attempts,
+                diagnostics: max_diagnostic_attempts,
+                release: max_release_attempts,
+            })
+        }
+    }
+}
+
+/// Public states for the version-two `FFmpeg` lifecycle boundary.
+///
+/// Version two deliberately supersedes the legacy `MachineKind::Ffmpeg` model
+/// for process adapters. It serializes every cleanup effect, retains sticky
+/// cancellation separately from phase, and exposes typed reap evidence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegLifecycleStateV2 {
+    Prepared,
+    Spawning,
+    Running,
+    GracefulStopPending,
+    GracefulExitPending,
+    ForcedKillPending,
+    ReapPending,
+    DiagnosticsPending,
+    OutputValidationPending,
+    ReleasePending,
+    Exited,
+    Failed,
+    Cancelled,
+}
+
+/// Ordered adapter effects emitted by [`FfmpegLifecycleV2`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegEffectV2 {
+    SpawnProcess,
+    RequestGracefulStop,
+    ForceKillProcessTree,
+    ReapDirectChild,
+    PreserveDiagnostics,
+    ValidateOutput,
+    ReleaseResources,
+}
+
+/// Exact termination returned by one successful direct-child wait/reap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegTerminationV2 {
+    ExitCode(i32),
+    UnixSignal(i32),
+    /// Numeric Windows termination status without debugger-proven provenance.
+    WindowsStatusOpaque(u32),
+    /// Windows exception proven by an independent debugger/event boundary.
+    WindowsException(u32),
+}
+
+/// Bounded OS wait failure. `os_code` is absent only when the adapter has no
+/// stable numeric platform error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FfmpegWaitFailureV2 {
+    pub os_code: Option<i64>,
+}
+
+/// Typed direct-child wait/reap result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegReapOutcomeV2 {
+    /// The direct child was successfully reaped, regardless of termination status.
+    Reaped(FfmpegTerminationV2),
+    /// The wait/reap operation itself failed and may be retried within the limit.
+    WaitFailed(FfmpegWaitFailureV2),
+}
+
+/// Typed completion of one exact pending `FFmpeg` lifecycle effect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegEffectOutcomeV2 {
+    Spawned,
+    SpawnFailed,
+    GracefulStopRequested,
+    GracefulStopUnsupported,
+    GracefulStopFailed,
+    ForcedKillRequested,
+    ForcedKillAlreadyExited,
+    ForcedKillFailed,
+    Reap(FfmpegReapOutcomeV2),
+    DiagnosticsPreserved,
+    DiagnosticsFailed,
+    OutputValidated,
+    OutputInvalid,
+    OutputValidationFailed,
+    ResourcesReleased,
+    ResourceReleaseFailed,
+}
+
+/// Stable correlation token for one `FFmpeg` adapter effect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FfmpegEffectRequestV2 {
+    pub instance_id: MachineInstanceId,
+    pub generation: u64,
+    pub effect: FfmpegEffectV2,
+}
+
+/// Terminal failure classification retained independently from cancellation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegTerminalFailureV2 {
+    SpawnFailed,
+    ForcedKillFailed,
+    WaitFailed(FfmpegWaitFailureV2),
+    NonzeroExit(i32),
+    UnixSignal(i32),
+    WindowsStatusOpaque(u32),
+    WindowsException(u32),
+    DiagnosticsFailed,
+    OutputInvalid,
+    OutputValidationFailed,
+    ResourceReleaseFailed,
+}
+
+/// Public input recorded in the bounded lifecycle trace.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegLifecycleActionV2 {
+    Start,
+    Cancel,
+    ChildExitObserved,
+    GracePeriodExpired,
+    EffectCompleted {
+        request: FfmpegEffectRequestV2,
+        outcome: FfmpegEffectOutcomeV2,
+    },
+}
+
+/// One public state/effect transition from the version-two `FFmpeg` lifecycle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FfmpegLifecycleTransitionV2 {
+    pub previous: FfmpegLifecycleStateV2,
+    pub action: FfmpegLifecycleActionV2,
+    pub next: FfmpegLifecycleStateV2,
+    pub issued: Option<FfmpegEffectRequestV2>,
+}
+
+/// Rejection from the version-two `FFmpeg` lifecycle boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FfmpegLifecycleErrorV2 {
+    InvalidTransition {
+        state: FfmpegLifecycleStateV2,
+        action: FfmpegLifecycleActionV2,
+    },
+    UnexpectedEffectCompletion {
+        received: FfmpegEffectRequestV2,
+        expected: Option<FfmpegEffectRequestV2>,
+    },
+    OutcomeDoesNotMatchEffect {
+        effect: FfmpegEffectV2,
+        outcome: FfmpegEffectOutcomeV2,
+    },
+    TraceLimitReached {
+        limit: usize,
+    },
+    EffectGenerationExhausted,
+}
+
+/// Pure, bounded `FFmpeg` lifecycle model used by platform process adapters.
+///
+/// The machine has at most one pending effect. Cancellation is a sticky intent,
+/// not a competing state transition, so it cannot be lost while spawn, stop,
+/// kill, reap, diagnostics, validation, or release is pending.
+#[derive(Debug)]
+pub struct FfmpegLifecycleV2 {
+    instance_id: MachineInstanceId,
+    state: FfmpegLifecycleStateV2,
+    limits: FfmpegLifecycleLimitsV2,
+    trace_limit: usize,
+    trace: Vec<FfmpegLifecycleTransitionV2>,
+    pending: Option<FfmpegEffectRequestV2>,
+    next_generation: u64,
+    cancellation_requested: FfmpegFactV2,
+    exit_observed: FfmpegFactV2,
+    child_spawned: FfmpegFactV2,
+    force_kill_attempts: u8,
+    reap_attempts: u8,
+    diagnostic_attempts: u8,
+    release_attempts: u8,
+    reaped: Option<FfmpegTerminationV2>,
+    failure: Option<FfmpegTerminalFailureV2>,
+    cleanup_unproven: FfmpegFactV2,
+    diagnostics_preserved: FfmpegFactV2,
+    resources_released: FfmpegFactV2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FfmpegFactV2 {
+    Absent,
+    Present,
+}
+
+impl FfmpegFactV2 {
+    const fn is_present(self) -> bool {
+        matches!(self, Self::Present)
+    }
+}
+
+impl FfmpegLifecycleV2 {
+    /// Construct one prepared supervisor with a bounded trace and cleanup policy.
+    #[must_use]
+    pub const fn new(
+        instance_id: MachineInstanceId,
+        limits: FfmpegLifecycleLimitsV2,
+        trace_limit: usize,
+    ) -> Self {
+        Self {
+            instance_id,
+            state: FfmpegLifecycleStateV2::Prepared,
+            limits,
+            trace_limit,
+            trace: Vec::new(),
+            pending: None,
+            next_generation: 1,
+            cancellation_requested: FfmpegFactV2::Absent,
+            exit_observed: FfmpegFactV2::Absent,
+            child_spawned: FfmpegFactV2::Absent,
+            force_kill_attempts: 0,
+            reap_attempts: 0,
+            diagnostic_attempts: 0,
+            release_attempts: 0,
+            reaped: None,
+            failure: None,
+            cleanup_unproven: FfmpegFactV2::Absent,
+            diagnostics_preserved: FfmpegFactV2::Absent,
+            resources_released: FfmpegFactV2::Absent,
+        }
+    }
+
+    #[must_use]
+    pub const fn state(&self) -> FfmpegLifecycleStateV2 {
+        self.state
+    }
+
+    #[must_use]
+    pub const fn cancellation_requested(&self) -> bool {
+        self.cancellation_requested.is_present()
+    }
+
+    #[must_use]
+    pub const fn pending_effect(&self) -> Option<FfmpegEffectRequestV2> {
+        self.pending
+    }
+
+    #[must_use]
+    pub fn trace(&self) -> &[FfmpegLifecycleTransitionV2] {
+        &self.trace
+    }
+
+    #[must_use]
+    pub const fn reap_outcome(&self) -> Option<FfmpegTerminationV2> {
+        self.reaped
+    }
+
+    #[must_use]
+    pub const fn terminal_failure(&self) -> Option<FfmpegTerminalFailureV2> {
+        self.failure
+    }
+
+    #[must_use]
+    pub const fn diagnostics_preserved(&self) -> bool {
+        self.diagnostics_preserved.is_present()
+    }
+
+    #[must_use]
+    pub const fn resources_released(&self) -> bool {
+        self.resources_released.is_present()
+    }
+
+    /// Begin process creation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-transition, trace-limit, or generation error.
+    pub fn start(&mut self) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let action = FfmpegLifecycleActionV2::Start;
+        if self.state != FfmpegLifecycleStateV2::Prepared || self.pending.is_some() {
+            return Err(self.invalid(action));
+        }
+        self.prepare_transition(true)?;
+        Ok(self.record_with_effect(
+            action,
+            FfmpegLifecycleStateV2::Spawning,
+            Some(FfmpegEffectV2::SpawnProcess),
+        ))
+    }
+
+    /// Record sticky cancellation without replacing or duplicating a pending effect.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-transition or trace-limit error after terminal completion.
+    pub fn request_cancellation(
+        &mut self,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let action = FfmpegLifecycleActionV2::Cancel;
+        if self.is_terminal() {
+            return Err(self.invalid(action));
+        }
+        let (next, effect) = if self.state == FfmpegLifecycleStateV2::Prepared {
+            (
+                FfmpegLifecycleStateV2::ReleasePending,
+                Some(FfmpegEffectV2::ReleaseResources),
+            )
+        } else if self.state == FfmpegLifecycleStateV2::Running && self.pending.is_none() {
+            (
+                FfmpegLifecycleStateV2::GracefulStopPending,
+                Some(FfmpegEffectV2::RequestGracefulStop),
+            )
+        } else {
+            (self.state, None)
+        };
+        self.prepare_transition(effect.is_some())?;
+        self.cancellation_requested = FfmpegFactV2::Present;
+        if effect.is_some() {
+            Ok(self.record_with_effect(action, next, effect))
+        } else {
+            Ok(self.record_observation(action, next))
+        }
+    }
+
+    /// Record an independently observed child exit.
+    ///
+    /// The observation never substitutes for direct-child wait/reap. If stop or
+    /// kill is pending it is remembered until that exact request is settled.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-transition, trace-limit, or generation error.
+    pub fn observe_child_exit(
+        &mut self,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let action = FfmpegLifecycleActionV2::ChildExitObserved;
+        let (next, effect) = match self.state {
+            FfmpegLifecycleStateV2::Running | FfmpegLifecycleStateV2::GracefulExitPending
+                if self.pending.is_none() =>
+            {
+                (
+                    FfmpegLifecycleStateV2::ReapPending,
+                    Some(FfmpegEffectV2::ReapDirectChild),
+                )
+            }
+            FfmpegLifecycleStateV2::GracefulStopPending
+            | FfmpegLifecycleStateV2::ForcedKillPending
+            | FfmpegLifecycleStateV2::ReapPending
+            | FfmpegLifecycleStateV2::DiagnosticsPending
+            | FfmpegLifecycleStateV2::OutputValidationPending
+            | FfmpegLifecycleStateV2::ReleasePending
+            | FfmpegLifecycleStateV2::Exited
+            | FfmpegLifecycleStateV2::Failed
+            | FfmpegLifecycleStateV2::Cancelled => (self.state, None),
+            _ => return Err(self.invalid(action)),
+        };
+        self.prepare_transition(effect.is_some())?;
+        self.exit_observed = FfmpegFactV2::Present;
+        if effect.is_some() {
+            Ok(self.record_with_effect(action, next, effect))
+        } else {
+            Ok(self.record_observation(action, next))
+        }
+    }
+
+    /// Expire the bounded graceful-stop wait and begin forced termination.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-transition, trace-limit, or generation error.
+    pub fn expire_grace_period(
+        &mut self,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let action = FfmpegLifecycleActionV2::GracePeriodExpired;
+        if self.state != FfmpegLifecycleStateV2::GracefulExitPending || self.pending.is_some() {
+            return Err(self.invalid(action));
+        }
+        let (next, effect) = if self.exit_observed.is_present() {
+            (
+                FfmpegLifecycleStateV2::ReapPending,
+                FfmpegEffectV2::ReapDirectChild,
+            )
+        } else {
+            (
+                FfmpegLifecycleStateV2::ForcedKillPending,
+                FfmpegEffectV2::ForceKillProcessTree,
+            )
+        };
+        self.prepare_transition(true)?;
+        Ok(self.record_with_effect(action, next, Some(effect)))
+    }
+
+    /// Complete the exact pending effect with a typed outcome.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale/cross-instance requests, mismatched outcomes, invalid state,
+    /// exhausted trace capacity, or exhausted effect generations.
+    pub fn complete_effect(
+        &mut self,
+        request: FfmpegEffectRequestV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let action = FfmpegLifecycleActionV2::EffectCompleted { request, outcome };
+        if self.pending != Some(request) {
+            return Err(FfmpegLifecycleErrorV2::UnexpectedEffectCompletion {
+                received: request,
+                expected: self.pending,
+            });
+        }
+        if !outcome_matches_effect(request.effect, outcome) {
+            return Err(FfmpegLifecycleErrorV2::OutcomeDoesNotMatchEffect {
+                effect: request.effect,
+                outcome,
+            });
+        }
+        match request.effect {
+            FfmpegEffectV2::SpawnProcess => self.complete_spawn(action, outcome),
+            FfmpegEffectV2::RequestGracefulStop => self.complete_graceful(action, outcome),
+            FfmpegEffectV2::ForceKillProcessTree => self.complete_forced_kill(action, outcome),
+            FfmpegEffectV2::ReapDirectChild => self.complete_reap(action, outcome),
+            FfmpegEffectV2::PreserveDiagnostics => self.complete_diagnostics(action, outcome),
+            FfmpegEffectV2::ValidateOutput => self.complete_output_validation(action, outcome),
+            FfmpegEffectV2::ReleaseResources => self.complete_release(action, outcome),
+        }
+    }
+
+    fn complete_spawn(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let (next, effect) = match outcome {
+            FfmpegEffectOutcomeV2::Spawned if self.cancellation_requested.is_present() => (
+                FfmpegLifecycleStateV2::GracefulStopPending,
+                Some(FfmpegEffectV2::RequestGracefulStop),
+            ),
+            FfmpegEffectOutcomeV2::Spawned => (FfmpegLifecycleStateV2::Running, None),
+            FfmpegEffectOutcomeV2::SpawnFailed => (
+                FfmpegLifecycleStateV2::DiagnosticsPending,
+                Some(FfmpegEffectV2::PreserveDiagnostics),
+            ),
+            _ => return Err(self.invalid(action)),
+        };
+        self.prepare_transition(effect.is_some())?;
+        self.pending = None;
+        if outcome == FfmpegEffectOutcomeV2::Spawned {
+            self.child_spawned = FfmpegFactV2::Present;
+        } else {
+            self.failure = Some(FfmpegTerminalFailureV2::SpawnFailed);
+        }
+        Ok(self.record_with_effect(action, next, effect))
+    }
+
+    fn complete_graceful(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let (next, effect) = if self.exit_observed.is_present() {
+            (
+                FfmpegLifecycleStateV2::ReapPending,
+                Some(FfmpegEffectV2::ReapDirectChild),
+            )
+        } else if outcome == FfmpegEffectOutcomeV2::GracefulStopRequested {
+            (FfmpegLifecycleStateV2::GracefulExitPending, None)
+        } else {
+            (
+                FfmpegLifecycleStateV2::ForcedKillPending,
+                Some(FfmpegEffectV2::ForceKillProcessTree),
+            )
+        };
+        self.prepare_transition(effect.is_some())?;
+        self.pending = None;
+        Ok(self.record_with_effect(action, next, effect))
+    }
+
+    fn complete_forced_kill(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let next_attempt = self.force_kill_attempts.saturating_add(1);
+        let failed = outcome == FfmpegEffectOutcomeV2::ForcedKillFailed;
+        let exhausted = failed && next_attempt >= self.limits.force_kill;
+        let (next, effect) = if failed && !exhausted && !self.exit_observed.is_present() {
+            (
+                FfmpegLifecycleStateV2::ForcedKillPending,
+                Some(FfmpegEffectV2::ForceKillProcessTree),
+            )
+        } else if exhausted && !self.exit_observed.is_present() {
+            (
+                FfmpegLifecycleStateV2::DiagnosticsPending,
+                Some(FfmpegEffectV2::PreserveDiagnostics),
+            )
+        } else {
+            (
+                FfmpegLifecycleStateV2::ReapPending,
+                Some(FfmpegEffectV2::ReapDirectChild),
+            )
+        };
+        self.prepare_transition(true)?;
+        self.pending = None;
+        self.force_kill_attempts = next_attempt;
+        if exhausted && !self.exit_observed.is_present() {
+            self.failure = Some(FfmpegTerminalFailureV2::ForcedKillFailed);
+            self.cleanup_unproven = FfmpegFactV2::Present;
+        }
+        Ok(self.record_with_effect(action, next, effect))
+    }
+
+    fn complete_reap(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let FfmpegEffectOutcomeV2::Reap(reap) = outcome else {
+            return Err(self.invalid(action));
+        };
+        let next_attempt = self.reap_attempts.saturating_add(1);
+        let exhausted =
+            matches!(reap, FfmpegReapOutcomeV2::WaitFailed(_)) && next_attempt >= self.limits.reap;
+        let (next, effect) = if matches!(reap, FfmpegReapOutcomeV2::WaitFailed(_)) && !exhausted {
+            (
+                FfmpegLifecycleStateV2::ReapPending,
+                FfmpegEffectV2::ReapDirectChild,
+            )
+        } else {
+            (
+                FfmpegLifecycleStateV2::DiagnosticsPending,
+                FfmpegEffectV2::PreserveDiagnostics,
+            )
+        };
+        self.prepare_transition(true)?;
+        self.pending = None;
+        self.reap_attempts = next_attempt;
+        match reap {
+            FfmpegReapOutcomeV2::Reaped(termination) => self.reaped = Some(termination),
+            FfmpegReapOutcomeV2::WaitFailed(wait_failure) if exhausted => {
+                self.failure = Some(FfmpegTerminalFailureV2::WaitFailed(wait_failure));
+                self.cleanup_unproven = FfmpegFactV2::Present;
+            }
+            FfmpegReapOutcomeV2::WaitFailed(_) => {}
+        }
+        Ok(self.record_with_effect(action, next, Some(effect)))
+    }
+
+    fn complete_diagnostics(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let next_attempt = self.diagnostic_attempts.saturating_add(1);
+        let failed = outcome == FfmpegEffectOutcomeV2::DiagnosticsFailed;
+        let retry = failed && next_attempt < self.limits.diagnostics;
+        let (next, effect) = if retry {
+            (
+                FfmpegLifecycleStateV2::DiagnosticsPending,
+                Some(FfmpegEffectV2::PreserveDiagnostics),
+            )
+        } else if self.cleanup_unproven.is_present() {
+            (
+                if self.cancellation_requested.is_present() {
+                    FfmpegLifecycleStateV2::Cancelled
+                } else {
+                    FfmpegLifecycleStateV2::Failed
+                },
+                None,
+            )
+        } else if !self.child_spawned.is_present()
+            || self.cancellation_requested.is_present()
+            || self.failure.is_some()
+        {
+            (
+                FfmpegLifecycleStateV2::ReleasePending,
+                Some(FfmpegEffectV2::ReleaseResources),
+            )
+        } else {
+            match self.reaped {
+                Some(FfmpegTerminationV2::ExitCode(0)) => (
+                    FfmpegLifecycleStateV2::OutputValidationPending,
+                    Some(FfmpegEffectV2::ValidateOutput),
+                ),
+                Some(_) => (
+                    FfmpegLifecycleStateV2::ReleasePending,
+                    Some(FfmpegEffectV2::ReleaseResources),
+                ),
+                None => return Err(self.invalid(action)),
+            }
+        };
+        self.prepare_transition(effect.is_some())?;
+        self.pending = None;
+        self.diagnostic_attempts = next_attempt;
+        if !retry && !self.cancellation_requested.is_present() && self.failure.is_none() {
+            self.failure = termination_failure(self.reaped);
+        }
+        if outcome == FfmpegEffectOutcomeV2::DiagnosticsPreserved {
+            self.diagnostics_preserved = FfmpegFactV2::Present;
+        } else if !retry && self.failure.is_none() {
+            self.failure = Some(FfmpegTerminalFailureV2::DiagnosticsFailed);
+        }
+        Ok(self.record_with_effect(action, next, effect))
+    }
+
+    fn complete_output_validation(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        self.prepare_transition(true)?;
+        self.pending = None;
+        self.failure = match outcome {
+            FfmpegEffectOutcomeV2::OutputValidated => self.failure,
+            FfmpegEffectOutcomeV2::OutputInvalid => Some(FfmpegTerminalFailureV2::OutputInvalid),
+            FfmpegEffectOutcomeV2::OutputValidationFailed => {
+                Some(FfmpegTerminalFailureV2::OutputValidationFailed)
+            }
+            _ => return Err(self.invalid(action)),
+        };
+        Ok(self.record_with_effect(
+            action,
+            FfmpegLifecycleStateV2::ReleasePending,
+            Some(FfmpegEffectV2::ReleaseResources),
+        ))
+    }
+
+    fn complete_release(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        outcome: FfmpegEffectOutcomeV2,
+    ) -> Result<&FfmpegLifecycleTransitionV2, FfmpegLifecycleErrorV2> {
+        let next_attempt = self.release_attempts.saturating_add(1);
+        let failed = outcome == FfmpegEffectOutcomeV2::ResourceReleaseFailed;
+        let retry = failed && next_attempt < self.limits.release;
+        let next = if retry {
+            FfmpegLifecycleStateV2::ReleasePending
+        } else if self.cancellation_requested.is_present() {
+            FfmpegLifecycleStateV2::Cancelled
+        } else if failed || self.failure.is_some() {
+            FfmpegLifecycleStateV2::Failed
+        } else {
+            FfmpegLifecycleStateV2::Exited
+        };
+        self.prepare_transition(retry)?;
+        self.pending = None;
+        self.release_attempts = next_attempt;
+        if failed && !retry {
+            self.failure = Some(FfmpegTerminalFailureV2::ResourceReleaseFailed);
+        }
+        if outcome == FfmpegEffectOutcomeV2::ResourcesReleased {
+            self.resources_released = FfmpegFactV2::Present;
+        }
+        Ok(self.record_with_effect(
+            action,
+            next,
+            retry.then_some(FfmpegEffectV2::ReleaseResources),
+        ))
+    }
+
+    const fn is_terminal(&self) -> bool {
+        matches!(
+            self.state,
+            FfmpegLifecycleStateV2::Exited
+                | FfmpegLifecycleStateV2::Failed
+                | FfmpegLifecycleStateV2::Cancelled
+        )
+    }
+
+    const fn invalid(&self, action: FfmpegLifecycleActionV2) -> FfmpegLifecycleErrorV2 {
+        FfmpegLifecycleErrorV2::InvalidTransition {
+            state: self.state,
+            action,
+        }
+    }
+
+    fn prepare_transition(&self, issues_effect: bool) -> Result<(), FfmpegLifecycleErrorV2> {
+        if self.trace.len() >= self.trace_limit {
+            return Err(FfmpegLifecycleErrorV2::TraceLimitReached {
+                limit: self.trace_limit,
+            });
+        }
+        if issues_effect && self.next_generation == u64::MAX {
+            return Err(FfmpegLifecycleErrorV2::EffectGenerationExhausted);
+        }
+        Ok(())
+    }
+
+    fn record_with_effect(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        next: FfmpegLifecycleStateV2,
+        effect: Option<FfmpegEffectV2>,
+    ) -> &FfmpegLifecycleTransitionV2 {
+        let previous = self.state;
+        let issued = effect.map(|effect| {
+            let request = FfmpegEffectRequestV2 {
+                instance_id: self.instance_id,
+                generation: self.next_generation,
+                effect,
+            };
+            self.next_generation += 1;
+            request
+        });
+        self.state = next;
+        self.pending = issued;
+        self.trace.push(FfmpegLifecycleTransitionV2 {
+            previous,
+            action,
+            next,
+            issued,
+        });
+        let index = self.trace.len() - 1;
+        &self.trace[index]
+    }
+
+    fn record_observation(
+        &mut self,
+        action: FfmpegLifecycleActionV2,
+        next: FfmpegLifecycleStateV2,
+    ) -> &FfmpegLifecycleTransitionV2 {
+        let previous = self.state;
+        self.state = next;
+        self.trace.push(FfmpegLifecycleTransitionV2 {
+            previous,
+            action,
+            next,
+            issued: None,
+        });
+        let index = self.trace.len() - 1;
+        &self.trace[index]
+    }
+}
+
+const fn outcome_matches_effect(effect: FfmpegEffectV2, outcome: FfmpegEffectOutcomeV2) -> bool {
+    matches!(
+        (effect, outcome),
+        (
+            FfmpegEffectV2::SpawnProcess,
+            FfmpegEffectOutcomeV2::Spawned | FfmpegEffectOutcomeV2::SpawnFailed
+        ) | (
+            FfmpegEffectV2::RequestGracefulStop,
+            FfmpegEffectOutcomeV2::GracefulStopRequested
+                | FfmpegEffectOutcomeV2::GracefulStopUnsupported
+                | FfmpegEffectOutcomeV2::GracefulStopFailed
+        ) | (
+            FfmpegEffectV2::ForceKillProcessTree,
+            FfmpegEffectOutcomeV2::ForcedKillRequested
+                | FfmpegEffectOutcomeV2::ForcedKillAlreadyExited
+                | FfmpegEffectOutcomeV2::ForcedKillFailed
+        ) | (
+            FfmpegEffectV2::ReapDirectChild,
+            FfmpegEffectOutcomeV2::Reap(_)
+        ) | (
+            FfmpegEffectV2::PreserveDiagnostics,
+            FfmpegEffectOutcomeV2::DiagnosticsPreserved | FfmpegEffectOutcomeV2::DiagnosticsFailed
+        ) | (
+            FfmpegEffectV2::ValidateOutput,
+            FfmpegEffectOutcomeV2::OutputValidated
+                | FfmpegEffectOutcomeV2::OutputInvalid
+                | FfmpegEffectOutcomeV2::OutputValidationFailed
+        ) | (
+            FfmpegEffectV2::ReleaseResources,
+            FfmpegEffectOutcomeV2::ResourcesReleased | FfmpegEffectOutcomeV2::ResourceReleaseFailed
+        )
+    )
+}
+
+const fn termination_failure(
+    termination: Option<FfmpegTerminationV2>,
+) -> Option<FfmpegTerminalFailureV2> {
+    match termination {
+        Some(FfmpegTerminationV2::ExitCode(0)) | None => None,
+        Some(FfmpegTerminationV2::ExitCode(code)) => {
+            Some(FfmpegTerminalFailureV2::NonzeroExit(code))
+        }
+        Some(FfmpegTerminationV2::UnixSignal(signal)) => {
+            Some(FfmpegTerminalFailureV2::UnixSignal(signal))
+        }
+        Some(FfmpegTerminationV2::WindowsStatusOpaque(status)) => {
+            Some(FfmpegTerminalFailureV2::WindowsStatusOpaque(status))
+        }
+        Some(FfmpegTerminationV2::WindowsException(code)) => {
+            Some(FfmpegTerminalFailureV2::WindowsException(code))
         }
     }
 }

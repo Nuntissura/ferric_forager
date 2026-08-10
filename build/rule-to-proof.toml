@@ -172,17 +172,17 @@ limitations = ["Product source rejects yt-dlp-family/Python references, include!
 
 [[rules]]
 rule_id = "FF-BUILD-090"
-proof_classes = ["structural", "semantic", "negative_fixture"]
-validators = ["compatibility-semantic-replay"]
+proof_classes = ["structural", "semantic", "integration", "negative_fixture"]
+validators = ["compatibility-semantic-replay", "ffmpeg-supervision-report-consumer"]
 fixture_ids = ["structural-replay-behavioral-pass", "source-content-fingerprint"]
-limitations = ["Compatibility replay executes native Rust fixture semantics but does not prove a future shipped Ferric entrypoint or yt-dlp replacement parity. Freshness binds HEAD, dirty paths, and a deterministic fingerprint of tracked and untracked source contents."]
+limitations = ["Compatibility replay executes native Rust fixture semantics but does not prove a future shipped Ferric entrypoint or yt-dlp replacement parity. Freshness binds HEAD, dirty paths, and a deterministic fingerprint of tracked and untracked source contents. The FFmpeg consumer classifies accepted Windows/Linux-native platform reports as integration evidence only and never as ff.runtime-proof@1 or production-runtime proof."]
 
 [[rules]]
 rule_id = "FF-BUILD-091"
-proof_classes = ["semantic", "counterfactual", "negative_fixture"]
-validators = ["public-boundary-counterexample"]
+proof_classes = ["semantic", "counterfactual", "integration", "negative_fixture"]
+validators = ["public-boundary-counterexample", "ffmpeg-supervision-report-consumer"]
 fixture_ids = ["declaration-only-proof"]
-limitations = ["Public-boundary counterexamples currently prove prerequisite contracts, not production runtime behavior."]
+limitations = ["Public-boundary counterexamples currently prove prerequisite contracts, not production runtime behavior. The FFmpeg report consumer rejects declaration-preserving behavior mutations, but trusts no producer digest as the canonical fixture oracle."]
 
 [[rules]]
 rule_id = "FF-BUILD-092"
@@ -221,17 +221,17 @@ limitations = ["Regression fixtures prove the corrected public prerequisite boun
 
 [[rules]]
 rule_id = "FF-BUILD-097"
-proof_classes = ["semantic", "negative_fixture"]
-validators = ["behavior-sensitive-proof-map"]
+proof_classes = ["semantic", "integration", "negative_fixture"]
+validators = ["behavior-sensitive-proof-map", "ffmpeg-supervision-report-consumer"]
 fixture_ids = ["proof-map-string-only", "proof-map-behavior-stub", "proof-map-constant-tautology"]
-limitations = ["Proof routing metadata is non-proof; each inventory proof ID must resolve through cargo test --list and execute as an exact non-ignored test in verify-deep. The gate rejects obvious neutralized bodies and literal-only assertion tautologies before execution; the isolated ItemId counterfactual proves that a mapped stub cannot replace independent public behavior evidence, but it does not claim one mutation probe covers every mapped contract invariant or that arbitrary semantic relevance can be decided statically."]
+limitations = ["Proof routing metadata is non-proof; each inventory proof ID must resolve through cargo test --list and execute as an exact non-ignored test in verify-deep. The gate rejects obvious neutralized bodies and literal-only assertion tautologies before execution; the isolated ItemId counterfactual proves that a mapped stub cannot replace independent public behavior evidence, but it does not claim one mutation probe covers every mapped contract invariant or that arbitrary semantic relevance can be decided statically. WP-FF-010 closure must separately execute ffmpeg-supervision-aggregate against same-source Windows and Linux-native reports."]
 
 [[rules]]
 rule_id = "FF-BUILD-098"
 proof_classes = ["structural", "semantic", "integration", "production_runtime", "negative_fixture"]
-validators = ["proof-class-aggregation"]
+validators = ["proof-class-aggregation", "ffmpeg-supervision-report-consumer"]
 fixture_ids = ["proof-class-promotion", "gate-report-runtime-claim"]
-limitations = ["Aggregation reports the weakest executed class and cannot upgrade prerequisite evidence into runtime proof."]
+limitations = ["Aggregation reports the weakest executed class and cannot upgrade prerequisite evidence into runtime proof. The FFmpeg consumer emits only integration evidence and explicitly excludes product, capability, packaging, release, phase, and production-runtime completion."]
 
 [[rules]]
 rule_id = "FF-BUILD-099"

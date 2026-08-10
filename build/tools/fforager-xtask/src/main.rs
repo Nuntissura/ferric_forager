@@ -1,4 +1,5 @@
 mod compatibility;
+mod ffmpeg_report;
 mod secret_scan;
 
 use cargo_metadata::{DependencyKind, Metadata, PackageId};
@@ -444,12 +445,12 @@ struct GateReport {
     artifacts: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
-struct SourceState {
-    git_commit: String,
-    dirty: bool,
-    dirty_paths: Vec<String>,
-    content_fingerprint: String,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SourceState {
+    pub(crate) git_commit: String,
+    pub(crate) dirty: bool,
+    pub(crate) dirty_paths: Vec<String>,
+    pub(crate) content_fingerprint: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -670,6 +671,12 @@ fn run() -> Result<(), String> {
         [command] if command == "resource-durability-models" => {
             run_resource_durability_models(&root)
         }
+        [command, rest @ ..] if command == "ffmpeg-supervision-aggregate" => {
+            ffmpeg_report::run(&root, rest)
+        }
+        [command, rest @ ..] if command == "ffmpeg-supervision-produce" => {
+            ffmpeg_report::run_producer(&root, rest)
+        }
         [command, rest @ ..] if command == "secret-scan" => secret_scan::run(&root, rest),
         [gate, evidence] if gate == "verify-pr" && evidence == "--evidence-from-taskboard" => {
             run_verify_pr(&root, &args)
@@ -687,7 +694,7 @@ fn run() -> Result<(), String> {
         [gate] if matches!(gate.as_str(), "verify-release" | "watcher-check") => {
             Err(format!("{gate} is NOT_IMPLEMENTED for Phase 0 and cannot report PASS"))
         }
-        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|secret-scan <--install-hooks|--verify-hooks|--staged|--history|--pre-push REMOTE>|transport-corpus|archive-store-evidence|resource-durability-models|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
+        _ => Err("usage: fforager-xtask <architecture-check|runtime-truth-check --evidence-from-taskboard|verify-pr --evidence-from-taskboard|verify-deep --evidence-from-taskboard|secret-scan <--install-hooks|--verify-hooks|--staged|--history|--pre-push REMOTE>|transport-corpus|archive-store-evidence|resource-durability-models|ffmpeg-supervision-produce --platform <windows_x86_64|linux_x86_64> --fixture-root PATH --report PATH --receipt PATH|ffmpeg-supervision-aggregate --windows-report PATH --windows-receipt PATH --linux-report PATH --linux-receipt PATH|compatibility-generate --oracle-exe PATH --source-root PATH [--output PATH]|compatibility-validate|compatibility-replay [--shard INDEX/TOTAL]|compatibility-diff --candidate PATH|compatibility-inventory-diff --before PATH --after PATH|compatibility-live-canaries --enable-live --oracle-exe PATH|verify-release|watcher-check>".to_owned()),
     }
 }
 
@@ -6313,9 +6320,9 @@ fn validate_policy_identity(
         .iter()
         .map(String::as_str)
         .collect();
-    if policy.unsafe_policy != "forbid_in_workspace_members"
+    if policy.unsafe_policy != "forbid_except_scoped_policy_listed_boundary"
         || policy.unsafe_exception_authority != ".GOV/rules/build-rules.yaml#exception_authority"
-        || !policy.unsafe_decision_ids.is_empty()
+        || policy.unsafe_decision_ids != ["FF-DEC-003"]
         || policy.internal_edge_default != "deny"
         || observed_forbidden != expected_forbidden
     {
@@ -6930,16 +6937,21 @@ fn validate_artifact_layout(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "FF-BUILD-037 validates the complete per-member architecture contract in one audit surface"
+)]
 fn validate_member_metadata(
     root: &Path,
     policy: &ArchitecturePolicy,
     member: &MemberPolicy,
     metadata: &Metadata,
 ) -> Result<(), String> {
+    let is_ffmpeg_prerequisite = member.name == "fforager-ffmpeg";
     if member.shipped && member.layer == "build_tooling" {
         return Err(format!("FF-ARCH-E-SHIPPED-BUILD-TOOLING: {}", member.name));
     }
-    let ownership_root = if member.shipped {
+    let ownership_root = if member.shipped || is_ffmpeg_prerequisite {
         policy.product_root.as_str()
     } else {
         policy.build_root.as_str()
@@ -6952,17 +6964,31 @@ fn validate_member_metadata(
             member.name, member.split_trigger
         ));
     }
+    let exception_refs_valid = if is_ffmpeg_prerequisite {
+        member.runtime_native_constraint_ref == "FF-DEC-003"
+            && member.unsafe_policy_ref == "FF-BUILD-050;FF-DEC-003"
+            && member.exception_policy_ref == "FF-DEC-003"
+            && member.layer == "adapter"
+            && member.artifact_role == "non_shipped_ffmpeg_supervision_prerequisite"
+            && !member.shipped
+            && !member.test_only
+    } else {
+        member.runtime_native_constraint_ref == "FF-START-BOUNDARY-001"
+            && member.unsafe_policy_ref == "FF-BUILD-050"
+            && member.exception_policy_ref == "FF-BUILD-052"
+    };
     if member.layer.trim().is_empty()
         || member.artifact_role.trim().is_empty()
         || member.feature_owner.trim().is_empty()
         || member.profile.trim().is_empty()
         || member.removal_condition.trim().is_empty()
-        || member.runtime_native_constraint_ref != "FF-START-BOUNDARY-001"
-        || member.unsafe_policy_ref != "FF-BUILD-050"
-        || member.exception_policy_ref != "FF-BUILD-052"
+        || !exception_refs_valid
         || member.publish_allowed
         || (member.shipped && member.test_only)
-        || (!member.shipped && !member.test_only && member.layer != "build_tooling")
+        || (!member.shipped
+            && !member.test_only
+            && member.layer != "build_tooling"
+            && !is_ffmpeg_prerequisite)
         || (member.shipped && member.layer == "build_tooling")
     {
         return Err(format!("invalid Phase 0 member policy for {}", member.name));
@@ -7052,6 +7078,7 @@ fn product_local_lint_manifest(manifest_path: &str, manifest_text: &str) -> Resu
         "product/crates/fforager-contracts/Cargo.toml"
             | "product/crates/fforager-diagnostics-contract/Cargo.toml"
             | "product/crates/fforager-core/Cargo.toml"
+            | "product/crates/fforager-ffmpeg/Cargo.toml"
     ) {
         return Ok(false);
     }
@@ -7070,8 +7097,13 @@ fn product_local_lint_manifest(manifest_path: &str, manifest_text: &str) -> Resu
         .get("clippy")
         .and_then(toml::Value::as_table)
         .ok_or("product member omits lints.clippy")?;
+    let expected_unsafe_level = if manifest_path == "product/crates/fforager-ffmpeg/Cargo.toml" {
+        "deny"
+    } else {
+        "forbid"
+    };
     Ok(lints.get("workspace").is_none()
-        && rust.get("unsafe_code").and_then(toml::Value::as_str) == Some("forbid")
+        && rust.get("unsafe_code").and_then(toml::Value::as_str) == Some(expected_unsafe_level)
         && rust
             .get("missing_debug_implementations")
             .and_then(toml::Value::as_str)
@@ -7698,6 +7730,7 @@ fn validate_product_clippy_guard(root: &Path) -> Result<(), String> {
         "product/crates/fforager-contracts/Cargo.toml",
         "product/crates/fforager-diagnostics-contract/Cargo.toml",
         "product/crates/fforager-core/Cargo.toml",
+        "product/crates/fforager-ffmpeg/Cargo.toml",
     ] {
         let text = fs::read_to_string(root.join(manifest))
             .map_err(|error| format!("FF-ARCH-E-PRODUCT-CLIPPY-GUARD: read {manifest}: {error}"))?;
@@ -7808,7 +7841,7 @@ fn validate_dependency_decisions<'policy>(
                 decision.name
             ));
         };
-        let is_product = member.shipped || member.manifest.starts_with("product/");
+        let is_product = member.shipped;
         let runtime_class_is_product = decision.runtime_class == "shipped_rust_product";
         if is_product != runtime_class_is_product {
             return Err(format!(
@@ -7851,8 +7884,8 @@ fn dependency_native_exception_valid(
     decision: &DependencyDecision,
     native_exceptions: &BTreeMap<String, NativeDependencyException>,
 ) -> bool {
-    if !decision.native {
-        return decision.exception_id.is_none();
+    if !decision.native && decision.exception_id.is_none() {
+        return true;
     }
     let Some(exception_id) = decision.exception_id.as_deref() else {
         return false;
@@ -7865,7 +7898,8 @@ fn dependency_native_exception_valid(
     } else {
         &exception.allowed_prerequisite_consumers
     };
-    exception.owner == decision.owner
+    (decision.native || exception_id == "FF-DEC-003")
+        && exception.owner == decision.owner
         && exception.approval_id == decision.approval_id
         && allowed_consumers.contains(&decision.consumer)
         && exception
@@ -8031,6 +8065,10 @@ fn validate_native_exception_reachability(
                 "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: missing native exception {exception_id}"
             )
         })?;
+        if exception_id == "FF-DEC-003" {
+            validate_ffi_boundary_direct_attribution(policy, metadata, exception_id, exception)?;
+            continue;
+        }
         let governed_package_ids = metadata
             .packages
             .iter()
@@ -8198,6 +8236,87 @@ fn validate_native_exception_reachability(
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_ffi_boundary_direct_attribution(
+    policy: &ArchitecturePolicy,
+    metadata: &Metadata,
+    exception_id: &str,
+    exception: &NativeDependencyException,
+) -> Result<(), String> {
+    let consumer = exception
+        .allowed_prerequisite_consumers
+        .iter()
+        .next()
+        .ok_or_else(|| {
+            format!(
+                "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {exception_id} has no prerequisite consumer"
+            )
+        })?;
+    let package = metadata
+        .workspace_packages()
+        .into_iter()
+        .find(|package| package.name.as_str() == consumer)
+        .ok_or_else(|| {
+            format!(
+                "FF-ARCH-E-NATIVE-CONSUMER-REACHABILITY: {exception_id} consumer {consumer} is absent from the workspace"
+            )
+        })?;
+    let declared_bindings = package
+        .dependencies
+        .iter()
+        .filter(|dependency| {
+            exception
+                .allowed_direct_dependencies
+                .contains(dependency.name.as_str())
+        })
+        .map(|dependency| dependency.name.clone())
+        .collect::<BTreeSet<_>>();
+    if declared_bindings != exception.allowed_direct_dependencies {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION: {consumer} must directly declare exactly the {exception_id} bindings {:?}, observed {declared_bindings:?}",
+            exception.allowed_direct_dependencies
+        ));
+    }
+
+    let observed_decisions = policy
+        .dependency_decisions
+        .iter()
+        .filter(|decision| decision.exception_id.as_deref() == Some(exception_id))
+        .map(|decision| {
+            (
+                decision.consumer.clone(),
+                decision.name.clone(),
+                decision.version.clone(),
+                decision.runtime_class.clone(),
+                decision.native,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let expected_decisions = exception
+        .allowed_versions
+        .iter()
+        .map(|identity| {
+            let (name, version) = identity.rsplit_once('@').ok_or_else(|| {
+                format!(
+                    "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION: invalid {exception_id} package identity {identity}"
+                )
+            })?;
+            Ok((
+                consumer.clone(),
+                name.to_owned(),
+                version.to_owned(),
+                "non_shipped_phase0_prerequisite".to_owned(),
+                false,
+            ))
+        })
+        .collect::<Result<BTreeSet<_>, String>>()?;
+    if observed_decisions != expected_decisions {
+        return Err(format!(
+            "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION: {exception_id} decisions must bind only the direct {consumer} FFI dependencies; expected {expected_decisions:?}, observed {observed_decisions:?}"
+        ));
     }
     Ok(())
 }
@@ -8794,7 +8913,7 @@ fn read_native_dependency_exceptions(
         .as_mapping_get("canonical_allowlist")
         .and_then(Yaml::as_sequence)
         .ok_or("exception_authority canonical_allowlist is not a sequence")?;
-    let expected_keys = BTreeSet::from([
+    let dependency_keys = BTreeSet::from([
         "allow_build_scripts",
         "allow_build_time_downloads",
         "allow_packaging_or_release",
@@ -8822,6 +8941,34 @@ fn read_native_dependency_exceptions(
         "removal_trigger",
         "status",
     ]);
+    let ffi_boundary_keys = BTreeSet::from([
+        "allow_build_scripts",
+        "allow_build_time_downloads",
+        "allow_ffi",
+        "allow_packaging_or_release",
+        "allow_packaged_pregenerated_assembly_objects",
+        "allow_prebuilt_binaries",
+        "allow_product_use",
+        "allow_unsafe",
+        "allowed_direct_dependencies",
+        "allowed_native_link_packages",
+        "allowed_native_runtime_packages",
+        "allowed_prerequisite_consumers",
+        "allowed_product_consumers",
+        "allowed_runtime_classes",
+        "allowed_versions",
+        "approval_id",
+        "id",
+        "kind",
+        "operator_decision",
+        "owner",
+        "promotion_requires_new_operator_decision",
+        "reason",
+        "removal_trigger",
+        "residual_uncertainty",
+        "safety_invariants",
+        "status",
+    ]);
     let mut result = BTreeMap::new();
     for row in rows {
         let mapping = row
@@ -8834,7 +8981,17 @@ fn read_native_dependency_exceptions(
                     .ok_or("native exception row has a non-string key")
             })
             .collect::<Result<BTreeSet<_>, _>>()?;
-        if keys != expected_keys {
+        let kind = yaml_string(row, "kind")?;
+        let expected_keys = match kind {
+            "native_dependency" => &dependency_keys,
+            "native_ffi_and_unsafe_boundary" => &ffi_boundary_keys,
+            _ => {
+                return Err(format!(
+                    "FF-ARCH-E-EXCEPTION-SCHEMA: unsupported native exception kind {kind}"
+                ));
+            }
+        };
+        if &keys != expected_keys {
             return Err(format!(
                 "FF-ARCH-E-EXCEPTION-SCHEMA: native exception keys are invalid: {keys:?}"
             ));
@@ -8849,12 +9006,22 @@ fn read_native_dependency_exceptions(
         let allow_packaging_or_release = yaml_bool(row, "allow_packaging_or_release")?;
         let promotion_requires_new_operator_decision =
             yaml_bool(row, "promotion_requires_new_operator_decision")?;
-        let packaged_object_inventory_sha256 =
-            yaml_string_allow_empty(row, "packaged_object_inventory_sha256")?;
-        let ordinary_transport_resolved_closure_sha256 =
-            yaml_string_allow_empty(row, "ordinary_transport_resolved_closure_sha256")?;
-        let ordinary_transport_registry_source_closure_sha256 =
-            yaml_string_allow_empty(row, "ordinary_transport_registry_source_closure_sha256")?;
+        let is_ffi_boundary = kind == "native_ffi_and_unsafe_boundary";
+        let packaged_object_inventory_sha256 = if is_ffi_boundary {
+            ""
+        } else {
+            yaml_string_allow_empty(row, "packaged_object_inventory_sha256")?
+        };
+        let ordinary_transport_resolved_closure_sha256 = if is_ffi_boundary {
+            ""
+        } else {
+            yaml_string_allow_empty(row, "ordinary_transport_resolved_closure_sha256")?
+        };
+        let ordinary_transport_registry_source_closure_sha256 = if is_ffi_boundary {
+            ""
+        } else {
+            yaml_string_allow_empty(row, "ordinary_transport_registry_source_closure_sha256")?
+        };
         let allowed_prerequisite_consumers =
             yaml_string_set(row, "allowed_prerequisite_consumers")?;
         let allowed_product_consumers = yaml_string_set(row, "allowed_product_consumers")?;
@@ -8863,13 +9030,51 @@ fn read_native_dependency_exceptions(
         let allowed_native_link_packages = yaml_string_set(row, "allowed_native_link_packages")?;
         let allowed_native_runtime_packages =
             yaml_string_set(row, "allowed_native_runtime_packages")?;
-        let allowed_package_archive_sha256 =
-            yaml_identity_digest_map(row, "allowed_package_archive_sha256")?;
-        let allowed_package_source_inventory_sha256 =
-            yaml_identity_digest_map(row, "allowed_package_source_inventory_sha256")?;
+        let allowed_package_archive_sha256 = if is_ffi_boundary {
+            BTreeMap::new()
+        } else {
+            yaml_identity_digest_map(row, "allowed_package_archive_sha256")?
+        };
+        let allowed_package_source_inventory_sha256 = if is_ffi_boundary {
+            BTreeMap::new()
+        } else {
+            yaml_identity_digest_map(row, "allowed_package_source_inventory_sha256")?
+        };
         let allowed_runtime_classes = yaml_string_set(row, "allowed_runtime_classes")?;
+        let allow_build_scripts = yaml_bool(row, "allow_build_scripts")?;
+        let allow_ffi = if is_ffi_boundary {
+            yaml_bool(row, "allow_ffi")
+                .map_err(|error| format!("FF-ARCH-E-EXCEPTION-SCHEMA: {error}"))?
+        } else {
+            false
+        };
+        let allow_unsafe = if is_ffi_boundary {
+            yaml_string(row, "allow_unsafe")
+                .map_err(|error| format!("FF-ARCH-E-EXCEPTION-SCHEMA: {error}"))?
+        } else {
+            ""
+        };
+        let operator_decision = if is_ffi_boundary {
+            yaml_string(row, "operator_decision")
+                .map_err(|error| format!("FF-ARCH-E-EXCEPTION-SCHEMA: {error}"))?
+        } else {
+            ""
+        };
+        let residual_uncertainty = if is_ffi_boundary {
+            yaml_string(row, "residual_uncertainty")
+                .map_err(|error| format!("FF-ARCH-E-EXCEPTION-SCHEMA: {error}"))?
+        } else {
+            ""
+        };
+        let safety_invariants = if is_ffi_boundary {
+            yaml_string_set(row, "safety_invariants")
+                .map_err(|error| format!("FF-ARCH-E-EXCEPTION-SCHEMA: {error}"))?
+        } else {
+            BTreeSet::new()
+        };
         let valid_scope = match status {
-            "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY" => {
+            "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY"
+            | "ACTIVE_NON_SHIPPED_FFMPEG_PREREQUISITE_ONLY" => {
                 !allow_product_use
                     && !allow_packaging_or_release
                     && promotion_requires_new_operator_decision
@@ -8891,38 +9096,38 @@ fn read_native_dependency_exceptions(
                 && packaged_object_inventory_sha256
                     .bytes()
                     .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
-        let exact_decision_scope =
-            match id {
-                "FF-DEC-001" => {
-                    owner == "WP-FF-015-wreq-transport-adjudication"
-                        && approval_id == "WP-FF-015-wreq-transport-adjudication-v1-AC-001"
-                        && status == "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY"
-                        && allowed_prerequisite_consumers
-                            == BTreeSet::from(["fforager-transport".to_owned()])
-                        && allowed_product_consumers.is_empty()
-                        && allowed_direct_dependencies
-                            == BTreeSet::from(["wreq".to_owned(), "wreq-util".to_owned()])
-                        && allowed_versions
-                            == BTreeSet::from([
-                                "wreq@5.3.0".to_owned(),
-                                "wreq@6.0.0-rc.29".to_owned(),
-                                "wreq-util@3.0.0-rc.14".to_owned(),
-                            ])
-                        && allowed_native_link_packages
-                            == BTreeSet::from([
-                                "btls-sys@0.5.6".to_owned(),
-                                "clang-sys@1.8.1".to_owned(),
-                                "zstd-sys@2.0.16+zstd.1.5.7".to_owned(),
-                            ])
-                        && allowed_native_runtime_packages.is_empty()
-                        && allowed_package_archive_sha256.is_empty()
-                        && allowed_package_source_inventory_sha256.is_empty()
-                        && ordinary_transport_resolved_closure_sha256.is_empty()
-                        && ordinary_transport_registry_source_closure_sha256.is_empty()
-                        && allowed_runtime_classes
-                            == BTreeSet::from(["non_shipped_phase0_prerequisite".to_owned()])
-                }
-                "FF-DEC-002" => owner == "WP-FF-017-ordinary-transport-decision"
+        let exact_decision_scope = match id {
+            "FF-DEC-001" => {
+                owner == "WP-FF-015-wreq-transport-adjudication"
+                    && approval_id == "WP-FF-015-wreq-transport-adjudication-v1-AC-001"
+                    && status == "ACTIVE_NON_SHIPPED_ADJUDICATION_ONLY"
+                    && allowed_prerequisite_consumers
+                        == BTreeSet::from(["fforager-transport".to_owned()])
+                    && allowed_product_consumers.is_empty()
+                    && allowed_direct_dependencies
+                        == BTreeSet::from(["wreq".to_owned(), "wreq-util".to_owned()])
+                    && allowed_versions
+                        == BTreeSet::from([
+                            "wreq@5.3.0".to_owned(),
+                            "wreq@6.0.0-rc.29".to_owned(),
+                            "wreq-util@3.0.0-rc.14".to_owned(),
+                        ])
+                    && allowed_native_link_packages
+                        == BTreeSet::from([
+                            "btls-sys@0.5.6".to_owned(),
+                            "clang-sys@1.8.1".to_owned(),
+                            "zstd-sys@2.0.16+zstd.1.5.7".to_owned(),
+                        ])
+                    && allowed_native_runtime_packages.is_empty()
+                    && allowed_package_archive_sha256.is_empty()
+                    && allowed_package_source_inventory_sha256.is_empty()
+                    && ordinary_transport_resolved_closure_sha256.is_empty()
+                    && ordinary_transport_registry_source_closure_sha256.is_empty()
+                    && allowed_runtime_classes
+                        == BTreeSet::from(["non_shipped_phase0_prerequisite".to_owned()])
+            }
+            "FF-DEC-002" => {
+                owner == "WP-FF-017-ordinary-transport-decision"
                     && approval_id == "WP-FF-017-ordinary-transport-decision-v1-AC-001"
                     && status == "ACTIVE_SHIPPED_PRODUCT_NARROW_ONLY"
                     && allowed_prerequisite_consumers
@@ -8966,28 +9171,79 @@ fn read_native_dependency_exceptions(
                             ),
                         ])
                     && ordinary_transport_resolved_closure_sha256
-                        == "1ae0db5e3c4237412d71c9d3323f49cb071b4583d37232a3ff62b09b5a396e9e"
+                        == "fa4ad0c30538fbc8efcae40cf1faa3f051bb80dcd8c814177b82e72495ec06fb"
                     && ordinary_transport_registry_source_closure_sha256
                         == "77cd4f81824d693e36750605c68eadedb57dbda5db35ec85bc4aae8b78719bc3"
                     && allowed_runtime_classes
                         == BTreeSet::from([
                             "non_shipped_phase0_prerequisite".to_owned(),
                             "shipped_rust_product".to_owned(),
-                        ]),
-                _ => false,
-            };
+                        ])
+            }
+            "FF-DEC-003" => {
+                owner == "WP-FF-010-ffmpeg-supervision-spike"
+                    && approval_id == "WP-FF-010-ffmpeg-supervision-spike-v1-AC-002"
+                    && status == "ACTIVE_NON_SHIPPED_FFMPEG_PREREQUISITE_ONLY"
+                    && allowed_prerequisite_consumers
+                        == BTreeSet::from(["fforager-ffmpeg".to_owned()])
+                    && allowed_product_consumers.is_empty()
+                    && allowed_direct_dependencies
+                        == BTreeSet::from(["libc".to_owned(), "windows-sys".to_owned()])
+                    && allowed_versions
+                        == BTreeSet::from([
+                            "libc@0.2.189".to_owned(),
+                            "windows-sys@0.61.2".to_owned(),
+                        ])
+                    && allowed_native_link_packages.is_empty()
+                    && allowed_native_runtime_packages.is_empty()
+                    && allowed_package_archive_sha256.is_empty()
+                    && allowed_package_source_inventory_sha256.is_empty()
+                    && ordinary_transport_resolved_closure_sha256.is_empty()
+                    && ordinary_transport_registry_source_closure_sha256.is_empty()
+                    && allowed_runtime_classes
+                        == BTreeSet::from(["non_shipped_phase0_prerequisite".to_owned()])
+                    && !allow_build_scripts
+                    && allow_ffi
+                    && allow_unsafe == "scoped_platform_modules_only"
+                    && operator_decision
+                        == "The Operator explicitly approved the recommended narrow Ferric-owned windows-sys/libc process boundary on 2026-08-09."
+                    && residual_uncertainty
+                        == "Windows parent death during suspended pre-execution setup can leave a suspended orphan unless a separately approved broker removes the interval; Unix process groups are signal scopes and do not contain hostile setsid or setpgid escape."
+                    && safety_invariants
+                        == BTreeSet::from([
+                            "bounded_termination".to_owned(),
+                            "direct_child_wait".to_owned(),
+                            "exact_handle_ownership".to_owned(),
+                            "independent_windows_active_zero".to_owned(),
+                            "no_shell".to_owned(),
+                            "non_inheritable_handles".to_owned(),
+                            "pre_execution_windows_job_assignment".to_owned(),
+                            "unix_process_group_signal_scope".to_owned(),
+                            "validated_direct_arguments_only".to_owned(),
+                        ])
+            }
+            _ => false,
+        };
         if !id.starts_with("FF-DEC-")
-            || yaml_string(row, "kind")? != "native_dependency"
+            || !matches!(kind, "native_dependency" | "native_ffi_and_unsafe_boundary")
             || !valid_scope
             || !valid_packaged_object_scope
             || !exact_decision_scope
             || !work_packet_base_owner_valid(owner)
             || !decision_approval_matches_owner(approval_id, owner)
-            || !yaml_bool(row, "allow_build_scripts")?
+            || allow_build_scripts == is_ffi_boundary
             || yaml_bool(row, "allow_build_time_downloads")?
             || yaml_bool(row, "allow_prebuilt_binaries")?
-            || yaml_string(row, "reason")?.trim().is_empty()
-            || yaml_string(row, "removal_trigger")?.trim().is_empty()
+            || !bounded_authority_text(yaml_string(row, "reason")?, 8_192)
+            || !bounded_authority_text(yaml_string(row, "removal_trigger")?, 8_192)
+            || (is_ffi_boundary
+                && (!bounded_authority_text(operator_decision, 1_024)
+                    || !bounded_authority_text(residual_uncertainty, 4_096)
+                    || safety_invariants.is_empty()
+                    || safety_invariants.len() > 32
+                    || safety_invariants
+                        .iter()
+                        .any(|value| !bounded_authority_text(value, 128))))
         {
             return Err(format!(
                 "FF-ARCH-E-EXCEPTION-SCHEMA: native exception {id} violates the bounded policy"
@@ -9111,6 +9367,10 @@ fn yaml_string_allow_empty<'a>(mapping: &'a Yaml<'_>, key: &str) -> Result<&'a s
         .as_mapping_get(key)
         .and_then(Yaml::as_str)
         .ok_or_else(|| format!("YAML mapping has no string {key}"))
+}
+
+fn bounded_authority_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= maximum_bytes && !value.contains('\0')
 }
 
 fn yaml_bool(mapping: &Yaml<'_>, key: &str) -> Result<bool, String> {
@@ -9325,16 +9585,27 @@ fn validate_rule_map(
                 ],
             ),
             "FF-BUILD-090" => (
-                &["structural", "semantic", "negative_fixture"],
-                &["compatibility-semantic-replay"],
+                &["structural", "semantic", "integration", "negative_fixture"],
+                &[
+                    "compatibility-semantic-replay",
+                    "ffmpeg-supervision-report-consumer",
+                ],
                 &[
                     "structural-replay-behavioral-pass",
                     "source-content-fingerprint",
                 ],
             ),
             "FF-BUILD-091" => (
-                &["semantic", "counterfactual", "negative_fixture"],
-                &["public-boundary-counterexample"],
+                &[
+                    "semantic",
+                    "counterfactual",
+                    "integration",
+                    "negative_fixture",
+                ],
+                &[
+                    "public-boundary-counterexample",
+                    "ffmpeg-supervision-report-consumer",
+                ],
                 &["declaration-only-proof"],
             ),
             "FF-BUILD-092" => (
@@ -9374,8 +9645,11 @@ fn validate_rule_map(
                 ],
             ),
             "FF-BUILD-097" => (
-                &["semantic", "negative_fixture"],
-                &["behavior-sensitive-proof-map"],
+                &["semantic", "integration", "negative_fixture"],
+                &[
+                    "behavior-sensitive-proof-map",
+                    "ffmpeg-supervision-report-consumer",
+                ],
                 &[
                     "proof-map-string-only",
                     "proof-map-behavior-stub",
@@ -9390,7 +9664,10 @@ fn validate_rule_map(
                     "production_runtime",
                     "negative_fixture",
                 ],
-                &["proof-class-aggregation"],
+                &[
+                    "proof-class-aggregation",
+                    "ffmpeg-supervision-report-consumer",
+                ],
                 &["proof-class-promotion", "gate-report-runtime-claim"],
             ),
             "FF-BUILD-099" => (
@@ -13677,7 +13954,7 @@ fn active_evidence_inputs(root: &Path) -> Result<Vec<String>, String> {
 #[cfg(test)]
 static SOURCE_STATE_OBSERVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn source_state(root: &Path) -> Result<SourceState, String> {
+pub(crate) fn source_state(root: &Path) -> Result<SourceState, String> {
     #[cfg(test)]
     let _observation_guard = SOURCE_STATE_OBSERVATION_LOCK
         .lock()
@@ -13700,7 +13977,7 @@ fn source_state(root: &Path) -> Result<SourceState, String> {
     })
 }
 
-fn source_states_equal(left: &SourceState, right: &SourceState) -> bool {
+pub(crate) fn source_states_equal(left: &SourceState, right: &SourceState) -> bool {
     left.git_commit == right.git_commit
         && left.dirty == right.dirty
         && left.dirty_paths == right.dirty_paths
@@ -16147,8 +16424,8 @@ mod tests {
             |root| {
                 replace_file_text(
                     &root.join("build/architecture-policy.toml"),
-                    "exception_decision_ids = [\"FF-DEC-001\", \"FF-DEC-002\"]",
-                    "exception_decision_ids = [\"SELF-AUTHORIZED\", \"FF-DEC-002\"]",
+                    "exception_decision_ids = [\"FF-DEC-001\", \"FF-DEC-002\", \"FF-DEC-003\"]",
+                    "exception_decision_ids = [\"SELF-AUTHORIZED\", \"FF-DEC-002\", \"FF-DEC-003\"]",
                 );
             },
             "FF-ARCH-E-UNAPPROVED-EXCEPTION",
@@ -16217,6 +16494,72 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn native_exception_mutations_reach_production_validation() {
+        assert_architecture_mutation_fails(
+            "ffmpeg-native-exception-disables-ffi",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allow_ffi: true",
+                    "allow_ffi: false",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ffmpeg-native-exception-widens-unsafe",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allow_unsafe: scoped_platform_modules_only",
+                    "allow_unsafe: crate_wide",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ffmpeg-native-exception-removes-safety-invariants",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "safety_invariants: [validated_direct_arguments_only, no_shell, pre_execution_windows_job_assignment, non_inheritable_handles, direct_child_wait, independent_windows_active_zero, unix_process_group_signal_scope, bounded_termination, exact_handle_ownership]",
+                    "safety_invariants: []",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ffmpeg-native-exception-removes-operator-decision",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "operator_decision: The Operator explicitly approved the recommended narrow Ferric-owned windows-sys/libc process boundary on 2026-08-09.",
+                    "operator_decision: \"\"",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ffmpeg-native-exception-removes-residual",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "residual_uncertainty: Windows parent death during suspended pre-execution setup can leave a suspended orphan unless a separately approved broker removes the interval; Unix process groups are signal scopes and do not contain hostile setsid or setpgid escape.",
+                    "residual_uncertainty: \"\"",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
+        assert_architecture_mutation_fails(
+            "ffmpeg-native-exception-adds-unknown-key",
+            |root| {
+                replace_file_text(
+                    &root.join(".GOV/rules/build-rules.yaml"),
+                    "allow_ffi: true",
+                    "allow_ffi: true\n      unsafe_escape: true",
+                );
+            },
+            "FF-ARCH-E-EXCEPTION-SCHEMA",
+        );
         assert_architecture_mutation_fails(
             "native-exception-wrong-consumer",
             |root| {
@@ -16359,6 +16702,54 @@ mod tests {
             mutate_direct_native_edge_misattribution,
             "FF-ARCH-E-NATIVE-EDGE-ATTRIBUTION",
         );
+    }
+
+    #[test]
+    fn native_ffi_exception_authority_is_strict() {
+        let source = repo_root().unwrap().join(".GOV/rules/build-rules.yaml");
+        let baseline = fs::read_to_string(&source).unwrap();
+        let root = test_root("native-ffi-exception-schema");
+        let authority = root.join("build-rules.yaml");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&authority, &baseline).unwrap();
+        let parsed = read_native_dependency_exceptions(&authority).expect("canonical exceptions");
+        let ffmpeg = parsed.get("FF-DEC-003").expect("FFmpeg exception");
+        assert_eq!(
+            ffmpeg.allowed_direct_dependencies,
+            BTreeSet::from(["libc".to_owned(), "windows-sys".to_owned()])
+        );
+
+        for (before, after) in [
+            ("allow_ffi: true", "allow_ffi: false"),
+            (
+                "allow_unsafe: scoped_platform_modules_only",
+                "allow_unsafe: crate_wide",
+            ),
+            (
+                "safety_invariants: [validated_direct_arguments_only, no_shell, pre_execution_windows_job_assignment, non_inheritable_handles, direct_child_wait, independent_windows_active_zero, unix_process_group_signal_scope, bounded_termination, exact_handle_ownership]",
+                "safety_invariants: []",
+            ),
+            (
+                "operator_decision: The Operator explicitly approved the recommended narrow Ferric-owned windows-sys/libc process boundary on 2026-08-09.",
+                "operator_decision: \"\"",
+            ),
+            (
+                "residual_uncertainty: Windows parent death during suspended pre-execution setup can leave a suspended orphan unless a separately approved broker removes the interval; Unix process groups are signal scopes and do not contain hostile setsid or setpgid escape.",
+                "residual_uncertainty: \"\"",
+            ),
+            (
+                "allow_ffi: true",
+                "allow_ffi: true\n      unknown_unsafe_escape: true",
+            ),
+        ] {
+            let mutated = baseline.replacen(before, after, 1);
+            assert_ne!(mutated, baseline, "mutation precondition: {before}");
+            fs::write(&authority, mutated).unwrap();
+            let error = read_native_dependency_exceptions(&authority)
+                .expect_err("native FFI authority mutation must fail");
+            assert!(error.contains("FF-ARCH-E-EXCEPTION-SCHEMA"), "{error}");
+        }
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

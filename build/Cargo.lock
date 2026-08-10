@@ -624,6 +624,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "fforager-ffmpeg"
+version = "0.1.0"
+dependencies = [
+ "fforager-contracts",
+ "fforager-core",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "fforager-javascript"
 version = "0.1.0"
 dependencies = [

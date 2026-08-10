@@ -10,14 +10,14 @@ governance_root = ".GOV"
 product_root = "product"
 build_root = "build"
 exception_authority = ".GOV/rules/build-rules.yaml"
-exception_decision_ids = ["FF-DEC-001", "FF-DEC-002"]
-unsafe_policy = "forbid_in_workspace_members"
+exception_decision_ids = ["FF-DEC-001", "FF-DEC-002", "FF-DEC-003"]
+unsafe_policy = "forbid_except_scoped_policy_listed_boundary"
 unsafe_exception_authority = ".GOV/rules/build-rules.yaml#exception_authority"
-unsafe_decision_ids = []
+unsafe_decision_ids = ["FF-DEC-003"]
 internal_edge_default = "deny"
 forbidden_layer_edges = ["engine->frontend", "engine->adapter", "engine->watcher", "adapter->adapter", "product->watcher", "watcher->engine", "normal_or_build:product->testkit"]
 forbidden_product_runtime_roots = [".GOV", "build", ".fforager-artifacts"]
-allowed_runtime_or_native_dependencies = ["FFmpeg", "ffprobe", "FF-DEC-001", "FF-DEC-002"]
+allowed_runtime_or_native_dependencies = ["FFmpeg", "ffprobe", "FF-DEC-001", "FF-DEC-002", "FF-DEC-003"]
 approved_transitive_build_packages = ["bindgen@0.72.1", "btls-sys@0.5.6", "camino@1.2.4", "clang-sys@1.8.1", "crc32fast@1.5.0", "crossbeam-utils@0.8.22", "getrandom@0.3.4", "getrandom@0.4.3", "httparse@1.10.1", "icu_normalizer_data@2.0.0", "icu_properties_data@2.0.1", "libc@0.2.189", "memoffset@0.9.1", "ntapi@0.4.3", "num-traits@0.2.19", "parking_lot_core@0.9.12", "paste@1.0.15", "portable-atomic@1.14.0", "proc-macro2@1.0.107", "quote@1.0.47", "redb@4.1.0", "ring@0.17.14", "rustls@0.23.42", "rustversion@1.0.23", "serde@1.0.228", "serde_core@1.0.228", "serde_json@1.0.150", "thiserror@2.0.19", "winapi@0.3.9", "zerocopy@0.8.55", "zmij@1.0.23", "zstd-safe@7.2.4", "zstd-sys@2.0.16+zstd.1.5.7"]
 approved_transitive_proc_macros = ["boa_macros@0.21.1", "bytemuck_derive@1.11.0", "derive_arbitrary@1.4.2", "displaydoc@0.2.6", "dynify-macros@0.1.2", "equator-macro@0.4.2", "foreign-types-macros@0.2.4", "futures-macro@0.3.33", "num_enum_derive@0.7.6", "openssl-macros@0.1.1", "paste@1.0.15", "phf_macros@0.13.1", "pin-project-internal@1.1.13", "rustversion@1.0.23", "serde_derive@1.0.228", "thiserror-impl@2.0.19", "time-macros@0.2.32", "typed-builder-macro@0.23.2", "windows-implement@0.60.2", "windows-interface@0.59.3", "yoke-derive@0.8.2", "zerofrom-derive@0.1.7", "zerovec-derive@0.11.3"]
 
@@ -146,6 +146,27 @@ removal_condition = "Replace only through a versioned archive-store migration th
 runtime_native_constraint_ref = "FF-START-BOUNDARY-001"
 unsafe_policy_ref = "FF-BUILD-050"
 exception_policy_ref = "FF-BUILD-052"
+
+[[members]]
+name = "fforager-ffmpeg"
+manifest = "product/crates/fforager-ffmpeg/Cargo.toml"
+source_root = "product/crates/fforager-ffmpeg/src"
+layer = "adapter"
+artifact_role = "non_shipped_ffmpeg_supervision_prerequisite"
+shipped = false
+test_only = false
+publish_allowed = false
+allowed_internal_dependencies = [
+  { package = "fforager-contracts", kinds = ["normal"], optional = false },
+  { package = "fforager-core", kinds = ["normal"], optional = false },
+]
+split_trigger = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-002"
+feature_owner = "WP-FF-010-ffmpeg-supervision-spike-v1"
+profile = "phase0_prerequisite_spike"
+removal_condition = "Remove or replace only after the first shipped consumer re-proves the exact platform boundary through FF-GATE-RUNTIME-001 or the prerequisite is retired."
+runtime_native_constraint_ref = "FF-DEC-003"
+unsafe_policy_ref = "FF-BUILD-050;FF-DEC-003"
+exception_policy_ref = "FF-DEC-003"
 
 [[members]]
 name = "fforager-testkit"
@@ -289,6 +310,83 @@ removal_trigger = "Rust supplies an approved standard SHA-256 implementation or 
 approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-001"
 features = []
 default_features = false
+
+[[dependency_decisions]]
+name = "sha2"
+version = "0.11.0"
+consumer = "fforager-ffmpeg"
+runtime_class = "non_shipped_phase0_prerequisite"
+purpose = "Independently bind executable bytes, packet payload projections, output files, wait receipts, and platform proof facts to SHA-256 identities."
+native = false
+owner = "WP-FF-010-ffmpeg-supervision-spike"
+allowed_consumers = ["fforager-ffmpeg"]
+reason = "The supervision adapter must reconstruct contract and runtime identities without trusting producer labels; this reuses the workspace exact-pinned pure-Rust digest implementation."
+removal_trigger = "Rust supplies an approved standard SHA-256 implementation or the FFmpeg evidence contract migrates through a reviewed digest transition."
+approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-007"
+features = []
+default_features = false
+
+[[dependency_decisions]]
+name = "serde"
+version = "1.0.228"
+consumer = "fforager-ffmpeg"
+runtime_class = "non_shipped_phase0_prerequisite"
+purpose = "Serialize strict platform proof reports and deserialize bounded ffprobe JSON into closed local structures."
+native = false
+owner = "WP-FF-010-ffmpeg-supervision-spike"
+allowed_consumers = ["fforager-ffmpeg"]
+reason = "The existing workspace serializer provides deny-unknown-fields report boundaries and typed untrusted-input decoding without a new parser dependency."
+removal_trigger = "The proof/report and ffprobe-normalization boundaries migrate through retained compatibility fixtures to an equally strict parser."
+approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-007"
+features = ["derive"]
+default_features = true
+
+[[dependency_decisions]]
+name = "serde_json"
+version = "1.0.150"
+consumer = "fforager-ffmpeg"
+runtime_class = "non_shipped_phase0_prerequisite"
+purpose = "Consume bounded ffprobe JSON and emit the strict FFmpeg platform proof schema."
+native = false
+owner = "WP-FF-010-ffmpeg-supervision-spike"
+allowed_consumers = ["fforager-ffmpeg"]
+reason = "FFprobe JSON and the packet-authorized report path already use the workspace exact-pinned JSON representation; a second parser would add risk without narrowing the boundary."
+removal_trigger = "FFprobe and the proof schema migrate through retained fixtures to another bounded representation."
+approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-007"
+features = []
+default_features = true
+
+[[dependency_decisions]]
+name = "windows-sys"
+version = "0.61.2"
+consumer = "fforager-ffmpeg"
+runtime_class = "non_shipped_phase0_prerequisite"
+purpose = "Expose exact Windows Job, process-creation attribute, wait, pipe, and handle APIs for the scoped Ferric-owned FFmpeg supervision boundary."
+native = false
+owner = "WP-FF-010-ffmpeg-supervision-spike"
+allowed_consumers = ["fforager-ffmpeg"]
+reason = "Stable Rust does not expose atomic pre-execution Job-list attachment or independent Job accounting; the Operator explicitly selected the narrow Ferric-owned binding path."
+removal_trigger = "Stable Rust exposes the complete proven boundary or a smaller maintained safe binding passes the same behavior-sensitive corpus."
+approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-002"
+features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Threading"]
+default_features = false
+exception_id = "FF-DEC-003"
+
+[[dependency_decisions]]
+name = "libc"
+version = "0.2.189"
+consumer = "fforager-ffmpeg"
+runtime_class = "non_shipped_phase0_prerequisite"
+purpose = "Expose exact Unix process-group signaling and wait-status primitives for bounded FFmpeg supervision evidence."
+native = false
+owner = "WP-FF-010-ffmpeg-supervision-spike"
+allowed_consumers = ["fforager-ffmpeg"]
+reason = "Stable Rust creates a process group but does not expose the complete TERM/KILL group signaling and typed wait-status surface required by WP-010."
+removal_trigger = "Stable Rust exposes the complete proven Unix boundary or the prerequisite is retired."
+approval_id = "WP-FF-010-ffmpeg-supervision-spike-v1-AC-002"
+features = []
+default_features = false
+exception_id = "FF-DEC-003"
 
 [[dependency_decisions]]
 name = "serde"

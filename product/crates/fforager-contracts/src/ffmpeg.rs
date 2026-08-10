@@ -29,6 +29,11 @@ pub const FFMPEG_REQUEST_PROJECTION_ID: &str = "ff.ffmpeg-request-canonical-json
 /// Canonical byte projection used for operation identities in version one,
 /// using the same identifier-plus-zero-plus-compact-JSON construction.
 pub const FFMPEG_OPERATION_PROJECTION_ID: &str = "ff.ffmpeg-operation-canonical-json@1";
+/// Versioned projection for the exact platform-bound vector executed by the
+/// focused adapter. This is deliberately distinct from the stable request @1
+/// logical pathname vector.
+pub const FFMPEG_BOUND_RUNTIME_INVOCATION_PROJECTION_ID: &str =
+    "ff.ffmpeg-bound-runtime-invocation-canonical-json@1";
 
 const MAX_PATH_BYTES: usize = 4_096;
 const MAX_VERSION_BYTES: usize = 512;
@@ -41,6 +46,11 @@ const MAX_ENVIRONMENT_BINDINGS: usize = 4;
 const MAX_ARGUMENTS: usize = 512;
 const MAX_ARGUMENT_BYTES: usize = 4_096;
 const MAX_ARGUMENT_VECTOR_BYTES: usize = 64 * 1_024;
+const MAX_INPUTS_U16: u16 = 32;
+/// First deterministic inherited input descriptor in bound runtime projection v1.
+pub const FFMPEG_LINUX_FD_INPUT_BASE_V1: u16 = 64;
+/// Deterministic inherited output descriptor in bound runtime projection v1.
+pub const FFMPEG_LINUX_FD_OUTPUT_V1: u16 = FFMPEG_LINUX_FD_INPUT_BASE_V1 + MAX_INPUTS_U16;
 const MAX_TIMEOUT_MILLIS: u64 = 60 * 60 * 1_000;
 const MAX_PROGRESS_RECORDS: u64 = 1_000_000;
 const MAX_PROGRESS_TOTAL_BYTES: u64 = 64 * 1_024 * 1_024;
@@ -500,9 +510,66 @@ pub struct FfmpegValidatedInvocationV1 {
     request_contract_sha256: String,
     operation_plan_sha256: String,
     arguments: Vec<String>,
+    bound_runtime: FfmpegBoundRuntimeInvocationV1,
+}
+
+/// Exact platform-bound argument projection. Private fields ensure only a
+/// fully validated request can produce executable runtime arguments.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct FfmpegBoundRuntimeInvocationV1 {
+    projection_id: &'static str,
+    request_contract_sha256: String,
+    operation_plan_sha256: String,
+    arguments: Vec<String>,
+    canonical_sha256: String,
+}
+
+#[derive(Serialize)]
+struct BoundRuntimeProjection<'a> {
+    request_contract_sha256: &'a str,
+    operation_plan_sha256: &'a str,
+    arguments: &'a [String],
+}
+
+impl FfmpegBoundRuntimeInvocationV1 {
+    #[must_use]
+    pub fn projection_id(&self) -> &str {
+        self.projection_id
+    }
+
+    #[must_use]
+    pub fn arguments(&self) -> &[String] {
+        &self.arguments
+    }
+
+    #[must_use]
+    pub fn canonical_sha256(&self) -> &str {
+        &self.canonical_sha256
+    }
 }
 
 impl FfmpegValidatedInvocationV1 {
+    /// Recompute the complete validated boundary and require this token to
+    /// remain correlated with the exact request presented to an adapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns the request validation error or `CorrelationMismatch` when a
+    /// valid token is stale or belongs to another request.
+    pub fn validate_against(
+        &self,
+        request: &FfmpegSupervisionRequestV1,
+    ) -> Result<(), FfmpegContractError> {
+        let expected = request.validate_for_invocation()?;
+        if self == &expected {
+            Ok(())
+        } else {
+            Err(FfmpegContractError::CorrelationMismatch {
+                field: "validated_invocation",
+            })
+        }
+    }
+
     /// Independently computed identity of the exact validated request.
     #[must_use]
     pub fn request_contract_sha256(&self) -> &str {
@@ -519,6 +586,12 @@ impl FfmpegValidatedInvocationV1 {
     #[must_use]
     pub fn arguments(&self) -> &[String] {
         &self.arguments
+    }
+
+    /// Exact versioned platform-bound vector that the adapter may execute.
+    #[must_use]
+    pub fn bound_runtime(&self) -> &FfmpegBoundRuntimeInvocationV1 {
+        &self.bound_runtime
     }
 }
 
@@ -727,6 +800,47 @@ impl FfmpegStreamCopyPlanV1 {
             "-f".to_owned(),
             self.output_muxer.clone(),
             self.output_path.clone(),
+        ]);
+        arguments
+    }
+
+    fn linux_fd_arguments(&self) -> Vec<String> {
+        let mut arguments = vec![
+            "-hide_banner".to_owned(),
+            "-nostdin".to_owned(),
+            "-y".to_owned(),
+            "-protocol_whitelist".to_owned(),
+            "fd,pipe".to_owned(),
+            "-progress".to_owned(),
+            "pipe:1".to_owned(),
+        ];
+        for (input_index, input) in self.inputs.iter().enumerate() {
+            arguments.extend([
+                "-protocol_whitelist".to_owned(),
+                "fd".to_owned(),
+                "-f".to_owned(),
+                input.demuxer.argument_name().to_owned(),
+                "-fd".to_owned(),
+                (FFMPEG_LINUX_FD_INPUT_BASE_V1
+                    + u16::try_from(input_index).expect("input count is contract bounded"))
+                .to_string(),
+                "-i".to_owned(),
+                "fd:".to_owned(),
+            ]);
+        }
+        for mapping in &self.stream_maps {
+            arguments.extend(["-map".to_owned(), mapping.argument()]);
+        }
+        arguments.extend([
+            "-protocol_whitelist".to_owned(),
+            "fd".to_owned(),
+            "-c".to_owned(),
+            "copy".to_owned(),
+            "-f".to_owned(),
+            self.output_muxer.clone(),
+            "-fd".to_owned(),
+            FFMPEG_LINUX_FD_OUTPUT_V1.to_string(),
+            "fd:".to_owned(),
         ]);
         arguments
     }
@@ -1010,6 +1124,10 @@ impl FfmpegSupervisionRequestV1 {
         }
         require_capability(&self.toolchain.ffprobe, "json_output")?;
         require_capability(&self.toolchain.ffprobe, "stream_metadata")?;
+        if self.toolchain.ffmpeg.host.operating_system == FfmpegHostOperatingSystemV1::Linux {
+            require_capability(&self.toolchain.ffmpeg, "protocol:fd")?;
+            require_capability(&self.toolchain.ffprobe, "protocol:fd")?;
+        }
         let arguments = self.direct_arguments();
         validate_arguments(&arguments)
     }
@@ -1032,10 +1150,35 @@ impl FfmpegSupervisionRequestV1 {
             });
         }
         let request_contract_sha256 = self.canonical_request_contract_sha256()?;
+        let arguments = self.direct_arguments();
+        let runtime_arguments =
+            if self.toolchain.ffmpeg.host.operating_system == FfmpegHostOperatingSystemV1::Linux {
+                match &self.operation {
+                    FfmpegOperationPlanV1::StreamCopy(plan) => plan.linux_fd_arguments(),
+                }
+            } else {
+                arguments.clone()
+            };
+        validate_arguments(&runtime_arguments)?;
+        let canonical_sha256 = canonical_sha256(
+            FFMPEG_BOUND_RUNTIME_INVOCATION_PROJECTION_ID,
+            &BoundRuntimeProjection {
+                request_contract_sha256: &request_contract_sha256,
+                operation_plan_sha256: &operation_plan_sha256,
+                arguments: &runtime_arguments,
+            },
+        )?;
         Ok(FfmpegValidatedInvocationV1 {
+            bound_runtime: FfmpegBoundRuntimeInvocationV1 {
+                projection_id: FFMPEG_BOUND_RUNTIME_INVOCATION_PROJECTION_ID,
+                request_contract_sha256: request_contract_sha256.clone(),
+                operation_plan_sha256: operation_plan_sha256.clone(),
+                arguments: runtime_arguments,
+                canonical_sha256,
+            },
             request_contract_sha256,
             operation_plan_sha256,
-            arguments: self.direct_arguments(),
+            arguments,
         })
     }
 
@@ -1903,6 +2046,76 @@ mod tests {
     }
 
     #[test]
+    fn linux_bound_runtime_projection_preserves_logical_v1_and_binds_exact_fds() {
+        let (mut request, _) = request_and_report();
+        request.toolchain.ffmpeg.host.operating_system = FfmpegHostOperatingSystemV1::Linux;
+        request.toolchain.ffprobe.host.operating_system = FfmpegHostOperatingSystemV1::Linux;
+        request.toolchain.ffmpeg.absolute_path = "/usr/bin/ffmpeg".to_owned();
+        request.toolchain.ffprobe.absolute_path = "/usr/bin/ffprobe".to_owned();
+        request.environment.trusted_bindings = vec![
+            FfmpegEnvironmentBindingV1::JobTemporaryDirectory,
+            FfmpegEnvironmentBindingV1::LocaleC,
+        ];
+        request
+            .toolchain
+            .ffmpeg
+            .capability_binding
+            .capabilities
+            .push("protocol:fd".to_owned());
+        request
+            .toolchain
+            .ffmpeg
+            .capability_binding
+            .capabilities
+            .sort();
+        request
+            .toolchain
+            .ffprobe
+            .capability_binding
+            .capabilities
+            .push("protocol:fd".to_owned());
+        request
+            .toolchain
+            .ffprobe
+            .capability_binding
+            .capabilities
+            .sort();
+        request.working_directory = "/var/lib/ferric/job_ffmpeg_stream_copy_1".to_owned();
+        let invocation = request.validate_for_invocation().expect("Linux binding");
+        assert!(invocation.arguments().iter().any(|value| value == "-n"));
+        assert!(
+            invocation
+                .arguments()
+                .iter()
+                .any(|value| value == "input/audio.aac")
+        );
+        let runtime = invocation.bound_runtime();
+        assert_eq!(
+            runtime.projection_id(),
+            FFMPEG_BOUND_RUNTIME_INVOCATION_PROJECTION_ID
+        );
+        assert!(runtime.arguments().iter().any(|value| value == "-y"));
+        assert!(!runtime.arguments().iter().any(|value| value == "-n"));
+        assert_eq!(
+            runtime
+                .arguments()
+                .iter()
+                .filter(|value| *value == "fd:")
+                .count(),
+            3
+        );
+        for descriptor in [64_u16, 65, FFMPEG_LINUX_FD_OUTPUT_V1] {
+            assert!(
+                runtime
+                    .arguments()
+                    .iter()
+                    .any(|value| value == &descriptor.to_string())
+            );
+        }
+        assert_eq!(runtime.canonical_sha256().len(), 64);
+    }
+
+    #[test]
     fn canonical_fixture_declares_real_projection_hashes() {
         let (request, report) = request_and_report();
         let operation_plan_sha256 = request
@@ -2095,6 +2308,9 @@ mod tests {
     #[test]
     fn digest_output_and_deadline_counterexamples_fail_closed() {
         let (request, report) = request_and_report();
+        let invocation = request
+            .validate_for_invocation()
+            .expect("original invocation");
         let mut changed_request = request.clone();
         let FfmpegOperationPlanV1::StreamCopy(plan) = &mut changed_request.operation;
         plan.output_path = "output/other.mkv".to_owned();
@@ -2106,6 +2322,16 @@ mod tests {
             report.validate_against(&changed_request),
             Err(FfmpegContractError::CorrelationMismatch { .. })
         ));
+        changed_request.operation_plan_sha256 = changed_request
+            .canonical_operation_plan_sha256()
+            .expect("changed operation projection");
+        assert!(changed_request.validate_for_invocation().is_ok());
+        assert_eq!(
+            invocation.validate_against(&changed_request),
+            Err(FfmpegContractError::CorrelationMismatch {
+                field: "validated_invocation"
+            })
+        );
 
         let mut arbitrary_request_digest = report.clone();
         arbitrary_request_digest.request_contract_sha256 = "9".repeat(64);

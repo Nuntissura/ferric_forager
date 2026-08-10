@@ -3374,7 +3374,7 @@ mod tests {
     use fforager_diagnostics_contract as diagnostics;
     use std::collections::BTreeSet;
 
-    const CANONICAL_INVENTORY_FNV1A64: u64 = 0x8d40_e7b5_6085_fe1e;
+    const CANONICAL_INVENTORY_FNV1A64: u64 = 0x57cc_8a9d_8bbb_8f19;
 
     #[test]
     fn archive_store_evidence_corpus_executes_public_boundary() {
@@ -3867,7 +3867,7 @@ mod tests {
             (
                 "FF-CONTRACT-FFMPEG-SUPERVISION-001",
                 "FfmpegSupervisionRequestV1|FfmpegSupervisionReportV1",
-                "contracts::ffmpeg::tests::registered_public_boundary_suite",
+                "ffmpeg::tests::registered_public_boundary_suite",
             ),
         ];
         assert_eq!(entries.len(), canonical_contracts.len());

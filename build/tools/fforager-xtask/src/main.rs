@@ -5630,6 +5630,10 @@ fn expected_inventory_semantics(id: &str) -> Option<(&'static str, &'static str)
         "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001" => {
             Some(("fforager-diagnostics-contract::lifecycle", AC_003))
         }
+        "FF-CONTRACT-FFMPEG-SUPERVISION-001" => Some((
+            "fforager-contracts::ffmpeg",
+            "WP-FF-010-ffmpeg-supervision-spike-v1-AC-001",
+        )),
         "FF-CONTRACT-RESOURCE-VECTOR-001"
         | "FF-STATE-ADMISSION-001"
         | "FF-STATE-FRAGMENT-DURABILITY-001" => Some(("fforager-core::resource", AC_004)),
@@ -5680,6 +5684,9 @@ fn expected_inventory_proof(id: &str) -> Option<&'static str> {
         }
         "FF-CONTRACT-FILESYSTEM-001" => {
             Some("contracts::storage::tests::unsupported_path_confinement_fails_closed")
+        }
+        "FF-CONTRACT-FFMPEG-SUPERVISION-001" => {
+            Some("ffmpeg::tests::registered_public_boundary_suite")
         }
         "FF-STATE-ADMISSION-001" => {
             Some("core::resource::tests::atomic_zero_exact_one_over_and_release_identity")
@@ -5734,6 +5741,7 @@ fn expected_contract_inventory_ids() -> BTreeSet<&'static str> {
         "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001",
         "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001",
         "FF-CONTRACT-RESOURCE-VECTOR-001",
+        "FF-CONTRACT-FFMPEG-SUPERVISION-001",
     ])
 }
 
@@ -5872,6 +5880,7 @@ fn required_inventory_fixture(id: &str) -> Option<&'static str> {
         "FF-CONTRACT-DIAGNOSTIC-ENVELOPE-001" => Some("diagnostic-envelope-v1.2.json"),
         "FF-CONTRACT-DIAGNOSTIC-PROTOCOL-001" => Some("diagnostic-protocol-offer-v2.0.json"),
         "FF-CONTRACT-DIAGNOSTIC-LIFECYCLE-001" => Some("diagnostic-lifecycle-v1.0.json"),
+        "FF-CONTRACT-FFMPEG-SUPERVISION-001" => Some("ffmpeg-supervision-v1.0.json"),
         "FF-CONTRACT-RESOURCE-VECTOR-001"
         | "FF-STATE-ADMISSION-001"
         | "FF-STATE-FRAGMENT-DURABILITY-001" => Some("resource-boundary-scenario.json"),

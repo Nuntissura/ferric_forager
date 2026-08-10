@@ -417,10 +417,11 @@ fn spawn_internal(
     let executable_pin = pin_executable(executable_path, expectation)?;
     let executable = CString::new(format!("/proc/self/fd/{}", executable_pin.as_raw_fd()))
         .map_err(|_| PlatformError::state("encode pinned executable", "interior NUL"))?;
+    let argument_zero = c_path(executable_path, "encode executable argument zero")?;
     let working_directory = working_directory
         .map(|path| c_path(path, "encode working directory"))
         .transpose()?;
-    let arguments = c_arguments(&executable, arguments)?;
+    let arguments = c_arguments(&argument_zero, arguments)?;
     let environment = c_environment(environment)?;
     let mut argument_pointers = c_pointers(&arguments);
     let mut environment_pointers = c_pointers(&environment);
@@ -1357,6 +1358,33 @@ mod tests {
 
     fn environment() -> Vec<(String, String)> {
         vec![("PATH".to_owned(), "/usr/bin:/bin".to_owned())]
+    }
+
+    #[test]
+    fn pinned_descriptor_spawn_preserves_governed_argument_zero() {
+        let mut child = spawn(
+            Path::new("/usr/bin/setsid"),
+            &["--version".to_owned()],
+            &environment(),
+            Path::new("/"),
+        )
+        .expect("spawn pinned setsid");
+        let (mut stdout, mut stderr) = child.take_pipes().expect("version pipes");
+        let exit = child
+            .wait_timeout(Duration::from_secs(5))
+            .expect("wait for setsid")
+            .expect("setsid exit");
+        let mut version = String::new();
+        stdout.read_to_string(&mut version).expect("stdout version");
+        stderr.read_to_string(&mut version).expect("stderr version");
+        assert!(exit.successful(), "version output={version:?}");
+        assert!(
+            version
+                .lines()
+                .any(|line| line.starts_with("setsid from util-linux ")),
+            "pinned spawn changed argv[0]: {version:?}"
+        );
+        assert!(child.declared_scope_empty().expect("setsid group empty"));
     }
 
     #[test]

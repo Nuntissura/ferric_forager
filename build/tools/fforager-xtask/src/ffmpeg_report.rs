@@ -1318,10 +1318,25 @@ fn find_windows_program_until(
         .map(str::trim)
         .find(|line| !line.is_empty())
         .ok_or_else(|| format!("FF-WP010-E-PRODUCER-TOOL: {name} was not discovered"))?;
-    let canonical = fs::canonicalize(first)
+    let discovered = PathBuf::from(first);
+    if !discovered.is_absolute() || !discovered.is_file() {
+        return Err(format!(
+            "FF-WP010-E-PRODUCER-TOOL: {name} discovery did not return an absolute file"
+        ));
+    }
+    let canonical = fs::canonicalize(&discovered)
         .map_err(|error| format!("FF-WP010-E-PRODUCER-TOOL: {name}: {error}"))?;
+    if !canonical.is_file() {
+        return Err(format!(
+            "FF-WP010-E-PRODUCER-TOOL: {name} canonical target is not a file"
+        ));
+    }
     let _remaining = remaining_discovery_time(deadline)?;
-    Ok(canonical)
+    // Preserve the discovered entrypoint for execution. Rustup's `cargo.exe`
+    // shim resolves to `rustup.exe`; executing the canonical target changes
+    // argv[0] semantics and runs rustup itself instead of Cargo. Identity and
+    // content are still measured from the canonical target below.
+    Ok(discovered)
 }
 
 fn system32_program(name: &str) -> Result<PathBuf, String> {
@@ -2535,7 +2550,7 @@ fn observe_windows_boundary_tool(
     let (size_bytes, content_sha256) = hash_file_bounded_until(&canonical, deadline)?;
     let file_identity = host_file_identity(&canonical, deadline)?;
     let normalized = capture_normalized_command(
-        Command::new(&canonical).args(version_arguments),
+        Command::new(path).args(version_arguments),
         "Windows boundary tool version",
         remaining_discovery_time(deadline)?,
     )?;
@@ -2544,6 +2559,12 @@ fn observe_windows_boundary_tool(
         .next()
         .ok_or_else(|| "FF-WP010-E-PRODUCER-TOOL: missing version line".to_owned())?
         .to_owned();
+    if role == ProducerBoundaryToolRoleV1::Cargo && !normalized_version.starts_with("cargo ") {
+        return Err(
+            "FF-WP010-E-PRODUCER-TOOL: discovered Cargo entrypoint did not execute Cargo"
+                .to_owned(),
+        );
+    }
     Ok(ProducerBoundaryToolIdentityV1 {
         role,
         canonical_path: path_utf8(&canonical, "Windows boundary tool")?.to_owned(),

@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove cross-platform FFmpeg supervision",
     "created_at_utc": "2026-07-18T21:13:04Z",
-    "updated_at_utc": "2026-08-10T05:50:00Z"
+    "updated_at_utc": "2026-08-10T06:42:00Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -215,14 +215,13 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-10T05:50:00Z",
+      "recorded_at_utc": "2026-08-10T06:42:00Z",
       "branch": "codex/ffmpeg-supervision-spike",
       "base_sha": "a44f9ce69200df54be637334403a4da173e9bb15",
-      "head_sha": "df3036e84adf71489d510911bd34a124f94b6e18",
+      "head_sha": "1999300e89a440b4812af2bafc7d8f6a3f7b9d22",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/refinement.json",
-        ".GOV/taskboard/taskboard.yaml"
+        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/refinement.json"
       ],
       "checks_run": [
         "ferforstart.cmd: startup authority loaded in the dedicated linked worktree",
@@ -232,10 +231,11 @@
         "cargo test --manifest-path build/Cargo.toml --locked --workspace --all-features --no-fail-fast: PASS on the actual linked-worktree path, including xtask 134/0/2 ignored and all doctests.",
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS FF-GATE-ARCH-001; report build/reports/architecture-check-1786339788983056500-47524.json.",
         "Windows and Linux-native real FFmpeg producer reports plus strict cross-platform aggregation passed on clean source before the final cadence hardening; exact final-source regeneration is the next closure gate.",
-        "Independent HIGH-risk adversarial review: PASS with no open findings after durable stale/timely queued-cadence regressions."
+        "The platform proof wire transitioned explicitly from @1 to @2: shared-origin force/reap/scope phases telescope exactly, scope-zero settlement has its own 5000ms ceiling, old/hybrid/missing-field shapes fail closed, focused product 5/5 and independent consumer 20/20 tests pass, and strict changed-package Clippy plus formatting pass.",
+        "Independent HIGH-risk adversarial review: PASS with no open findings after durable cadence regressions and the @2 phase-deadline/schema re-attack."
       ],
       "blockers": [],
-      "next_action": "Commit the MERGE_PENDING candidate, regenerate both clean-source platform reports and the independent aggregate, rerun all canonical gates, then push, merge, prove main containment, and transition to VALIDATED."
+      "next_action": "Commit this refreshed MERGE_PENDING checkpoint, regenerate both clean-source @2 platform reports and the independent aggregate, rerun all canonical gates, then push, merge, prove main containment, and transition to VALIDATED."
     }
   },
   "validation": {
@@ -246,7 +246,7 @@
       "versioned contracts, lifecycle, resource admission, bounded I/O, platform adapters, fake-child and report consumer: PASS",
       "Windows real FFmpeg/ffprobe behavior and containment report: PASS",
       "Linux-native real FFmpeg/ffprobe behavior, TERM/KILL, fd handoff and setsid residual report: PASS",
-      "strict cross-platform report aggregation and forgery mutations: PASS",
+      "prior clean-source cross-platform aggregation and current @2 forgery/schema mutations: PASS; exact final @2 same-source report regeneration remains required before merge",
       "locked full workspace tests and architecture gate: PASS",
       "independent HIGH-risk adversarial review: PASS_NO_OPEN_FINDINGS"
     ],

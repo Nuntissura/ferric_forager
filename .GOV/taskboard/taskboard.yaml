@@ -35,7 +35,7 @@ rules:
   - id: FF-TASKBOARD-RULE-008
     statement: Superseded packet history is archived and never deleted.
 current_focus:
-  statement: WP-FF-010 cross-platform FFmpeg supervision prerequisite evidence is active.
+  statement: WP-FF-010 acceptance is satisfied at the prerequisite ceiling and its clean-source closure is MERGE_PENDING.
   active_wp_id: WP-FF-010-ffmpeg-supervision-spike-v1
 work_packets:
   - wp_id: WP-FF-001-governance-workflow-v1

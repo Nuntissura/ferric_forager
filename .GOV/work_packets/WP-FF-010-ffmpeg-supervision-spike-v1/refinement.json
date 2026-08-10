@@ -2,10 +2,10 @@
   "schema_id": "ff.work_packet_refinement@1",
   "file_id": "WP-FF-010-ffmpeg-supervision-spike-v1-REFINEMENT-001",
   "wp_id": "WP-FF-010-ffmpeg-supervision-spike-v1",
-  "updated_at_utc": "2026-08-09T18:30:00Z",
-  "operator_request": "After creating, committing, and pushing the dedicated Phase 0D benchmark-design and Phase 1 runnable-production-slice packets before WP-FF-011, start working on WP-FF-010; up to three sub-agents may work in parallel this session.",
+  "updated_at_utc": "2026-08-10T05:50:00Z",
+  "operator_request": "Continue and fully close WP-FF-010 through all acceptance criteria, genuine Windows and Linux-native FFmpeg/ffprobe evidence, strict independent aggregation, canonical gates, branch push, merge to canonical main, main-containment proof, and empty artifact hygiene; the Operator explicitly approved the recommended narrow Ferric-owned windows-sys/libc boundary and authorized parallel sub-agents.",
   "basis": {
-    "research_status": "CURRENT_SOURCE_LEVEL_ACTIVATION_BASIS_COMPLETE; process-boundary selection and Unix tool provisioning remain explicit implementation decisions",
+    "research_status": "COMPLETE; FF-DEC-003 records the selected Ferric-owned windows-sys/libc boundary, Linux-native tools are provisioned and identity-bound only for proof, and both platform reports are independently consumed without upgrading the prerequisite ceiling",
     "sources_checked": [
       {
         "source": ".GOV/spec/ferric_forager_technical_design_v0.3.0.md sections 7.6, 16.1, 19, 24.2, Phase 0C, 31.7, and Appendix C",
@@ -74,7 +74,7 @@
       "Use a file-output Phase 0 profile: child stdout is reserved for framed -progress pipe:1 records, stderr is a separately bounded diagnostic tail, and the output file is validated by a separately bounded ffprobe invocation.",
       "Use direct-child reap as its own fact. Windows declared containment additionally requires an independent Job ActiveProcesses == 0 query; Unix declared containment is limited to nonescaping fixture topology and must execute a setsid escape counterexample.",
       "Treat graceful stop as profile-specific: Unix signal handling and only a reproducibly console-hosted Windows control profile. Forced termination and reap remain required even when graceful control is unsupported.",
-      "Defer Windows adapter selection until the Operator explicitly approves either processkit 3.3.1 or a narrow Ferric-owned FFI boundary; do not silently weaken the proof contract to fit a dependency."
+      "Use the Operator-approved narrow Ferric-owned windows-sys/libc boundary under FF-DEC-003, confine reviewed unsafe/FFI to the platform modules, and fail closed rather than weaken the proof contract."
     ],
     "rejected_options": [
       {
@@ -204,8 +204,8 @@
   "scope_edges": {
     "assumptions": [
       "Windows FFmpeg and ffprobe 8.1.1 remain available only as locally pinned proof tools; Ferric does not ship or download them under this packet.",
-      "A Linux-native FFmpeg/ffprobe identity can be provisioned on the verified WSL2 Ubuntu host before cross-platform closure, but no installation is assumed or recorded as completed.",
-      "The first implementation stage can modify contracts, lifecycle/resource mapping, testkit fixtures, report schemas, and validators without selecting the unresolved Windows process mechanism.",
+      "Linux-native FFmpeg/ffprobe 6.1.1 identities are provisioned on the verified WSL2 Ubuntu host for targeted proof only; Ferric performs no automatic installation and ships no bundle.",
+      "The Windows process mechanism is resolved by Operator approval and FF-DEC-003 as a narrow Ferric-owned windows-sys boundary; libc supplies the corresponding Linux-native boundary.",
       "The exact non-product prerequisite declaration in packet.json remains immutable through closure."
     ],
     "non_goals": [
@@ -273,11 +273,11 @@
     ]
   },
   "decision_surface": {
-    "decision_required_before": "Any Windows process adapter, new dependency, direct FFI, unsafe exception, or mechanism-selecting manifest change",
-    "recommended_option": "Approve a narrow Ferric-owned platform boundary using an exact direct windows-sys/libc dependency set, scoped reviewed unsafe only inside that boundary, explicit safety invariants, source inventory, dedicated mutation/fault tests, and FF-BUILD-050/architecture-policy enforcement.",
-    "alternative_option": "Approve processkit 3.3.1 only after accepting its youth, larger Tokio/dependency footprint, internal unsafe/Send/Sync, supply-chain review cost, and documented suspended-orphan residual.",
+    "decision_required_before": "RESOLVED: the Operator approved the narrow Ferric-owned windows-sys/libc boundary before adapter, manifest, direct FFI, or unsafe-exception changes.",
+    "recommended_option": "SELECTED_AND_PROVEN: exact direct windows-sys/libc dependencies, scoped reviewed unsafe only inside the platform boundary, explicit safety invariants, source inventory, dedicated mutation/fault tests, and FF-BUILD-050/FF-DEC-003 architecture enforcement.",
+    "alternative_option": "REJECTED_FOR_THIS_PACKET: processkit 3.3.1 was not selected because the approved narrower boundary avoids its larger runtime/dependency surface while retaining the documented suspended-orphan residual truthfully.",
     "rejected_default": "Do not silently adopt process-wrap, win32job, taskkill, post-spawn assignment, or weaker exit-only evidence to avoid the decision.",
-    "unix_provisioning_gap": "Provision a Linux-native FFmpeg/ffprobe identity on the existing WSL2 Ubuntu host before Unix closure; update tooling-policy only if canonical gates themselves are required to execute on Linux rather than consuming a targeted signed report."
+    "unix_provisioning_gap": "RESOLVED_FOR_TARGETED_PROOF: Linux-native FFmpeg/ffprobe 6.1.1 and required Unix tools are independently identity-bound in the WSL2 report; canonical Windows-side gates consume the strict targeted report without widening product installation behavior or Linux tooling policy."
   },
   "execution_decomposition": [
     {

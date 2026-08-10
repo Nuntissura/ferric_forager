@@ -2722,18 +2722,8 @@ fn canonical_packet_units(
         }
         PacketFraming::AacRaw => Ok(vec![bytes]),
         PacketFraming::H264AnnexB => split_h264_annex_b(bytes),
-        PacketFraming::H264Container => {
-            if starts_with_h264_start_code(bytes) {
-                split_h264_annex_b(bytes)
-            } else {
-                split_h264_length_prefixed(bytes)
-            }
-        }
+        PacketFraming::H264Container => split_h264_length_prefixed(bytes),
     }
-}
-
-fn starts_with_h264_start_code(bytes: &[u8]) -> bool {
-    bytes.starts_with(&[0, 0, 1]) || bytes.starts_with(&[0, 0, 0, 1])
 }
 
 fn h264_start_code_length(bytes: &[u8], offset: usize) -> Option<usize> {
@@ -3619,6 +3609,25 @@ mod output_validation_tests {
         )
         .expect("output");
         require_payload_match(&source, &output).expect("equivalent payload");
+    }
+
+    #[test]
+    fn container_length_prefix_that_begins_like_annex_b_is_not_misclassified() {
+        let mut unit = vec![0x41; 468];
+        unit[1] = 0x9a;
+        let mut annex_b = vec![0, 0, 0, 1];
+        annex_b.extend_from_slice(&unit);
+        let mut length_prefixed = vec![0, 0, 1, 0xd4];
+        length_prefixed.extend_from_slice(&unit);
+        let source = packet_payload_sha256(&[packet(0, &annex_b)], 1, PacketFraming::H264AnnexB)
+            .expect("source");
+        let output = packet_payload_sha256(
+            &[packet(0, &length_prefixed)],
+            1,
+            PacketFraming::H264Container,
+        )
+        .expect("output");
+        require_payload_match(&source, &output).expect("unambiguous container framing");
     }
 
     #[test]

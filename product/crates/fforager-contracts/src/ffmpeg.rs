@@ -1976,13 +1976,16 @@ fn strictly_sorted_unique<T: Ord>(values: &[T]) -> bool {
 }
 
 #[cfg(test)]
+#[path = "../tests/support/ffmpeg_fixture.rs"]
+mod test_fixture;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::{Value, json};
 
     fn fixture() -> Value {
-        serde_json::from_slice(include_bytes!("../testdata/ffmpeg-supervision-v1.0.json"))
-            .expect("product FFmpeg contract fixture must be JSON")
+        test_fixture::fixture()
     }
 
     fn request_and_report() -> (FfmpegSupervisionRequestV1, FfmpegSupervisionReportV1) {

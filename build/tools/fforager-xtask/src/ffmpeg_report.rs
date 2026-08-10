@@ -1794,7 +1794,7 @@ fn validate_producer_receipt(
             let expected_program = path_utf8(&cargo, "Windows cargo")?;
             let target_absolute = root.join(&expected_target);
             let cargo_home_absolute = root.join(&expected_cargo_home);
-            let fake_absolute = root.join(&fake_relative);
+            let fake_absolute = target_absolute.join("debug/fforager-fake-child.exe");
             let fixture_absolute = root.join(&fixture_root);
             let report_absolute = root.join(&input.path);
             let rustup_home = std::env::var_os("USERPROFILE")

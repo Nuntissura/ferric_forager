@@ -3960,9 +3960,17 @@ mod output_validation_tests {
         let root = cleanup_test_root().join(format!("setsid-pipes-{}", std::process::id()));
         std::fs::create_dir_all(&root).expect("escape root");
         let pid_path = root.join("escape.pid");
+        let ready_path = root.join("escape.ready");
+        for marker in [&pid_path, &ready_path] {
+            if let Err(failure) = std::fs::remove_file(marker)
+                && failure.kind() != std::io::ErrorKind::NotFound
+            {
+                panic!("remove stale escape marker: {failure}");
+            }
+        }
         let arguments = vec![
             "-c".to_owned(),
-            "exec 3>&1 4>&2; /usr/bin/setsid /bin/sh -c 'echo $$ > escape.pid; exec /bin/sleep 30' >&3 2>&4 & while [ ! -s escape.pid ]; do :; done; exit 0"
+            "exec 3>&1 4>&2; /usr/bin/setsid /bin/sh -c 'echo $$ > escape.ready || exit 25; exec /bin/sleep 30' >&3 2>&4 & escaped=$!; echo \"$escaped\" > escape.pid || { /bin/kill -KILL \"$escaped\" 2>/dev/null; wait \"$escaped\" 2>/dev/null; exit 24; }; exit 0"
                 .to_owned(),
         ];
         let environment = vec![
@@ -4036,7 +4044,39 @@ mod output_validation_tests {
             .expect("direct wait")
             .expect("direct exit");
         assert_eq!(direct.exit_code, Some(0));
-        assert!(child.declared_scope_empty().expect("declared group empty"));
+        let escaped_pid = std::fs::read_to_string(&pid_path)
+            .expect("escape pid")
+            .trim()
+            .parse::<i32>()
+            .expect("numeric pid");
+        let escaped_pid_text = escaped_pid.to_string();
+        let ready_deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let ready_matches = std::fs::read_to_string(&ready_path)
+                .is_ok_and(|value| value.trim() == escaped_pid_text);
+            match child.declared_scope_empty() {
+                Ok(true) if ready_matches => break,
+                Ok(_) if Instant::now() < ready_deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Ok(_) => {
+                    crate::platform::terminate_owned_test_process(
+                        escaped_pid,
+                        Duration::from_secs(2),
+                    )
+                    .expect("bounded cleanup after readiness timeout");
+                    panic!("escaped descendant did not become ready within the bounded deadline");
+                }
+                Err(failure) => {
+                    crate::platform::terminate_owned_test_process(
+                        escaped_pid,
+                        Duration::from_secs(2),
+                    )
+                    .expect("bounded cleanup after group-query failure");
+                    panic!("declared group query failed: {failure}");
+                }
+            }
+        }
         let started = Instant::now();
         let failure = abort_spawned_execution(
             &mut child,
@@ -4061,12 +4101,8 @@ mod output_validation_tests {
             "capacity must remain poisoned"
         );
         assert_eq!(bytes.global_occupancy().expect("occupancy"), (1, 2));
-        let escaped_pid = std::fs::read_to_string(pid_path)
-            .expect("escape pid")
-            .trim()
-            .parse::<i32>()
-            .expect("numeric pid");
-        crate::platform::terminate_owned_test_process(escaped_pid);
+        crate::platform::terminate_owned_test_process(escaped_pid, Duration::from_secs(2))
+            .expect("escaped descendant absent after bounded cleanup");
     }
 
     #[test]

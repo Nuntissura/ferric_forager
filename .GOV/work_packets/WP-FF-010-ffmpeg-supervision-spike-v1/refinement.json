@@ -2,7 +2,7 @@
   "schema_id": "ff.work_packet_refinement@1",
   "file_id": "WP-FF-010-ffmpeg-supervision-spike-v1-REFINEMENT-001",
   "wp_id": "WP-FF-010-ffmpeg-supervision-spike-v1",
-  "updated_at_utc": "2026-08-10T06:42:00Z",
+  "updated_at_utc": "2026-08-10T07:15:32Z",
   "operator_request": "Continue and fully close WP-FF-010 through all acceptance criteria, genuine Windows and Linux-native FFmpeg/ffprobe evidence, strict independent aggregation, canonical gates, branch push, merge to canonical main, main-containment proof, and empty artifact hygiene; the Operator explicitly approved the recommended narrow Ferric-owned windows-sys/libc boundary and authorized parallel sub-agents.",
   "basis": {
     "research_status": "COMPLETE; FF-DEC-003 records the selected Ferric-owned windows-sys/libc boundary, Linux-native tools are provisioned and identity-bound only for proof, and both platform reports are independently consumed without upgrading the prerequisite ceiling",

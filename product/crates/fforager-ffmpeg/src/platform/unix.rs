@@ -163,13 +163,44 @@ pub(crate) fn configure_cancellable_pipe(file: &File) -> Result<(), PlatformErro
 }
 
 #[cfg(test)]
-pub(crate) fn terminate_owned_test_process(process_id: i32) {
-    if process_id > 1 {
-        // SAFETY: callers supply the exact PID of a process created by the
-        // current regression test; this helper remains inside FF-DEC-003.
-        unsafe {
-            libc::kill(process_id, libc::SIGKILL);
+pub(crate) fn terminate_owned_test_process(
+    process_id: i32,
+    timeout: Duration,
+) -> Result<(), PlatformError> {
+    if process_id <= 1 || timeout.is_zero() {
+        return Err(PlatformError::state(
+            "terminate owned test process",
+            "invalid PID or zero timeout",
+        ));
+    }
+    // SAFETY: callers supply the exact PID of a process created by the
+    // current regression test; this helper remains inside FF-DEC-003.
+    if unsafe { libc::kill(process_id, libc::SIGKILL) } < 0 {
+        let failure = std::io::Error::last_os_error();
+        if failure.raw_os_error() != Some(libc::ESRCH) {
+            return Err(PlatformError::io("terminate owned test process", failure));
         }
+    }
+    let deadline = Instant::now() + timeout;
+    loop {
+        // SAFETY: signal zero only queries the exact owned PID and has no
+        // process-side effect.
+        if unsafe { libc::kill(process_id, 0) } < 0 {
+            let failure = std::io::Error::last_os_error();
+            if failure.raw_os_error() == Some(libc::ESRCH) {
+                return Ok(());
+            }
+            if failure.raw_os_error() != Some(libc::EPERM) {
+                return Err(PlatformError::io("query terminated test process", failure));
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(PlatformError::state(
+                "terminate owned test process",
+                "PID absence was not proven before the deadline",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 

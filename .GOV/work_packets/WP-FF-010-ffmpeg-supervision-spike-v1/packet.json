@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove cross-platform FFmpeg supervision",
     "created_at_utc": "2026-07-18T21:13:04Z",
-    "updated_at_utc": "2026-08-10T06:42:00Z"
+    "updated_at_utc": "2026-08-10T07:15:32Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -215,13 +215,15 @@
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-10T06:42:00Z",
+      "recorded_at_utc": "2026-08-10T07:15:32Z",
       "branch": "codex/ffmpeg-supervision-spike",
       "base_sha": "a44f9ce69200df54be637334403a4da173e9bb15",
-      "head_sha": "1999300e89a440b4812af2bafc7d8f6a3f7b9d22",
+      "head_sha": "cb7783587c85e58cf4bfa06b27c174de29082d3f",
       "dirty_paths": [
         ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/refinement.json"
+        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/refinement.json",
+        "product/crates/fforager-ffmpeg/src/platform/unix.rs",
+        "product/crates/fforager-ffmpeg/src/supervisor.rs"
       ],
       "checks_run": [
         "ferforstart.cmd: startup authority loaded in the dedicated linked worktree",
@@ -232,10 +234,11 @@
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS FF-GATE-ARCH-001; report build/reports/architecture-check-1786339788983056500-47524.json.",
         "Windows and Linux-native real FFmpeg producer reports plus strict cross-platform aggregation passed on clean source before the final cadence hardening; exact final-source regeneration is the next closure gate.",
         "The platform proof wire transitioned explicitly from @1 to @2: shared-origin force/reap/scope phases telescope exactly, scope-zero settlement has its own 5000ms ceiling, old/hybrid/missing-field shapes fail closed, focused product 5/5 and independent consumer 20/20 tests pass, and strict changed-package Clippy plus formatting pass.",
-        "Independent HIGH-risk adversarial review: PASS with no open findings after durable cadence regressions and the @2 phase-deadline/schema re-attack."
+        "The Linux setsid retained-pipe regression no longer uses an unbounded readiness spin: exact PID/ready identity, fail-closed marker handling, bounded SIGKILL-to-ESRCH cleanup, ten loaded repetitions, two 72/0/5 full adapter runs, strict Clippy, and orphan scans pass.",
+        "Independent HIGH-risk adversarial review: PASS with no open findings after durable cadence regressions, the @2 phase-deadline/schema re-attack, and the loaded setsid fixture re-attack."
       ],
       "blockers": [],
-      "next_action": "Commit this refreshed MERGE_PENDING checkpoint, regenerate both clean-source @2 platform reports and the independent aggregate, rerun all canonical gates, then push, merge, prove main containment, and transition to VALIDATED."
+      "next_action": "Commit this final setsid-hardening MERGE_PENDING checkpoint, regenerate both clean-source @2 platform reports and the independent aggregate, rerun all canonical gates, then push, merge, prove main containment, and transition to VALIDATED."
     }
   },
   "validation": {

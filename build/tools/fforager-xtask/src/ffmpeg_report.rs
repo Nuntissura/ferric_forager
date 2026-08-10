@@ -1126,8 +1126,8 @@ fn prepare_linux_producer(
         PRODUCER_DISCOVERY_TIMEOUT,
     )?;
     validate_linux_absolute_path(&linux_home, "Linux home")?;
-    let linux_cargo =
-        linux_canonical_tool_path(&wsl, DISTRO, &format!("{linux_home}/.cargo/bin/cargo"))?;
+    let linux_cargo = format!("{linux_home}/.cargo/bin/cargo");
+    let _canonical_cargo = linux_canonical_tool_path(&wsl, DISTRO, &linux_cargo)?;
     let boundary_tools = observe_boundary_tools(root, ProofPlatform::LinuxX86_64)?;
     let closed_base_environment = linux_closed_base_environment(&linux_home, &linux_cargo_home);
     let linux_manifest = format!("{linux_root}/build/Cargo.toml");
@@ -1897,8 +1897,8 @@ fn validate_producer_receipt(
                 "Linux host-kernel validation",
                 PRODUCER_DISCOVERY_TIMEOUT,
             )?;
-            let linux_cargo =
-                linux_canonical_tool_path(&wsl, DISTRO, &format!("{linux_home}/.cargo/bin/cargo"))?;
+            let linux_cargo = format!("{linux_home}/.cargo/bin/cargo");
+            let _canonical_cargo = linux_canonical_tool_path(&wsl, DISTRO, &linux_cargo)?;
             let mut expected_environment =
                 linux_closed_base_environment(&linux_home, &linux_cargo_home);
             expected_environment.extend([
@@ -2146,19 +2146,16 @@ fn observe_boundary_tools(
                 remaining_discovery_time(deadline)?,
             )?;
             validate_linux_absolute_path(&home, "Linux home")?;
-            let cargo = linux_canonical_tool_path_until(
-                &wsl,
-                DISTRO,
-                &format!("{home}/.cargo/bin/cargo"),
-                deadline,
-            )?;
+            let cargo_entrypoint = format!("{home}/.cargo/bin/cargo");
+            let cargo = linux_canonical_tool_path_until(&wsl, DISTRO, &cargo_entrypoint, deadline)?;
             let mut tools = vec![
-                observe_linux_boundary_tool(
+                observe_linux_boundary_tool_from_entrypoint(
                     &wsl,
                     DISTRO,
                     &home,
                     ProducerBoundaryToolRoleV1::Cargo,
                     &cargo,
+                    &cargo_entrypoint,
                     &["--version", "--verbose"],
                     deadline,
                 )?,
@@ -2704,11 +2701,37 @@ fn observe_linux_boundary_tool(
     version_arguments: &[&str],
     deadline: Instant,
 ) -> Result<ProducerBoundaryToolIdentityV1, String> {
+    observe_linux_boundary_tool_from_entrypoint(
+        wsl,
+        distro,
+        home,
+        role,
+        path,
+        path,
+        version_arguments,
+        deadline,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Linux Cargo has a lexical rustup shim entrypoint with a separately measured canonical target"
+)]
+fn observe_linux_boundary_tool_from_entrypoint(
+    wsl: &Path,
+    distro: &str,
+    home: &str,
+    role: ProducerBoundaryToolRoleV1,
+    path: &str,
+    entrypoint: &str,
+    version_arguments: &[&str],
+    deadline: Instant,
+) -> Result<ProducerBoundaryToolIdentityV1, String> {
     let host_path = linux_unc_path(distro, path)?;
     let (size_bytes, content_sha256) = hash_file_bounded_until(&host_path, deadline)?;
     let file_identity = linux_file_identity(wsl, distro, path, deadline)?;
     let normalized = capture_normalized_command(
-        &mut linux_tool_command(wsl, distro, home, path, version_arguments),
+        &mut linux_tool_command(wsl, distro, home, entrypoint, version_arguments),
         "Linux boundary tool version",
         remaining_discovery_time(deadline)?,
     )?;
@@ -2717,6 +2740,11 @@ fn observe_linux_boundary_tool(
         .next()
         .ok_or_else(|| "FF-WP010-E-PRODUCER-TOOL: missing Linux version line".to_owned())?
         .to_owned();
+    if role == ProducerBoundaryToolRoleV1::Cargo && !normalized_version.starts_with("cargo ") {
+        return Err(
+            "FF-WP010-E-PRODUCER-TOOL: Linux Cargo entrypoint did not execute Cargo".to_owned(),
+        );
+    }
     Ok(ProducerBoundaryToolIdentityV1 {
         role,
         canonical_path: path.to_owned(),

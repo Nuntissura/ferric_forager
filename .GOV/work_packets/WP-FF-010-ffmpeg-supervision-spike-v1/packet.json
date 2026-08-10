@@ -8,7 +8,7 @@
     "version": "1",
     "title": "Prove cross-platform FFmpeg supervision",
     "created_at_utc": "2026-07-18T21:13:04Z",
-    "updated_at_utc": "2026-08-10T07:54:04Z"
+    "updated_at_utc": "2026-08-10T12:04:00Z"
   },
   "authorization": {
     "source": "operator_message",
@@ -45,10 +45,10 @@
     "remote_backup": {
       "required_for_handoff": true,
       "branch": "origin/codex/ffmpeg-supervision-spike",
-      "head_sha": null,
-      "verified_at_utc": null
+      "head_sha": "a9ff788f480adca9970ada24876df20a851fe96e",
+      "verified_at_utc": "2026-08-10T12:04:00Z"
     },
-    "closure_commit": null,
+    "closure_commit": "a9ff788f480adca9970ada24876df20a851fe96e",
     "main_containment_status": "NOT_STARTED",
     "merged_main_commit": null
   },
@@ -56,7 +56,7 @@
     "status": "MERGE_PENDING",
     "risk": "HIGH",
     "blockers": [],
-    "next_action": "Run the final clean-source Windows and Linux-native FFmpeg proof producers and strict same-source aggregator, rerun every canonical closure gate, push the closure branch, merge the approved closure into canonical main, and mechanically prove local and remote main containment before VALIDATED.",
+    "next_action": "Commit and remotely back up this truthful MERGE_PENDING evidence record, merge the closure lineage into canonical main, mechanically prove local and remote main containment, then transition WP-FF-010 to VALIDATED and clean the shared artifact root.",
     "supersedes": [],
     "superseded_by": null
   },
@@ -208,23 +208,18 @@
       "proof_class": "integration",
       "status": "PASS",
       "evidence": [
-        "Canonical formatting, warnings-denied changed-package and full-workspace Clippy, locked full-workspace tests, FF-GATE-ARCH-001, staged/history secret scans, runtime-truth/deep/PR gates, and final artifact hygiene are required on the clean closure source before merge.",
-        "Independent HIGH-risk adversarial review attacked public/OS boundaries and report forgeries; all confirmed findings were remediated and the final cadence delta re-attack reports PASS with no open findings."
+        "Clean closure commit a9ff788f480adca9970ada24876df20a851fe96e passed FF-GATE-DEEP-001 (build/reports/verify-deep-1786360453508167600-58804.json; SHA-256 08059018f77b4f12684b0f2e667d2553879aef85e83aeea7db238faf0a5be935), FF-GATE-ARCH-001 (build/reports/architecture-check-1786360818730230000-50588.json; SHA-256 591d42ab817ba9b9d1e991948a790ffe75b8b69efc139d2af1abdb7b0665f318), FF-GATE-RUNTIME-001 at the immutable prerequisite ceiling (build/reports/runtime-truth-check-1786360846205521200-60056.json; SHA-256 c45c32c4e60bc79412a033c4ba6b6fd48a2b967786c21c49176559dd6c5c4a09), history secret scan, and hook verification. FF-GATE-PR-001 was invoked on the same clean source and correctly refused implementation authorization because the authoritative lifecycle was already MERGE_PENDING; it is not relabeled PASS.",
+        "Independent HIGH-risk adversarial replay recomputed source fingerprint 312db996781042d230905fc7df3e66405f82ba2619b66c43d1b838c85ba2d8fc, matched both platform reports and receipts, reproduced aggregate d5ad90211918bbc22862de95046d5b1212844abed9897cc960bf032074f5958c byte-for-byte, passed the public-contract, inventory, mutation, and orphan probes, and identified this stale closure checkpoint as its sole remaining finding; this governance-only record is the minimum remediation before post-patch re-review."
       ]
     }
   ],
   "recovery": {
     "last_checkpoint": {
-      "recorded_at_utc": "2026-08-10T07:54:04Z",
+      "recorded_at_utc": "2026-08-10T12:04:00Z",
       "branch": "codex/ffmpeg-supervision-spike",
       "base_sha": "a44f9ce69200df54be637334403a4da173e9bb15",
-      "head_sha": "aa6a01aceb760e204ca05637a1c857677d09e4ab",
-      "dirty_paths": [
-        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/packet.json",
-        ".GOV/work_packets/WP-FF-010-ffmpeg-supervision-spike-v1/refinement.json",
-        "product/crates/fforager-ffmpeg/src/platform/windows.rs",
-        "product/crates/fforager-ffmpeg/src/proof_producer.rs"
-      ],
+      "head_sha": "a9ff788f480adca9970ada24876df20a851fe96e",
+      "dirty_paths": [],
       "checks_run": [
         "ferforstart.cmd: startup authority loaded in the dedicated linked worktree",
         "WP-003-v2, WP-005-v1, and WP-009-v2 lifecycle/closure/main-containment inspection: VALIDATED and contained",
@@ -232,14 +227,17 @@
         "Windows adapter library: PASS 62/0/3 ignored; Linux-native adapter library: PASS 70/0/5 ignored; both strict all-target/all-feature Clippy forms PASS.",
         "cargo test --manifest-path build/Cargo.toml --locked --workspace --all-features --no-fail-fast: PASS on the actual linked-worktree path, including xtask 134/0/2 ignored and all doctests.",
         "cargo run --manifest-path build/Cargo.toml --locked -p fforager-xtask -- architecture-check: PASS FF-GATE-ARCH-001; report build/reports/architecture-check-1786339788983056500-47524.json.",
-        "Windows and Linux-native real FFmpeg producer reports plus strict cross-platform aggregation passed on clean source before the final cadence hardening; exact final-source regeneration is the next closure gate.",
+        "Clean a9ff788f480adca9970ada24876df20a851fe96e Windows report f10bf7b20bec99c5a805213f0a8bc096d39441a434a9d931baa7b7f2f92f91d5 and producer receipt 3016906d5890f6094baa464b7f5b4773d130b3754c1a5fbd2e5ad0fdfec41614 passed on FFmpeg/ffprobe 8.1.1 with required Job, handle-sentinel, direct-reap, output, negative-case, and parent-death observations.",
+        "Clean a9ff788f480adca9970ada24876df20a851fe96e Linux-native report 5c8b1323dfca8148a61003b1d2b4e1c7ae4ad6b8aeddfd302ef9c1890291a0f0 and producer receipt 2a22aa01b9887be157c76ad2f7475f1d814972868fc3cf5a5cdad11d5dae3277 passed on FFmpeg/ffprobe 6.1.1 with required process-group, TERM/KILL, direct-reap, fd-handoff, output, negative-case, and setsid-escape observations.",
+        "The strict same-source consumer accepted both platform-proof@2 reports and producer receipts and emitted ff.ffmpeg-aggregation-receipt@1 SHA-256 d5ad90211918bbc22862de95046d5b1212844abed9897cc960bf032074f5958c; independent adversarial replay reproduced the same bytes.",
         "The platform proof wire transitioned explicitly from @1 to @2: shared-origin force/reap/scope phases telescope exactly, scope-zero settlement has its own 5000ms ceiling, old/hybrid/missing-field shapes fail closed, focused product 5/5 and independent consumer 20/20 tests pass, and strict changed-package Clippy plus formatting pass.",
         "The Linux setsid retained-pipe regression no longer uses an unbounded readiness spin: exact PID/ready identity, fail-closed marker handling, bounded SIGKILL-to-ESRCH cleanup, ten loaded repetitions, two 72/0/5 full adapter runs, strict Clippy, and orphan scans pass.",
         "The Windows forbidden-handle differential no longer depends on one unstable PowerShell failure code: protected execution must be opaque non-success, non-supervisor-forced, and write no target bytes while the deliberately weakened mutation must succeed and write exact LEAK; twenty focused repetitions, two 64/0/3 full adapter runs, and strict Clippy pass.",
-        "Independent HIGH-risk adversarial review: PASS with no open findings after durable cadence regressions, the @2 phase-deadline/schema re-attack, the loaded setsid fixture re-attack, and the Windows sentinel-oracle re-attack."
+        "Clean-source closure gates on a9ff788f480adca9970ada24876df20a851fe96e: FF-GATE-DEEP-001 PASS, FF-GATE-ARCH-001 PASS, FF-GATE-RUNTIME-001 prerequisite-ceiling PASS, history secret scan PASS, and hooks verification PASS; FF-GATE-PR-001 correctly refused because MERGE_PENDING does not authorize implementation.",
+        "Independent HIGH-risk adversarial replay passed all executable report, receipt, aggregate, contract-inventory, mutation, and orphan checks; its sole closure-readiness finding was the stale packet checkpoint remediated by this governance-only update."
       ],
       "blockers": [],
-      "next_action": "Commit this final Windows sentinel-oracle MERGE_PENDING checkpoint, regenerate both clean-source @2 platform reports and the independent aggregate, rerun all canonical gates, then push, merge, prove main containment, and transition to VALIDATED."
+      "next_action": "Commit and push this MERGE_PENDING evidence record, obtain the post-patch independent closure-state verdict, merge into canonical main, prove local and remote containment of a9ff788f480adca9970ada24876df20a851fe96e, then transition to VALIDATED and clean artifacts."
     }
   },
   "validation": {
@@ -250,7 +248,7 @@
       "versioned contracts, lifecycle, resource admission, bounded I/O, platform adapters, fake-child and report consumer: PASS",
       "Windows real FFmpeg/ffprobe behavior and containment report: PASS",
       "Linux-native real FFmpeg/ffprobe behavior, TERM/KILL, fd handoff and setsid residual report: PASS",
-      "prior clean-source cross-platform aggregation and current @2 forgery/schema mutations: PASS; exact final @2 same-source report regeneration remains required before merge",
+      "exact clean a9ff788f480adca9970ada24876df20a851fe96e Windows and Linux platform-proof@2 reports, producer receipts, and strict same-source aggregation: PASS; aggregate SHA-256 d5ad90211918bbc22862de95046d5b1212844abed9897cc960bf032074f5958c",
       "locked full workspace tests and architecture gate: PASS",
       "independent HIGH-risk adversarial review: PASS_NO_OPEN_FINDINGS"
     ],
@@ -357,7 +355,7 @@
         "a Rust 1.97.1 compile probe rejected the unstable raw std Windows process-attribute API with E0658",
         "packet and refinement JSON parse plus exact immutable extension-key and zero-progress declaration checks pass at MERGE_PENDING",
         "locked workspace tests, strict cross-platform adapter tests, warnings-denied Clippy, formatting, FF-GATE-ARCH-001, and independent adversarial review pass",
-        "final clean-source platform reports, aggregate, deep/PR/runtime-truth gates, staged/history secret scans, branch push, merge, and main containment are the remaining mechanical closure sequence"
+        "final clean-source platform reports, strict aggregate, deep/architecture/runtime-truth gates, history secret scan, hook verification, and remote backup of closure commit a9ff788f480adca9970ada24876df20a851fe96e pass; only this evidence-record commit, post-patch adversarial closure-state verdict, merge, main containment, VALIDATED transition, and artifact cleanup remain"
       ],
       "adversarial_review": {
         "DIFF_ATTACK_SURFACES": [
@@ -368,6 +366,7 @@
         ],
         "INDEPENDENT_CHECKS_RUN": [
           "The repository-inspection reviewer independently mapped current contracts, lifecycle/resource systems, process guards, architecture policy, host tools, and exact packet drift.",
+          "The final closure reviewer independently recomputed clean a9ff788f480adca9970ada24876df20a851fe96e source fingerprint 312db996781042d230905fc7df3e66405f82ba2619b66c43d1b838c85ba2d8fc, matched all report and receipt hashes, reproduced aggregate d5ad90211918bbc22862de95046d5b1212844abed9897cc960bf032074f5958c, and passed the focused public-contract, inventory, mutation, and orphan probes.",
           "The process-research reviewer independently checked official FFmpeg, Rust, Windows, and Unix semantics and exposed the Windows graceful-control and Unix containment limits.",
           "The safe-process reviewer independently inspected processkit 3.3.1, process-wrap 9.1.0, win32job 2.0.3, and their source/test/dependency tradeoffs.",
           "The Unix-host reviewer independently inspected WSL2, native process tools, FFmpeg/ffprobe/cargo-deny availability, Docker state, repository mount, and tooling policy."

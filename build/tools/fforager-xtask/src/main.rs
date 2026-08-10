@@ -4910,7 +4910,7 @@ fn validate_contract_inventory(root: &Path, checks: &mut Vec<Check>) -> Result<(
         .get("state_machines")
         .and_then(serde_json::Value::as_array)
         .ok_or("contract inventory omits state_machines")?;
-    if entries.len() != 20 || states.len() != 12 {
+    if entries.len() != 21 || states.len() != 12 {
         return Err(format!(
             "contract inventory coverage mismatch: entries={}, state_machines={}",
             entries.len(),
